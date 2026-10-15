@@ -1,0 +1,17 @@
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+
+# Secrets
+.env
+
+# Go
+backend/bin/
+*.test
+coverage.out
+
+# Node / Next.js
+node_modules/
+web/.next/
+web/out/
