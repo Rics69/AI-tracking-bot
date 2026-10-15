@@ -1,0 +1,8 @@
+# Generates the Go server for internal/httpapi (run `make gen`).
+package: httpapi
+output: api.gen.go
+generate:
+  std-http-server: true
+  strict-server: true
+  models: true
+  embedded-spec: true
