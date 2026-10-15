@@ -30,5 +30,24 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  bot:
+    build: ./backend
+    entrypoint: ["/app/bot"]
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-expenses}:${POSTGRES_PASSWORD:-expenses}@postgres:5432/${POSTGRES_DB:-expenses}?sslmode=disable
+      APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Moscow}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      ALLOWED_TELEGRAM_IDS: ${ALLOWED_TELEGRAM_IDS:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-gigachat}
+      GIGACHAT_AUTH_KEY: ${GIGACHAT_AUTH_KEY:-}
+      GIGACHAT_SCOPE: ${GIGACHAT_SCOPE:-GIGACHAT_API_PERS}
+      GIGACHAT_MODEL: ${GIGACHAT_MODEL:-GigaChat-2-Pro}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Without keys the bot exits with a clear error; do not restart it forever.
+    restart: on-failure:5
+
 volumes:
   pgdata:
