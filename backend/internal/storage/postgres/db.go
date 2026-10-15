@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"io/fs"
 
+	pgxdecimal "github.com/jackc/pgx-shopspring-decimal"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
-	pgxdecimal "github.com/jackc/pgx-shopspring-decimal"
 	"github.com/pressly/goose/v3"
+	"github.com/pressly/goose/v3/lock"
 )
 
 //go:embed migrations/*.sql
@@ -48,7 +49,12 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	if err != nil {
 		return fmt.Errorf("open migrations dir: %w", err)
 	}
-	provider, err := goose.NewProvider(goose.DialectPostgres, db, dir)
+	// api and bot both migrate on start; an advisory lock serializes them.
+	locker, err := lock.NewPostgresSessionLocker()
+	if err != nil {
+		return fmt.Errorf("init migration lock: %w", err)
+	}
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, dir, goose.WithSessionLocker(locker))
 	if err != nil {
 		return fmt.Errorf("init migrations: %w", err)
 	}

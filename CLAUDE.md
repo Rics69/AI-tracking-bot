@@ -7,8 +7,12 @@
 
 - `backend/` — Go-модуль, бинари в `cmd/`:
   - `cmd/api` — REST API для веб-панели.
-  - `cmd/bot` — Telegram-бот с агентом (в разработке).
+  - `cmd/bot` — Telegram-бот с агентом (long polling).
+  - `cmd/chat` — консольный чат с агентом без Telegram, для отладки промпта.
 - `backend/internal/expense` — домен трат: сущности, валидация, `Service`. Без SQL и HTTP.
+- `backend/internal/llm` — интерфейс модели, не зависящий от провайдера; `llm/gigachat` — клиент GigaChat (OAuth, сертификат Минцифры, function calling); `llm/provider` — выбор провайдера по `LLM_PROVIDER`.
+- `backend/internal/agent` — агент: тулы над `expense.Service`, системный промпт, цикл tool calling, история диалога.
+- `backend/internal/telegram` — обработчик апдейтов: белый список, очередь по пользователю, «печатает…».
 - `backend/internal/user` — члены семьи (Telegram-пользователи).
 - `backend/internal/storage/postgres` — репозитории на pgx, миграции goose (вшиты через embed, применяются при старте).
 - `backend/internal/httpapi` — REST: `api.gen.go` генерируется из `backend/api/openapi.yaml`, руками пишется `server.go`.
