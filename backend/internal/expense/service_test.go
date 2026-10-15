@@ -1,0 +1,246 @@
+package expense
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/shopspring/decimal"
+)
+
+// memRepo is a minimal in-memory Repository for service tests.
+type memRepo struct {
+	items  map[int64]Expense
+	nextID int64
+	// lastFilter records what the service passed to List/Summary.
+	lastFilter Filter
+}
+
+func newMemRepo() *memRepo { return &memRepo{items: map[int64]Expense{}} }
+
+func (r *memRepo) visible(s Scope, e Expense) bool { return s.All() || e.UserID == s.UserID() }
+
+func (r *memRepo) Create(_ context.Context, e Expense) (Expense, error) {
+	r.nextID++
+	e.ID = r.nextID
+	r.items[e.ID] = e
+	return e, nil
+}
+
+func (r *memRepo) Get(_ context.Context, s Scope, id int64) (Expense, error) {
+	e, ok := r.items[id]
+	if !ok || !r.visible(s, e) {
+		return Expense{}, ErrNotFound
+	}
+	return e, nil
+}
+
+func (r *memRepo) Update(ctx context.Context, s Scope, e Expense) (Expense, error) {
+	if _, err := r.Get(ctx, s, e.ID); err != nil {
+		return Expense{}, err
+	}
+	r.items[e.ID] = e
+	return e, nil
+}
+
+func (r *memRepo) Delete(ctx context.Context, s Scope, id int64) error {
+	if _, err := r.Get(ctx, s, id); err != nil {
+		return err
+	}
+	delete(r.items, id)
+	return nil
+}
+
+func (r *memRepo) List(_ context.Context, _ Scope, f Filter) (Page, error) {
+	r.lastFilter = f
+	return Page{}, nil
+}
+
+func (r *memRepo) Summary(_ context.Context, _ Scope, f Filter) (Summary, error) {
+	r.lastFilter = f
+	return Summary{}, nil
+}
+
+var moscow = mustLoad("Europe/Moscow")
+
+func mustLoad(name string) *time.Location {
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		panic(err)
+	}
+	return loc
+}
+
+// newTestService returns a service whose clock is fixed at 2026-10-15 01:30 MSK,
+// which is still 2026-10-14 in UTC: "today" must follow the family timezone.
+func newTestService() (*Service, *memRepo) {
+	repo := newMemRepo()
+	svc := NewService(repo, moscow)
+	svc.now = func() time.Time { return time.Date(2026, 10, 14, 22, 30, 0, 0, time.UTC) }
+	return svc, repo
+}
+
+func date(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 0, 0, 0, 0, time.UTC) }
+
+func validInput() CreateInput {
+	return CreateInput{UserID: 1, Amount: decimal.RequireFromString("350"), Category: CategoryFood, Comment: "кофе"}
+}
+
+func TestCreateDefaultsToTodayInFamilyTimezone(t *testing.T) {
+	svc, _ := newTestService()
+	e, err := svc.Create(context.Background(), validInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := date(2026, 10, 15); !e.SpentAt.Equal(want) {
+		t.Errorf("SpentAt = %s, want %s", e.SpentAt, want)
+	}
+}
+
+func TestCreateValidation(t *testing.T) {
+	tests := []struct {
+		name   string
+		modify func(*CreateInput)
+		field  string
+	}{
+		{"zero amount", func(in *CreateInput) { in.Amount = decimal.Zero }, "amount"},
+		{"negative amount", func(in *CreateInput) { in.Amount = decimal.RequireFromString("-1") }, "amount"},
+		{"three decimals", func(in *CreateInput) { in.Amount = decimal.RequireFromString("1.005") }, "amount"},
+		{"too large", func(in *CreateInput) { in.Amount = decimal.New(1, 10) }, "amount"},
+		{"unknown category", func(in *CreateInput) { in.Category = "coffee" }, "category"},
+		{"future date", func(in *CreateInput) { in.SpentAt = new(date(2026, 10, 16)) }, "spent_at"},
+		{"ancient date", func(in *CreateInput) { in.SpentAt = new(date(1999, 12, 31)) }, "spent_at"},
+		{"long comment", func(in *CreateInput) { in.Comment = strings.Repeat("я", MaxCommentLength+1) }, "comment"},
+		{"no user", func(in *CreateInput) { in.UserID = 0 }, "user_id"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc, _ := newTestService()
+			in := validInput()
+			tt.modify(&in)
+			_, err := svc.Create(context.Background(), in)
+			var verr *ValidationError
+			if !errors.As(err, &verr) {
+				t.Fatalf("err = %v, want ValidationError", err)
+			}
+			if verr.Field != tt.field {
+				t.Errorf("field = %q, want %q", verr.Field, tt.field)
+			}
+		})
+	}
+}
+
+func TestCreateNormalizes(t *testing.T) {
+	svc, _ := newTestService()
+	in := validInput()
+	in.Comment = "  кофе  "
+	in.Amount = decimal.RequireFromString("99.90")
+	in.SpentAt = new(time.Date(2026, 10, 10, 23, 59, 0, 0, time.UTC))
+	e, err := svc.Create(context.Background(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.Comment != "кофе" {
+		t.Errorf("Comment = %q, want trimmed", e.Comment)
+	}
+	if !e.SpentAt.Equal(date(2026, 10, 10)) {
+		t.Errorf("SpentAt = %s, want the date without time", e.SpentAt)
+	}
+}
+
+func TestUpdateAppliesPatch(t *testing.T) {
+	svc, _ := newTestService()
+	ctx := context.Background()
+	e, _ := svc.Create(ctx, validInput())
+
+	updated, err := svc.Update(ctx, OwnedBy(1), e.ID, Patch{Amount: new(decimal.RequireFromString("450")), Comment: new("")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !updated.Amount.Equal(decimal.RequireFromString("450")) {
+		t.Errorf("Amount = %s, want 450", updated.Amount)
+	}
+	if updated.Comment != "" {
+		t.Errorf("Comment = %q, want cleared", updated.Comment)
+	}
+	if updated.Category != CategoryFood {
+		t.Errorf("Category changed to %q", updated.Category)
+	}
+}
+
+func TestUpdateValidatesResult(t *testing.T) {
+	svc, _ := newTestService()
+	ctx := context.Background()
+	e, _ := svc.Create(ctx, validInput())
+
+	_, err := svc.Update(ctx, AllUsers(), e.ID, Patch{Amount: new(decimal.Zero)})
+	var verr *ValidationError
+	if !errors.As(err, &verr) {
+		t.Fatalf("err = %v, want ValidationError", err)
+	}
+}
+
+func TestMemberCannotTouchOthersExpenses(t *testing.T) {
+	svc, _ := newTestService()
+	ctx := context.Background()
+	e, _ := svc.Create(ctx, validInput()) // owned by user 1
+
+	if _, err := svc.Get(ctx, OwnedBy(2), e.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Get by another user: err = %v, want ErrNotFound", err)
+	}
+	if _, err := svc.Update(ctx, OwnedBy(2), e.ID, Patch{Amount: new(decimal.NewFromInt(1))}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Update by another user: err = %v, want ErrNotFound", err)
+	}
+	if err := svc.Delete(ctx, OwnedBy(2), e.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Delete by another user: err = %v, want ErrNotFound", err)
+	}
+	if _, err := svc.Get(ctx, Scope{}, e.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Get with zero scope: err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestMemberCannotReassignExpense(t *testing.T) {
+	svc, _ := newTestService()
+	ctx := context.Background()
+	e, _ := svc.Create(ctx, validInput())
+
+	_, err := svc.Update(ctx, OwnedBy(1), e.ID, Patch{UserID: new(int64(2))})
+	var verr *ValidationError
+	if !errors.As(err, &verr) || verr.Field != "user_id" {
+		t.Fatalf("err = %v, want user_id ValidationError", err)
+	}
+	// The family head can.
+	if _, err := svc.Update(ctx, AllUsers(), e.ID, Patch{UserID: new(int64(2))}); err != nil {
+		t.Fatalf("family head reassign: %v", err)
+	}
+}
+
+func TestListNormalizesFilter(t *testing.T) {
+	svc, repo := newTestService()
+	ctx := context.Background()
+
+	if _, err := svc.List(ctx, AllUsers(), Filter{}); err != nil {
+		t.Fatal(err)
+	}
+	if repo.lastFilter.Limit != DefaultLimit {
+		t.Errorf("default Limit = %d, want %d", repo.lastFilter.Limit, DefaultLimit)
+	}
+
+	if _, err := svc.List(ctx, AllUsers(), Filter{Limit: 10_000, Query: "  такси "}); err != nil {
+		t.Fatal(err)
+	}
+	if repo.lastFilter.Limit != MaxLimit {
+		t.Errorf("Limit = %d, want capped at %d", repo.lastFilter.Limit, MaxLimit)
+	}
+	if repo.lastFilter.Query != "такси" {
+		t.Errorf("Query = %q, want trimmed", repo.lastFilter.Query)
+	}
+
+	_, err := svc.List(ctx, AllUsers(), Filter{From: new(date(2026, 10, 10)), To: new(date(2026, 10, 1))})
+	var verr *ValidationError
+	if !errors.As(err, &verr) {
+		t.Errorf("from > to: err = %v, want ValidationError", err)
+	}
+}

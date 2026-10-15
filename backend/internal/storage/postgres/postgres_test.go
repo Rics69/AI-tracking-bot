@@ -1,0 +1,294 @@
+package postgres
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/shopspring/decimal"
+	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
+
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/expense"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
+)
+
+// testPool is shared by all tests of the package; each test truncates the tables.
+var testPool *pgxpool.Pool
+
+// TestMain starts a throwaway PostgreSQL in Docker and applies the migrations.
+// Run `go test -short` to skip these integration tests when Docker is unavailable.
+func TestMain(m *testing.M) {
+	flag.Parse()
+	if testing.Short() || os.Getenv("SKIP_DB_TESTS") != "" {
+		os.Exit(0)
+	}
+	ctx := context.Background()
+	ctr, err := tcpostgres.Run(ctx, "postgres:17-alpine",
+		tcpostgres.WithDatabase("test"),
+		tcpostgres.WithUsername("test"),
+		tcpostgres.WithPassword("test"),
+		tcpostgres.BasicWaitStrategies(),
+	)
+	if err != nil {
+		panic("start postgres container: " + err.Error())
+	}
+	url, err := ctr.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		panic(err)
+	}
+	testPool, err = Connect(ctx, url)
+	if err != nil {
+		panic(err)
+	}
+	if err := Migrate(ctx, testPool); err != nil {
+		panic(err)
+	}
+
+	code := m.Run()
+	testPool.Close()
+	_ = ctr.Terminate(ctx)
+	os.Exit(code)
+}
+
+func setup(t *testing.T) (*ExpenseRepository, *UserRepository) {
+	t.Helper()
+	if _, err := testPool.Exec(context.Background(), `TRUNCATE expenses, users RESTART IDENTITY`); err != nil {
+		t.Fatal(err)
+	}
+	users := NewUserRepository(testPool)
+	for _, u := range []user.User{{TelegramID: 1, FirstName: "Анна"}, {TelegramID: 2, FirstName: "Борис"}} {
+		if _, err := users.Upsert(context.Background(), u); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return NewExpenseRepository(testPool), users
+}
+
+func day(d int) time.Time { return time.Date(2026, 10, d, 0, 0, 0, 0, time.UTC) }
+
+func amount(s string) decimal.Decimal { return decimal.RequireFromString(s) }
+
+func mustCreate(t *testing.T, r *ExpenseRepository, userID int64, sum string, c expense.Category, d int, comment string) expense.Expense {
+	t.Helper()
+	e, err := r.Create(context.Background(), expense.Expense{
+		UserID: userID, Amount: amount(sum), Category: c, SpentAt: day(d), Comment: comment,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return e
+}
+
+func ids(items []expense.Expense) []int64 {
+	out := make([]int64, len(items))
+	for i, e := range items {
+		out[i] = e.ID
+	}
+	return out
+}
+
+func TestCreateAndGetRoundTrip(t *testing.T) {
+	repo, _ := setup(t)
+	ctx := context.Background()
+
+	created := mustCreate(t, repo, 1, "350.50", expense.CategoryFood, 15, "кофе")
+	got, err := repo.Get(ctx, expense.AllUsers(), created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Amount.Equal(amount("350.50")) || got.Category != expense.CategoryFood ||
+		!got.SpentAt.Equal(day(15)) || got.Comment != "кофе" || got.UserID != 1 {
+		t.Errorf("got %+v", got)
+	}
+
+	noComment := mustCreate(t, repo, 1, "10", expense.CategoryOther, 15, "")
+	if noComment.Comment != "" {
+		t.Errorf("empty comment came back as %q", noComment.Comment)
+	}
+}
+
+func TestCreateForUnknownUser(t *testing.T) {
+	repo, _ := setup(t)
+	_, err := repo.Create(context.Background(), expense.Expense{
+		UserID: 999, Amount: amount("1"), Category: expense.CategoryOther, SpentAt: day(1),
+	})
+	if !errors.Is(err, expense.ErrUnknownUser) {
+		t.Fatalf("err = %v, want ErrUnknownUser", err)
+	}
+}
+
+func TestScopeIsolation(t *testing.T) {
+	repo, _ := setup(t)
+	ctx := context.Background()
+	annas := mustCreate(t, repo, 1, "100", expense.CategoryFood, 10, "")
+	mustCreate(t, repo, 2, "200", expense.CategoryFood, 10, "")
+
+	borisScope := expense.OwnedBy(2)
+	if _, err := repo.Get(ctx, borisScope, annas.ID); !errors.Is(err, expense.ErrNotFound) {
+		t.Errorf("Get: err = %v, want ErrNotFound", err)
+	}
+	annas.Amount = amount("1")
+	if _, err := repo.Update(ctx, borisScope, annas); !errors.Is(err, expense.ErrNotFound) {
+		t.Errorf("Update: err = %v, want ErrNotFound", err)
+	}
+	if err := repo.Delete(ctx, borisScope, annas.ID); !errors.Is(err, expense.ErrNotFound) {
+		t.Errorf("Delete: err = %v, want ErrNotFound", err)
+	}
+	page, err := repo.List(ctx, borisScope, expense.Filter{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 1 || page.Items[0].UserID != 2 {
+		t.Errorf("Boris sees %+v", page.Items)
+	}
+	// Even with an explicit filter for Anna, the scope wins.
+	page, _ = repo.List(ctx, borisScope, expense.Filter{UserID: new(int64(1)), Limit: 10})
+	if page.Total != 0 {
+		t.Errorf("filter overrode scope: %+v", page.Items)
+	}
+	// The zero scope sees nothing.
+	page, _ = repo.List(ctx, expense.Scope{}, expense.Filter{Limit: 10})
+	if page.Total != 0 {
+		t.Errorf("zero scope sees %d expenses", page.Total)
+	}
+	// Anna's expense is untouched.
+	got, _ := repo.Get(ctx, expense.AllUsers(), annas.ID)
+	if !got.Amount.Equal(amount("100")) {
+		t.Errorf("Anna's amount changed to %s", got.Amount)
+	}
+}
+
+func TestListFiltersAndTotals(t *testing.T) {
+	repo, _ := setup(t)
+	ctx := context.Background()
+	coffee := mustCreate(t, repo, 1, "350", expense.CategoryFood, 14, "Кофе в зёрнах")
+	taxi := mustCreate(t, repo, 1, "1200", expense.CategoryTransport, 13, "такси")
+	lunch := mustCreate(t, repo, 2, "500.25", expense.CategoryFood, 15, "обед")
+	old := mustCreate(t, repo, 1, "100", expense.CategoryFood, 1, "100%_скидка")
+
+	tests := []struct {
+		name string
+		f    expense.Filter
+		want []int64
+		sum  string
+	}{
+		{"all, newest spent first", expense.Filter{}, []int64{lunch.ID, coffee.ID, taxi.ID, old.ID}, "2150.25"},
+		{"by member", expense.Filter{UserID: new(int64(1))}, []int64{coffee.ID, taxi.ID, old.ID}, "1650"},
+		{"by category", expense.Filter{Category: new(expense.CategoryFood)}, []int64{lunch.ID, coffee.ID, old.ID}, "950.25"},
+		{"period inclusive", expense.Filter{From: new(day(13)), To: new(day(14))}, []int64{coffee.ID, taxi.ID}, "1550"},
+		{"comment search is case-insensitive", expense.Filter{Query: "кофе"}, []int64{coffee.ID}, "350"},
+		{"LIKE wildcards are literal", expense.Filter{Query: "%_"}, []int64{old.ID}, "100"},
+		{"no matches", expense.Filter{Query: "самолёт"}, []int64{}, "0"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.f.Limit = 10
+			page, err := repo.List(ctx, expense.AllUsers(), tt.f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := ids(page.Items); !equalIDs(got, tt.want) {
+				t.Errorf("ids = %v, want %v", got, tt.want)
+			}
+			if page.Total != len(tt.want) || !page.Sum.Equal(amount(tt.sum)) {
+				t.Errorf("total = %d sum = %s, want %d and %s", page.Total, page.Sum, len(tt.want), tt.sum)
+			}
+		})
+	}
+
+	t.Run("paging keeps totals of the whole selection", func(t *testing.T) {
+		page, err := repo.List(ctx, expense.AllUsers(), expense.Filter{Limit: 1, Offset: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !equalIDs(ids(page.Items), []int64{coffee.ID}) || page.Total != 4 {
+			t.Errorf("page = %v total = %d", ids(page.Items), page.Total)
+		}
+	})
+
+	t.Run("sort by creation finds the last added", func(t *testing.T) {
+		page, _ := repo.List(ctx, expense.OwnedBy(1), expense.Filter{Sort: expense.SortByCreatedAt, Limit: 1})
+		if !equalIDs(ids(page.Items), []int64{old.ID}) {
+			t.Errorf("last added = %v, want %d", ids(page.Items), old.ID)
+		}
+	})
+}
+
+func TestUpdateAndDelete(t *testing.T) {
+	repo, _ := setup(t)
+	ctx := context.Background()
+	e := mustCreate(t, repo, 1, "350", expense.CategoryFood, 15, "кофе")
+
+	e.Amount = amount("450")
+	e.Comment = ""
+	updated, err := repo.Update(ctx, expense.OwnedBy(1), e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !updated.Amount.Equal(amount("450")) || updated.Comment != "" {
+		t.Errorf("updated = %+v", updated)
+	}
+	if !updated.UpdatedAt.After(updated.CreatedAt) && !updated.UpdatedAt.Equal(updated.CreatedAt) {
+		t.Errorf("updated_at %s before created_at %s", updated.UpdatedAt, updated.CreatedAt)
+	}
+
+	if err := repo.Delete(ctx, expense.OwnedBy(1), e.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Delete(ctx, expense.OwnedBy(1), e.ID); !errors.Is(err, expense.ErrNotFound) {
+		t.Errorf("second delete: err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestSummary(t *testing.T) {
+	repo, _ := setup(t)
+	ctx := context.Background()
+	mustCreate(t, repo, 1, "350", expense.CategoryFood, 14, "")
+	mustCreate(t, repo, 1, "150.50", expense.CategoryFood, 15, "")
+	mustCreate(t, repo, 1, "1200", expense.CategoryTransport, 15, "")
+	mustCreate(t, repo, 2, "9999", expense.CategoryHousing, 15, "")
+
+	sum, err := repo.Summary(ctx, expense.OwnedBy(1), expense.Filter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sum.Items) != 2 ||
+		sum.Items[0].Category != expense.CategoryTransport || !sum.Items[0].Sum.Equal(amount("1200")) ||
+		sum.Items[1].Category != expense.CategoryFood || !sum.Items[1].Sum.Equal(amount("500.50")) || sum.Items[1].Count != 2 {
+		t.Errorf("items = %+v", sum.Items)
+	}
+	if !sum.Sum.Equal(amount("1700.50")) || sum.Count != 3 {
+		t.Errorf("sum = %s count = %d", sum.Sum, sum.Count)
+	}
+}
+
+func TestUserUpsertRefreshesName(t *testing.T) {
+	_, users := setup(t)
+	ctx := context.Background()
+	if _, err := users.Upsert(ctx, user.User{TelegramID: 1, FirstName: "Аня", Username: "anya"}); err != nil {
+		t.Fatal(err)
+	}
+	list, err := users.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 2 || list[0].FirstName != "Аня" || list[0].Username != "anya" {
+		t.Errorf("users = %+v", list)
+	}
+}
+
+func equalIDs(a, b []int64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
