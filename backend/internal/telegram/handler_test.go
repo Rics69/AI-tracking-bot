@@ -18,13 +18,19 @@ import (
 )
 
 type fakeSender struct {
-	mu   sync.Mutex
-	sent []string
+	mu       sync.Mutex
+	sent     []string
+	failures int // the first N sends fail with a network error
+	attempts int
 }
 
 func (f *fakeSender) SendMessage(_ context.Context, p *bot.SendMessageParams) (*models.Message, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.attempts++
+	if f.attempts <= f.failures {
+		return nil, errors.New("unexpected EOF")
+	}
 	f.sent = append(f.sent, p.Text)
 	return &models.Message{}, nil
 }
@@ -66,6 +72,7 @@ func setup(allowed ...int64) (*Handler, *fakeAgent, *fakeUsers, *fakeSender) {
 	a := &fakeAgent{reply: "Записал"}
 	u := &fakeUsers{}
 	h := NewHandler(a, u, allowed, time.Minute, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	h.retryDelay = time.Millisecond
 	return h, a, u, &fakeSender{}
 }
 
@@ -148,5 +155,33 @@ func TestIsCommand(t *testing.T) {
 		if got := isCommand(text, "/start"); got != want {
 			t.Errorf("isCommand(%q) = %v", text, got)
 		}
+	}
+}
+
+func TestReplyIsResentAfterNetworkFailure(t *testing.T) {
+	h, _, _, s := setup()
+	s.failures = 2
+	h.handle(context.Background(), s, privateMessage(42, "кофе 350"))
+	if s.attempts != 3 || len(s.sent) != 1 || s.sent[0] != "Записал" {
+		t.Errorf("attempts = %d sent = %q", s.attempts, s.sent)
+	}
+}
+
+func TestReplyIsSentAfterRequestContextExpired(t *testing.T) {
+	h, _, _, s := setup()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // e.g. the LLM call ran out of time
+	h.send(ctx, s, 42, replyFailure)
+	if len(s.sent) != 1 {
+		t.Errorf("sent = %q, want the failure message delivered", s.sent)
+	}
+}
+
+func TestSendGivesUp(t *testing.T) {
+	h, _, _, s := setup()
+	s.failures = 100
+	h.send(context.Background(), s, 42, "x")
+	if s.attempts != sendAttempts || len(s.sent) != 0 {
+		t.Errorf("attempts = %d", s.attempts)
 	}
 }

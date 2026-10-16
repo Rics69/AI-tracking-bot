@@ -236,3 +236,39 @@ func TestEmbeddedRootCAParses(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRetriesNetworkFailures(t *testing.T) {
+	c, fake := newTestClient(t, ok(textAnswer))
+	// Wrap the fake so the first chat request loses its connection mid-flight.
+	var dropped atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/chat/completions" && dropped.CompareAndSwap(false, true) {
+			conn, _, _ := w.(http.Hijacker).Hijack()
+			_ = conn.Close()
+			return
+		}
+		fake.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	c.cfg.BaseURL, c.cfg.AuthURL = srv.URL+"/api/v1", srv.URL+"/oauth"
+
+	resp, err := c.Chat(context.Background(), llm.Request{})
+	if err != nil {
+		t.Fatalf("err = %v, want success after a retry", err)
+	}
+	if resp.Message.Content != "Привет!" || fake.chats.Load() != 1 {
+		t.Errorf("content = %q, chats served = %d", resp.Message.Content, fake.chats.Load())
+	}
+}
+
+func TestDoesNotRetryWhenCallerGaveUp(t *testing.T) {
+	c, fake := newTestClient(t, func(int32) (int, string) { return 503, "unavailable" })
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := c.Chat(ctx, llm.Request{}); !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want context.Canceled", err)
+	}
+	if fake.chats.Load() != 0 {
+		t.Errorf("sent %d requests after cancellation", fake.chats.Load())
+	}
+}

@@ -21,6 +21,8 @@ const (
 	maxInputRunes   = 1000 // longer messages are not expense notes; also caps token spend
 	maxMessageRunes = 4096 // Telegram limit
 	typingInterval  = 4 * time.Second
+	sendAttempts    = 3
+	sendTimeout     = 20 * time.Second
 
 	replyHelp = "Я записываю расходы. Пишите обычным текстом:\n" +
 		"• кофе 350\n" +
@@ -60,6 +62,7 @@ type Handler struct {
 	users        UserSaver
 	allowed      map[int64]bool // empty: everyone is allowed
 	replyTimeout time.Duration
+	retryDelay   time.Duration // first pause between send attempts
 	log          *slog.Logger
 
 	// Messages of one user are handled one at a time, in order:
@@ -73,7 +76,7 @@ func NewHandler(a Replier, users UserSaver, allowedIDs []int64, replyTimeout tim
 	for _, id := range allowedIDs {
 		allowed[id] = true
 	}
-	return &Handler{agent: a, users: users, allowed: allowed, replyTimeout: replyTimeout, log: log}
+	return &Handler{agent: a, users: users, allowed: allowed, replyTimeout: replyTimeout, retryDelay: time.Second, log: log}
 }
 
 // Handle is a bot.HandlerFunc.
@@ -167,8 +170,32 @@ func (h *Handler) send(ctx context.Context, s Sender, chatID int64, text string)
 		text = string(r[:maxMessageRunes-1]) + "…"
 	}
 	// Plain text: the model's output is not trusted to be valid Telegram markup.
-	if _, err := s.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: text}); err != nil {
-		h.log.ErrorContext(ctx, "send message", "chat_id", chatID, "err", err)
+	params := &bot.SendMessageParams{ChatID: chatID, Text: text}
+
+	// The reply must go out even if the request context has just expired
+	// (e.g. the LLM timed out and this is the error message).
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), sendTimeout)
+	defer cancel()
+
+	// Retry network failures: silence is worse than a rare duplicate message.
+	delay := h.retryDelay
+	for attempt := 1; ; attempt++ {
+		_, err := s.SendMessage(ctx, params)
+		if err == nil {
+			return
+		}
+		if attempt == sendAttempts {
+			h.log.ErrorContext(ctx, "send message", "chat_id", chatID, "attempts", attempt, "err", err)
+			return
+		}
+		h.log.WarnContext(ctx, "send message retry", "chat_id", chatID, "attempt", attempt, "err", err)
+		select {
+		case <-time.After(delay):
+			delay *= 2
+		case <-ctx.Done():
+			h.log.ErrorContext(ctx, "send message", "chat_id", chatID, "err", ctx.Err())
+			return
+		}
 	}
 }
 

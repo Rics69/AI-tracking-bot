@@ -43,7 +43,7 @@ type GigaChat struct {
 	BaseURL            string        `env:"BASE_URL"`
 	AuthURL            string        `env:"AUTH_URL"`
 	Temperature        *float64      `env:"TEMPERATURE"`
-	Timeout            time.Duration `env:"TIMEOUT" envDefault:"60s"`
+	Timeout            time.Duration `env:"TIMEOUT" envDefault:"30s"`
 	MaxRetries         int           `env:"MAX_RETRIES" envDefault:"3"`
 	MaxConcurrent      int           `env:"MAX_CONCURRENT" envDefault:"1"`
 	InsecureSkipVerify bool          `env:"INSECURE_SKIP_VERIFY"`

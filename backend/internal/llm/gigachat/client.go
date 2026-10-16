@@ -97,7 +97,7 @@ func New(cfg Config, log *slog.Logger) (*Client, error) {
 		cfg.AuthURL = DefaultAuthURL
 	}
 	if cfg.Timeout == 0 {
-		cfg.Timeout = 60 * time.Second
+		cfg.Timeout = 30 * time.Second
 	}
 	if cfg.MaxConcurrent <= 0 {
 		cfg.MaxConcurrent = 1
@@ -167,14 +167,23 @@ func (c *Client) Chat(ctx context.Context, req llm.Request) (llm.Response, error
 }
 
 // doWithRetry posts to /chat/completions, refreshing the token once on 401
-// and retrying 429/5xx with exponential backoff.
+// and retrying network failures and 429/5xx with exponential backoff.
+// Repeating a completion is safe: tools run on our side, not in the request.
 func (c *Client) doWithRetry(ctx context.Context, body []byte, sessionID string, out *chatResponse) error {
 	refreshed := false
 	backoff := time.Second
 	for attempt := 0; ; attempt++ {
 		status, header, respBody, err := c.post(ctx, body, sessionID)
 		if err != nil {
-			return err
+			if ctx.Err() != nil || attempt >= c.cfg.MaxRetries {
+				return err
+			}
+			c.log.WarnContext(ctx, "gigachat retry", "err", err, "wait", backoff, "attempt", attempt+1)
+			if err := c.sleep(ctx, backoff); err != nil {
+				return err
+			}
+			backoff *= 2
+			continue
 		}
 		switch {
 		case status == http.StatusOK:
