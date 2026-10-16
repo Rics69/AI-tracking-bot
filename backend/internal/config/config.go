@@ -74,6 +74,33 @@ type Chat struct {
 	Agent
 }
 
+// Eval is the configuration of the agent eval runner (cmd/eval): an LLM, no database.
+type Eval struct {
+	LLM
+	Agent
+	Timezone string     `env:"APP_TIMEZONE" envDefault:"Europe/Moscow"`
+	LogLevel slog.Level `env:"LOG_LEVEL" envDefault:"warn"`
+
+	Location *time.Location `env:"-"`
+}
+
+// LoadEval reads the eval runner configuration from the environment.
+func LoadEval() (Eval, error) {
+	var cfg Eval
+	if err := env.Parse(&cfg); err != nil {
+		return Eval{}, fmt.Errorf("parse env: %w", err)
+	}
+	loc, err := time.LoadLocation(cfg.Timezone)
+	if err != nil {
+		return Eval{}, fmt.Errorf("APP_TIMEZONE %q: %w", cfg.Timezone, err)
+	}
+	cfg.Location = loc
+	if err := cfg.validate(); err != nil {
+		return Eval{}, err
+	}
+	return cfg, nil
+}
+
 // LoadAPI reads the API server configuration from the environment.
 func LoadAPI() (API, error) {
 	var cfg API
