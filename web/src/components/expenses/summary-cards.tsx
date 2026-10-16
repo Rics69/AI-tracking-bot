@@ -3,7 +3,7 @@
 import type { Summary } from "@/api/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatMoney, plural } from "@/lib/format";
+import { formatMoney, formatShare, plural } from "@/lib/format";
 
 import { capitalize } from "./filters-bar";
 
@@ -14,7 +14,8 @@ type Props = {
 };
 
 export function SummaryCards({ summary, categoryLabel, periodLabel }: Props) {
-  const max = Math.max(...(summary?.items.map((i) => i.sum) ?? [0]), 1);
+  // Each bar is the category's share of all spending in the selection.
+  const share = (sum: number) => (summary && summary.sum > 0 ? sum / summary.sum : 0);
 
   return (
     <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
@@ -46,7 +47,7 @@ export function SummaryCards({ summary, categoryLabel, periodLabel }: Props) {
       <Card>
         <CardHeader>
           <CardTitle className="text-sm font-medium text-muted-foreground">
-            По категориям
+            По категориям · доля от всех трат
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -63,14 +64,17 @@ export function SummaryCards({ summary, categoryLabel, periodLabel }: Props) {
               {summary.items.map((item) => (
                 <li
                   key={item.category}
-                  className="grid grid-cols-[7rem_minmax(0,1fr)_auto] items-center gap-3 text-sm"
+                  className="grid grid-cols-[6.5rem_minmax(0,1fr)_3rem_auto] items-center gap-3 text-sm"
                 >
                   <span className="truncate">{capitalize(categoryLabel(item.category))}</span>
                   <span className="h-2 overflow-hidden rounded-full bg-muted" aria-hidden>
                     <span
                       className="block h-full rounded-full bg-primary"
-                      style={{ width: `${(item.sum / max) * 100}%` }}
+                      style={{ width: `${share(item.sum) * 100}%` }}
                     />
+                  </span>
+                  <span className="text-right text-muted-foreground tabular-nums">
+                    {formatShare(share(item.sum))}
                   </span>
                   <span className="text-right tabular-nums">{formatMoney(item.sum)}</span>
                 </li>

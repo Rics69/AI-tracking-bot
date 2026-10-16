@@ -10,6 +10,13 @@ export function formatMoney(amount: number): string {
   return moneyFormat.format(amount);
 }
 
+const percentFormat = new Intl.NumberFormat("ru-RU", { style: "percent", maximumFractionDigits: 0 });
+
+/** 0.372 → "37 %"; a non-zero share that rounds to zero shows as "<1 %". */
+export function formatShare(share: number): string {
+  return share > 0 && share < 0.005 ? `<${percentFormat.format(0.01)}` : percentFormat.format(share);
+}
+
 const dayMonth = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short" });
 const dayMonthYear = new Intl.DateTimeFormat("ru-RU", {
   day: "numeric",
