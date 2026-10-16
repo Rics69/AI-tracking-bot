@@ -49,5 +49,16 @@ services:
     # Without keys the bot exits with a clear error; do not restart it forever.
     restart: on-failure:5
 
+  web:
+    build:
+      context: ./web
+      args:
+        API_URL: http://api:8080
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+
 volumes:
   pgdata:
