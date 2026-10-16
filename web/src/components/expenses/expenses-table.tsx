@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, PencilIcon, Trash2Icon } from "lucide-react";
 
 import type { Expense } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +29,8 @@ type Props = {
   categoryLabel: (code: string) => string;
   /** True while a new page or filter is loading over the previous data. */
   stale: boolean;
+  onEdit: (e: Expense) => void;
+  onDelete: (e: Expense) => void;
 };
 
 export function ExpensesTable({
@@ -40,6 +42,8 @@ export function ExpensesTable({
   memberLabel,
   categoryLabel,
   stale,
+  onEdit,
+  onDelete,
 }: Props) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const first = (page - 1) * pageSize + 1;
@@ -62,17 +66,23 @@ export function ExpensesTable({
               </li>
             ))
           : items.map((e) => (
-              <li key={e.id} className="flex items-center justify-between gap-4 px-4 py-3">
-                <div className="flex min-w-0 flex-col gap-1">
-                  <span className="truncate font-medium">
-                    {e.comment ?? capitalize(categoryLabel(e.category))}
-                  </span>
-                  <span className="truncate text-sm text-muted-foreground">
-                    {formatDate(e.spent_at)} · {memberLabel(e.user_id)} ·{" "}
-                    {categoryLabel(e.category)}
-                  </span>
-                </div>
-                <span className="shrink-0 font-medium tabular-nums">{formatMoney(e.amount)}</span>
+              <li key={e.id}>
+                <button
+                  type="button"
+                  onClick={() => onEdit(e)}
+                  className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left outline-none hover:bg-muted/50 focus-visible:bg-muted/50"
+                >
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <span className="truncate font-medium">
+                      {e.comment ?? capitalize(categoryLabel(e.category))}
+                    </span>
+                    <span className="truncate text-sm text-muted-foreground">
+                      {formatDate(e.spent_at)} · {memberLabel(e.user_id)} ·{" "}
+                      {categoryLabel(e.category)}
+                    </span>
+                  </div>
+                  <span className="shrink-0 font-medium tabular-nums">{formatMoney(e.amount)}</span>
+                </button>
               </li>
             ))}
       </ul>
@@ -83,21 +93,24 @@ export function ExpensesTable({
           items?.length === 0 && "sm:hidden",
         )}
       >
-        <Table className={cn("min-w-[640px] transition-opacity", stale && "opacity-60")}>
+        <Table className={cn("min-w-[720px] transition-opacity", stale && "opacity-60")}>
           <TableHeader>
             <TableRow>
               <TableHead className="w-28 pl-4">Дата</TableHead>
               <TableHead>Член семьи</TableHead>
               <TableHead>Категория</TableHead>
               <TableHead>Комментарий</TableHead>
-              <TableHead className="pr-4 text-right">Сумма</TableHead>
+              <TableHead className="text-right">Сумма</TableHead>
+              <TableHead className="w-24 pr-4">
+                <span className="sr-only">Действия</span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {!items
               ? Array.from({ length: 5 }, (_, i) => (
                   <TableRow key={i}>
-                    {Array.from({ length: 5 }, (_, j) => (
+                    {Array.from({ length: 6 }, (_, j) => (
                       <TableCell key={j} className="py-3 first:pl-4 last:pr-4">
                         <Skeleton className="h-5 w-full" />
                       </TableCell>
@@ -116,21 +129,39 @@ export function ExpensesTable({
                     <TableCell className="max-w-64 truncate py-3">
                       {e.comment ?? <span className="text-muted-foreground">—</span>}
                     </TableCell>
-                    <TableCell className="py-3 pr-4 text-right font-medium tabular-nums">
+                    <TableCell className="py-3 text-right font-medium tabular-nums">
                       {formatMoney(e.amount)}
+                    </TableCell>
+                    <TableCell className="py-1 pr-4 text-right whitespace-nowrap">
+                      <Button
+                        variant="ghost"
+                        size="icon-lg"
+                        aria-label="Изменить трату"
+                        onClick={() => onEdit(e)}
+                      >
+                        <PencilIcon />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-lg"
+                        aria-label="Удалить трату"
+                        className="text-muted-foreground hover:text-destructive"
+                        onClick={() => onDelete(e)}
+                      >
+                        <Trash2Icon />
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
           </TableBody>
         </Table>
-
       </div>
 
       {items?.length === 0 && (
         <div className="flex flex-col items-center gap-2 rounded-xl bg-card px-4 py-12 text-center ring-1 ring-foreground/10">
           <p className="font-medium">Трат не найдено</p>
           <p className="text-sm text-muted-foreground">
-            Измените фильтры или добавьте трату через Telegram-бота: «кофе 350».
+            Измените фильтры, добавьте трату кнопкой выше или через Telegram-бота: «кофе 350».
           </p>
         </div>
       )}

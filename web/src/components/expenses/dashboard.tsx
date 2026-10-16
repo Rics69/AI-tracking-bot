@@ -1,12 +1,15 @@
 "use client";
 
-import { AlertCircleIcon, RefreshCwIcon } from "lucide-react";
-import { useCallback, useMemo } from "react";
+import { AlertCircleIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
 
+import type { Expense } from "@/api/client";
 import { useCategories, useExpenses, useSummary, useUsers } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import { PERIODS } from "@/lib/period";
 
+import { DeleteExpenseDialog } from "./delete-expense-dialog";
+import { ExpenseFormDialog } from "./expense-form-dialog";
 import { ExpensesTable } from "./expenses-table";
 import { FiltersBar } from "./filters-bar";
 import { memberName } from "./member";
@@ -22,6 +25,10 @@ export function Dashboard() {
   const categories = useCategories();
   const expenses = useExpenses(query, PAGE_SIZE, (filters.page - 1) * PAGE_SIZE);
   const summary = useSummary(query);
+
+  // The form is open for a new expense ("new") or for an existing one.
+  const [editing, setEditing] = useState<Expense | "new" | null>(null);
+  const [deleting, setDeleting] = useState<Expense | undefined>();
 
   const memberLabel = useMemo(() => {
     const names = new Map(users.data?.map((u) => [u.telegram_id, memberName(u)]));
@@ -42,12 +49,23 @@ export function Dashboard() {
 
   return (
     <div className="flex flex-col gap-8">
-      <FiltersBar
-        filters={filters}
-        onChange={setFilters}
-        users={users.data ?? []}
-        categories={categories.data ?? []}
-      />
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <FiltersBar
+          filters={filters}
+          onChange={setFilters}
+          users={users.data ?? []}
+          categories={categories.data ?? []}
+        />
+        <Button
+          className="h-10 shrink-0 self-start lg:self-auto"
+          disabled={!users.data?.length}
+          title={users.data?.length ? undefined : "Сначала кто-то из семьи должен написать боту"}
+          onClick={() => setEditing("new")}
+        >
+          <PlusIcon />
+          Добавить трату
+        </Button>
+      </div>
 
       {error ? (
         <div
@@ -82,9 +100,26 @@ export function Dashboard() {
             memberLabel={memberLabel}
             categoryLabel={categoryLabel}
             stale={expenses.isPlaceholderData}
+            onEdit={setEditing}
+            onDelete={setDeleting}
           />
         </>
       )}
+
+      <ExpenseFormDialog
+        open={editing !== null}
+        onOpenChange={(open) => !open && setEditing(null)}
+        expense={editing === "new" ? undefined : (editing ?? undefined)}
+        defaultUserId={filters.userId}
+        users={users.data ?? []}
+        categories={categories.data ?? []}
+        onDelete={setDeleting}
+      />
+      <DeleteExpenseDialog
+        expense={deleting}
+        onOpenChange={(open) => !open && setDeleting(undefined)}
+        memberLabel={memberLabel}
+      />
     </div>
   );
 }

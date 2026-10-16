@@ -31,8 +31,7 @@ type Props = {
 
 export function FiltersBar({ filters, onChange, users, categories }: Props) {
   const today = toISODate(new Date());
-  const isDefault =
-    !filters.userId && !filters.category && filters.period === DEFAULT_PERIOD;
+  const isDefault = !filters.userId && !filters.category && filters.period === DEFAULT_PERIOD;
 
   return (
     <div className="flex flex-wrap items-end gap-4">
@@ -56,10 +55,7 @@ export function FiltersBar({ filters, onChange, users, categories }: Props) {
       </Field>
 
       <Field label="Период" id="filter-period">
-        <Select
-          value={filters.period}
-          onValueChange={(v) => onChange({ period: v as Period })}
-        >
+        <Select value={filters.period} onValueChange={(v) => onChange({ period: v as Period })}>
           <SelectTrigger id="filter-period" className="h-10 w-full sm:w-48">
             <SelectValue />
           </SelectTrigger>

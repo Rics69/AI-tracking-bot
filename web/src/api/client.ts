@@ -32,11 +32,7 @@ export class ApiError extends Error {
 }
 
 /** Returns data of an openapi-fetch result or throws ApiError. */
-export function unwrap<T>(result: {
-  data?: T;
-  error?: unknown;
-  response: Response;
-}): T {
+export function unwrap<T>(result: { data?: T; error?: unknown; response: Response }): T {
   if (result.error !== undefined || !result.response.ok) {
     throw new ApiError(result.response.status, result.error as ApiErrorBody | undefined);
   }

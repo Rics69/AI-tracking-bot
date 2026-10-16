@@ -1,8 +1,8 @@
 "use client";
 
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { api, unwrap, type Category } from "./client";
+import { api, unwrap, type Category, type ExpenseCreate, type ExpenseUpdate } from "./client";
 
 export type ExpenseQuery = {
   userId?: number;
@@ -54,7 +54,37 @@ export function useExpenses(q: ExpenseQuery, limit: number, offset: number) {
 export function useSummary(q: ExpenseQuery) {
   return useQuery({
     queryKey: queryKeys.expenseSummary(q),
-    queryFn: async () => unwrap(await api.GET("/expenses/summary", { params: { query: toParams(q) } })),
+    queryFn: async () =>
+      unwrap(await api.GET("/expenses/summary", { params: { query: toParams(q) } })),
     placeholderData: keepPreviousData,
+  });
+}
+
+// Mutations invalidate every expenses query: lists and summaries for any
+// filter may include the changed expense.
+
+export function useCreateExpense() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: ExpenseCreate) => unwrap(await api.POST("/expenses", { body })),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.expenses }),
+  });
+}
+
+export function useUpdateExpense() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, body }: { id: number; body: ExpenseUpdate }) =>
+      unwrap(await api.PATCH("/expenses/{id}", { params: { path: { id } }, body })),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.expenses }),
+  });
+}
+
+export function useDeleteExpense() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) =>
+      unwrap(await api.DELETE("/expenses/{id}", { params: { path: { id } } })),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.expenses }),
   });
 }

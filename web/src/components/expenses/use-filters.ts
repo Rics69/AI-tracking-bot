@@ -17,7 +17,13 @@ export type Filters = {
 };
 
 const CATEGORIES: readonly Category[] = [
-  "food", "transport", "housing", "entertainment", "health", "shopping", "other",
+  "food",
+  "transport",
+  "housing",
+  "entertainment",
+  "health",
+  "shopping",
+  "other",
 ];
 
 /**

@@ -1,20 +1,30 @@
-const moneyFormat = new Intl.NumberFormat("ru-RU", {
+const rubles = new Intl.NumberFormat("ru-RU", {
   style: "currency",
   currency: "RUB",
-  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+});
+const rublesKopecks = new Intl.NumberFormat("ru-RU", {
+  style: "currency",
+  currency: "RUB",
+  minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
 
-/** 1200.5 → "1 200,5 ₽" */
+/** 1200 → "1 200 ₽", 1249.9 → "1 249,90 ₽": kopecks only when there are any. */
 export function formatMoney(amount: number): string {
-  return moneyFormat.format(amount);
+  return (Number.isInteger(amount) ? rubles : rublesKopecks).format(amount);
 }
 
-const percentFormat = new Intl.NumberFormat("ru-RU", { style: "percent", maximumFractionDigits: 0 });
+const percentFormat = new Intl.NumberFormat("ru-RU", {
+  style: "percent",
+  maximumFractionDigits: 0,
+});
 
 /** 0.372 → "37 %"; a non-zero share that rounds to zero shows as "<1 %". */
 export function formatShare(share: number): string {
-  return share > 0 && share < 0.005 ? `<${percentFormat.format(0.01)}` : percentFormat.format(share);
+  return share > 0 && share < 0.005
+    ? `<${percentFormat.format(0.01)}`
+    : percentFormat.format(share);
 }
 
 const dayMonth = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short" });
