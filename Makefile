@@ -2,7 +2,7 @@ LINT_IMAGE := golangci/golangci-lint:v2.13.2
 
 RUNS ?= 1
 
-.PHONY: up down logs gen test test-short lint eval
+.PHONY: up down logs seed gen test test-short lint eval
 
 up: ## Собрать и запустить всё в Docker
 	docker compose up -d --build
@@ -12,6 +12,9 @@ down: ## Остановить контейнеры
 
 logs: ## Логи всех сервисов
 	docker compose logs -f
+
+seed: ## Демо-данные для панели: 3 члена семьи и месяц трат (можно запускать повторно)
+	docker compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' < scripts/demo-seed.sql
 
 gen: ## Сгенерировать код из api/openapi.yaml (Go и TypeScript)
 	cd backend && go generate ./...
