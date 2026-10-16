@@ -77,11 +77,16 @@ func (r *ExpenseRepository) Delete(_ context.Context, s expense.Scope, id int64)
 
 func (r *ExpenseRepository) List(_ context.Context, s expense.Scope, f expense.Filter) (expense.Page, error) {
 	matched := r.match(s, f)
-	if f.Sort == expense.SortByCreatedAt {
+	switch f.Sort {
+	case expense.SortByCreatedAt:
 		slices.SortFunc(matched, func(a, b expense.Expense) int {
 			return cmp.Or(b.CreatedAt.Compare(a.CreatedAt), cmp.Compare(b.ID, a.ID))
 		})
-	} else {
+	case expense.SortByAmount:
+		slices.SortFunc(matched, func(a, b expense.Expense) int {
+			return cmp.Or(b.Amount.Cmp(a.Amount), cmp.Compare(b.ID, a.ID))
+		})
+	default:
 		slices.SortFunc(matched, func(a, b expense.Expense) int {
 			return cmp.Or(b.SpentAt.Compare(a.SpentAt), cmp.Compare(b.ID, a.ID))
 		})

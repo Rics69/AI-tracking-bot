@@ -13,6 +13,14 @@ func (s *Server) RemoveUser(ctx context.Context, req RemoveUserRequestObject) (R
 	return RemoveUser204Response{}, nil
 }
 
+func (s *Server) UpdateUser(ctx context.Context, req UpdateUserRequestObject) (UpdateUserResponseObject, error) {
+	u, err := s.family.SetWeeklyReport(ctx, req.TelegramId, req.Body.WeeklyReport)
+	if err != nil {
+		return nil, err
+	}
+	return UpdateUser200JSONResponse(toAPIUser(u)), nil
+}
+
 func (s *Server) ListInvites(ctx context.Context, _ ListInvitesRequestObject) (ListInvitesResponseObject, error) {
 	invites, err := s.family.ListInvites(ctx)
 	if err != nil {

@@ -5,7 +5,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import type { User } from "@/api/client";
-import { useRemoveMember } from "@/api/queries";
+import { useRemoveMember, useSetWeeklyReport } from "@/api/queries";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { formatDateTime } from "@/lib/format";
 
 export function MembersCard({ users }: { users?: User[] }) {
@@ -57,6 +58,7 @@ export function MembersCard({ users }: { users?: User[] }) {
                     {u.username ? `@${u.username} · ` : ""}в семье с {formatDateTime(u.created_at)}
                   </span>
                 </div>
+                <WeeklyReportSwitch member={u} />
                 {!u.is_head && (
                   <Button
                     variant="ghost"
@@ -89,6 +91,41 @@ export function MembersCard({ users }: { users?: User[] }) {
 
       <RemoveMemberDialog member={removing} onClose={() => setRemoving(undefined)} />
     </Card>
+  );
+}
+
+/** Toggles the Monday summary the bot sends to this member. */
+function WeeklyReportSwitch({ member }: { member: User }) {
+  const setWeekly = useSetWeeklyReport();
+  const id = `weekly-${member.telegram_id}`;
+  return (
+    <label
+      htmlFor={id}
+      className="flex shrink-0 cursor-pointer items-center gap-2 text-sm text-muted-foreground"
+      title="Бот присылает сводку за прошлую неделю по понедельникам в 10:00"
+    >
+      <span className="hidden sm:inline">Итоги недели</span>
+      <Switch
+        id={id}
+        aria-label={`Итоги недели для ${member.first_name}`}
+        checked={member.weekly_report}
+        disabled={setWeekly.isPending}
+        onCheckedChange={(on) =>
+          setWeekly.mutate(
+            { telegramId: member.telegram_id, on },
+            {
+              onSuccess: () =>
+                toast.success(
+                  on
+                    ? `${member.first_name} будет получать итоги недели`
+                    : `Итоги недели для ${member.first_name} отключены`,
+                ),
+              onError: () => toast.error("Не удалось изменить настройку"),
+            },
+          )
+        }
+      />
+    </label>
   );
 }
 

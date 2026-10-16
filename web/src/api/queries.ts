@@ -114,6 +114,20 @@ export function useRevokeInvite() {
   });
 }
 
+export function useSetWeeklyReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ telegramId, on }: { telegramId: number; on: boolean }) =>
+      unwrap(
+        await api.PATCH("/users/{telegram_id}", {
+          params: { path: { telegram_id: telegramId } },
+          body: { weekly_report: on },
+        }),
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.users }),
+  });
+}
+
 export function useRemoveMember() {
   const qc = useQueryClient();
   return useMutation({

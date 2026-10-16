@@ -102,8 +102,11 @@ func (r *ExpenseRepository) List(ctx context.Context, s expense.Scope, f expense
 	}
 
 	order := "spent_at DESC, id DESC"
-	if f.Sort == expense.SortByCreatedAt {
+	switch f.Sort {
+	case expense.SortByCreatedAt:
 		order = "created_at DESC, id DESC"
+	case expense.SortByAmount:
+		order = "amount DESC, id DESC"
 	}
 	args := append(w.args, f.Limit, f.Offset)
 	query := fmt.Sprintf(`SELECT %s FROM expenses%s ORDER BY %s LIMIT $%d OFFSET $%d`,

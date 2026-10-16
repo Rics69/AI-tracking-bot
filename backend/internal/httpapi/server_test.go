@@ -99,7 +99,11 @@ func (f *fakeFamily) ListInvites(context.Context) ([]family.Invite, error) {
 }
 
 func (f *fakeFamily) RevokeInvite(context.Context, int64) error { return f.err }
-func (f *fakeFamily) Now() time.Time                            { return time.Now() }
+
+func (f *fakeFamily) SetWeeklyReport(_ context.Context, id int64, on bool) (user.User, error) {
+	return user.User{TelegramID: id, FirstName: "Анна", WeeklyReport: on}, f.err
+}
+func (f *fakeFamily) Now() time.Time { return time.Now() }
 
 func newTestHandler(f *fakeExpenses, health error) http.Handler {
 	return newTestHandlerWithFamily(f, &fakeFamily{}, health)
@@ -292,5 +296,12 @@ func TestHTTPMetricsUseRoutePatterns(t *testing.T) {
 	do(t, h, http.MethodGet, "/api/v1/expenses/8", "")
 	if d := testutil.ToFloat64(httpRequestsTotal.WithLabelValues(http.MethodGet, route, "200")) - before; d != 2 {
 		t.Errorf("requests for %s += %v, want 2 (IDs must not become labels)", route, d)
+	}
+}
+
+func TestUpdateUserWeeklyReport(t *testing.T) {
+	status, body := do(t, newTestHandler(&fakeExpenses{}, nil), http.MethodPatch, "/api/v1/users/1", `{"weekly_report":false}`)
+	if status != 200 || body["weekly_report"] != false || body["telegram_id"] != float64(1) {
+		t.Errorf("status = %d body = %v", status, body)
 	}
 }

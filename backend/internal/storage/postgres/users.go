@@ -11,7 +11,7 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
 
-const userColumns = `telegram_id, first_name, COALESCE(username, ''), is_head, removed_at, created_at, updated_at`
+const userColumns = `telegram_id, first_name, COALESCE(username, ''), is_head, weekly_report, removed_at, created_at, updated_at`
 
 // UserRepository implements user.Repository.
 type UserRepository struct {
@@ -86,6 +86,19 @@ func (r *UserRepository) Remove(ctx context.Context, telegramID int64) error {
 	return nil
 }
 
+func (r *UserRepository) SetWeeklyReport(ctx context.Context, telegramID int64, on bool) (user.User, error) {
+	u, err := scanUser(r.pool.QueryRow(ctx, `
+		UPDATE users SET weekly_report = $2, updated_at = now() WHERE telegram_id = $1
+		RETURNING `+userColumns, telegramID, on))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return user.User{}, user.ErrNotFound
+	}
+	if err != nil {
+		return user.User{}, fmt.Errorf("set weekly report: %w", err)
+	}
+	return u, nil
+}
+
 func (r *UserRepository) CountActive(ctx context.Context) (int, error) {
 	var n int
 	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM users WHERE removed_at IS NULL`).Scan(&n); err != nil {
@@ -112,6 +125,6 @@ func (r *UserRepository) List(ctx context.Context) ([]user.User, error) {
 
 func scanUser(row pgx.Row) (user.User, error) {
 	var u user.User
-	err := row.Scan(&u.TelegramID, &u.FirstName, &u.Username, &u.IsHead, &u.RemovedAt, &u.CreatedAt, &u.UpdatedAt)
+	err := row.Scan(&u.TelegramID, &u.FirstName, &u.Username, &u.IsHead, &u.WeeklyReport, &u.RemovedAt, &u.CreatedAt, &u.UpdatedAt)
 	return u, err
 }

@@ -48,6 +48,16 @@ func (f *fakeUsers) Remove(_ context.Context, id int64) error {
 	return nil
 }
 
+func (f *fakeUsers) SetWeeklyReport(_ context.Context, id int64, on bool) (user.User, error) {
+	u, ok := f.m[id]
+	if !ok {
+		return user.User{}, user.ErrNotFound
+	}
+	u.WeeklyReport = on
+	f.m[id] = u
+	return u, nil
+}
+
 func (f *fakeUsers) CountActive(context.Context) (int, error) {
 	n := 0
 	for _, u := range f.m {

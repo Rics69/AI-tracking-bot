@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/llm/provider"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/logger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/metrics"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/report"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/postgres"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/telegram"
 )
@@ -93,6 +95,18 @@ func run() error {
 	if err := members.SetBotUsername(ctx, me.Username); err != nil {
 		return err
 	}
+
+	// Monday reports go to private chats, whose ID equals the user's Telegram ID.
+	weekly := report.NewWeekly(expenses, postgres.NewUserRepository(pool), postgres.NewReportRunRepository(pool),
+		func(ctx context.Context, chatID int64, text string) error {
+			err := handler.Send(ctx, b, chatID, text)
+			if errors.Is(err, telegram.ErrUndeliverable) {
+				return fmt.Errorf("%w: %w", report.ErrUndeliverable, err)
+			}
+			return err
+		},
+		cfg.Location, log.With("component", "report"))
+	go weekly.Run(ctx)
 
 	log.Info("bot started", "username", me.Username, "llm", cfg.Provider, "model", cfg.GigaChat.Model,
 		"family_heads", len(cfg.AllowedUserIDs), "open_family", len(cfg.AllowedUserIDs) == 0)

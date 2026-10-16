@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"strings"
@@ -230,6 +231,27 @@ func TestReplyIsSentAfterRequestContextExpired(t *testing.T) {
 	if len(s.sent) != 1 {
 		t.Errorf("sent = %q, want the failure message delivered", s.sent)
 	}
+}
+
+func TestPermanentErrorsAreNotRetried(t *testing.T) {
+	h, _, _, _ := setup()
+	s := &blockedSender{}
+	err := h.Send(context.Background(), s, 42, "x")
+	if !errors.Is(err, ErrUndeliverable) || s.attempts != 1 {
+		t.Errorf("err = %v after %d attempts, want ErrUndeliverable after 1", err, s.attempts)
+	}
+}
+
+// blockedSender behaves like Telegram for a user who blocked the bot.
+type blockedSender struct{ attempts int }
+
+func (b *blockedSender) SendMessage(context.Context, *bot.SendMessageParams) (*models.Message, error) {
+	b.attempts++
+	return nil, fmt.Errorf("%w, Forbidden: bot was blocked by the user", bot.ErrorForbidden)
+}
+
+func (b *blockedSender) SendChatAction(context.Context, *bot.SendChatActionParams) (bool, error) {
+	return true, nil
 }
 
 func TestSendGivesUp(t *testing.T) {

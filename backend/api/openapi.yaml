@@ -140,6 +140,27 @@ paths:
               schema: { $ref: '#/components/schemas/UserList' }
 
   /users/{telegram_id}:
+    patch:
+      operationId: updateUser
+      tags: [users]
+      summary: Изменить настройки участника
+      parameters:
+        - name: telegram_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserUpdate' }
+      responses:
+        '200':
+          description: Участник
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '404': { $ref: '#/components/responses/NotFound' }
     delete:
       operationId: removeUser
       tags: [users]
@@ -331,12 +352,13 @@ components:
 
     User:
       type: object
-      required: [telegram_id, first_name, is_head, created_at]
+      required: [telegram_id, first_name, is_head, weekly_report, created_at]
       properties:
         telegram_id: { type: integer, format: int64, example: 123456789 }
         first_name: { type: string, example: Данил }
         username: { type: string, example: rics69 }
         is_head: { type: boolean, description: Глава семьи }
+        weekly_report: { type: boolean, description: Присылать итоги недели в бот по понедельникам }
         removed_at:
           type: string
           format: date-time
@@ -350,6 +372,12 @@ components:
         items:
           type: array
           items: { $ref: '#/components/schemas/User' }
+
+    UserUpdate:
+      type: object
+      required: [weekly_report]
+      properties:
+        weekly_report: { type: boolean }
 
     InviteStatus:
       type: string

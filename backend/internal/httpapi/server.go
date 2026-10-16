@@ -31,6 +31,7 @@ type ExpenseService interface {
 type FamilyService interface {
 	Members(ctx context.Context) ([]user.User, error)
 	Remove(ctx context.Context, telegramID int64) error
+	SetWeeklyReport(ctx context.Context, telegramID int64, on bool) (user.User, error)
 	CreateInvite(ctx context.Context) (family.CreatedInvite, error)
 	ListInvites(ctx context.Context) ([]family.Invite, error)
 	RevokeInvite(ctx context.Context, id int64) error
@@ -141,14 +142,7 @@ func (s *Server) ListUsers(ctx context.Context, _ ListUsersRequestObject) (ListU
 	}
 	items := make([]User, len(users))
 	for i, u := range users {
-		items[i] = User{
-			TelegramId: u.TelegramID,
-			FirstName:  u.FirstName,
-			Username:   optional(u.Username),
-			IsHead:     u.IsHead,
-			RemovedAt:  u.RemovedAt,
-			CreatedAt:  u.CreatedAt,
-		}
+		items[i] = toAPIUser(u)
 	}
 	return ListUsers200JSONResponse{Items: items}, nil
 }
@@ -181,4 +175,16 @@ func filterFrom(userID *int64, category *Category, from, to *openapi_types.Date)
 		f.Category = &c
 	}
 	return f
+}
+
+func toAPIUser(u user.User) User {
+	return User{
+		TelegramId:   u.TelegramID,
+		FirstName:    u.FirstName,
+		Username:     optional(u.Username),
+		IsHead:       u.IsHead,
+		WeeklyReport: u.WeeklyReport,
+		RemovedAt:    u.RemovedAt,
+		CreatedAt:    u.CreatedAt,
+	}
 }

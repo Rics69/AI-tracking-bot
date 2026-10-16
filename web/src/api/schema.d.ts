@@ -105,7 +105,8 @@ export interface paths {
         delete: operations["removeUser"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Изменить настройки участника */
+        patch: operations["updateUser"];
         trace?: never;
     };
     "/invites": {
@@ -252,6 +253,8 @@ export interface components {
             username?: string;
             /** @description Глава семьи */
             is_head: boolean;
+            /** @description Присылать итоги недели в бот по понедельникам */
+            weekly_report: boolean;
             /**
              * Format: date-time
              * @description Когда удалён из семьи; нет — состоит в семье
@@ -262,6 +265,9 @@ export interface components {
         };
         UserList: {
             items: components["schemas"]["User"][];
+        };
+        UserUpdate: {
+            weekly_report: boolean;
         };
         /** @enum {string} */
         InviteStatus: "active" | "used" | "expired" | "revoked";
@@ -560,6 +566,33 @@ export interface operations {
             };
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    updateUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                telegram_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserUpdate"];
+            };
+        };
+        responses: {
+            /** @description Участник */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            404: components["responses"]["NotFound"];
         };
     };
     listInvites: {

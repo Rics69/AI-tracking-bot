@@ -59,7 +59,7 @@ func TestMain(m *testing.M) {
 
 func setup(t *testing.T) (*ExpenseRepository, *UserRepository) {
 	t.Helper()
-	if _, err := testPool.Exec(context.Background(), `TRUNCATE expenses, invites, settings, chat_turns, users RESTART IDENTITY`); err != nil {
+	if _, err := testPool.Exec(context.Background(), `TRUNCATE expenses, invites, settings, chat_turns, report_runs, users RESTART IDENTITY`); err != nil {
 		t.Fatal(err)
 	}
 	users := NewUserRepository(testPool)
@@ -456,5 +456,40 @@ func TestChatHistory(t *testing.T) {
 	}
 	if msgs, _ := h.Messages(ctx, 1); len(msgs) != 0 {
 		t.Errorf("after reset: %d messages", len(msgs))
+	}
+}
+
+func TestWeeklyReportSettingAndRuns(t *testing.T) {
+	_, users := setup(t)
+	ctx := context.Background()
+
+	anna, _ := users.Get(ctx, 1)
+	if !anna.WeeklyReport {
+		t.Error("weekly report must be on by default")
+	}
+	off, err := users.SetWeeklyReport(ctx, 1, false)
+	if err != nil || off.WeeklyReport {
+		t.Fatalf("set off: %+v, %v", off, err)
+	}
+	if _, err := users.SetWeeklyReport(ctx, 404, true); !errors.Is(err, user.ErrNotFound) {
+		t.Errorf("unknown user: err = %v", err)
+	}
+
+	runs := NewReportRunRepository(testPool)
+	week := day(12)
+	if ok, err := runs.Claim(ctx, week, 1); !ok || err != nil {
+		t.Fatalf("first claim: %v %v", ok, err)
+	}
+	if ok, _ := runs.Claim(ctx, week, 1); ok {
+		t.Error("the same report was claimed twice")
+	}
+	if ok, _ := runs.Claim(ctx, week, 2); !ok {
+		t.Error("claims of different members must not conflict")
+	}
+	if err := runs.Release(ctx, week, 1); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := runs.Claim(ctx, week, 1); !ok {
+		t.Error("a released report must be claimable again")
 	}
 }

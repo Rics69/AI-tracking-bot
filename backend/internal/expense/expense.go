@@ -88,6 +88,8 @@ const (
 	SortBySpentAt Sort = iota
 	// SortByCreatedAt orders by creation time, newest first ("the last one I added").
 	SortByCreatedAt
+	// SortByAmount orders by amount, largest first ("the biggest expenses").
+	SortByAmount
 )
 
 // Filter selects expenses for listing and summaries. Zero fields mean "any".

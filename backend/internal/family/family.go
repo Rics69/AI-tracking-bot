@@ -208,6 +208,11 @@ func (s *Service) Remove(ctx context.Context, telegramID int64) error {
 	return s.users.Remove(ctx, telegramID)
 }
 
+// SetWeeklyReport turns the weekly summary in the bot on or off for a member.
+func (s *Service) SetWeeklyReport(ctx context.Context, telegramID int64, on bool) (user.User, error) {
+	return s.users.SetWeeklyReport(ctx, telegramID, on)
+}
+
 // Members lists everyone who has been in the family, removed members included.
 func (s *Service) Members(ctx context.Context) ([]user.User, error) {
 	return s.users.List(ctx)

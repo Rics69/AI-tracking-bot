@@ -16,9 +16,11 @@ type User struct {
 	FirstName  string
 	Username   string // may be empty: not every Telegram account has one
 	IsHead     bool   // the family head cannot be removed from the panel
-	RemovedAt  *time.Time
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	// WeeklyReport: the bot sends the weekly summary (on by default).
+	WeeklyReport bool
+	RemovedAt    *time.Time
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // Active reports whether the user is still a family member.
@@ -38,4 +40,6 @@ type Repository interface {
 	Remove(ctx context.Context, telegramID int64) error
 	// CountActive returns the number of current family members.
 	CountActive(ctx context.Context) (int, error)
+	// SetWeeklyReport turns the weekly summary on or off for a member.
+	SetWeeklyReport(ctx context.Context, telegramID int64, on bool) (User, error)
 }

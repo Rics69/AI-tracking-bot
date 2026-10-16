@@ -45,6 +45,16 @@ const (
 		"Попросите у главы семьи новую ссылку."
 )
 
+// ErrUndeliverable means retrying will not help: the chat does not exist,
+// the user blocked the bot, or the request is invalid.
+var ErrUndeliverable = errors.New("telegram message cannot be delivered")
+
+// permanent reports Telegram errors that a retry cannot fix.
+func permanent(err error) bool {
+	return errors.Is(err, bot.ErrorBadRequest) || errors.Is(err, bot.ErrorForbidden) ||
+		errors.Is(err, bot.ErrorUnauthorized) || errors.Is(err, bot.ErrorNotFound)
+}
+
 // Replier is the agent.
 type Replier interface {
 	Reply(ctx context.Context, caller agent.Caller, text string) (string, error)
@@ -206,6 +216,12 @@ func (h *Handler) keepTyping(ctx context.Context, s Sender, chatID int64) (stop 
 }
 
 func (h *Handler) send(ctx context.Context, s Sender, chatID int64, text string) {
+	_ = h.Send(ctx, s, chatID, text) // logged and counted inside
+}
+
+// Send delivers a plain-text message, retrying network failures. It is used
+// for replies and for messages the bot starts itself (weekly reports).
+func (h *Handler) Send(ctx context.Context, s Sender, chatID int64, text string) error {
 	if r := []rune(text); len(r) > maxMessageRunes {
 		text = string(r[:maxMessageRunes-1]) + "…"
 	}
@@ -222,12 +238,17 @@ func (h *Handler) send(ctx context.Context, s Sender, chatID int64, text string)
 	for attempt := 1; ; attempt++ {
 		_, err := s.SendMessage(ctx, params)
 		if err == nil {
-			return
+			return nil
+		}
+		if permanent(err) {
+			sendFailuresTotal.Inc()
+			h.log.WarnContext(ctx, "message undeliverable", "chat_id", chatID, "err", err)
+			return fmt.Errorf("%w: %w", ErrUndeliverable, err)
 		}
 		if attempt == sendAttempts {
 			sendFailuresTotal.Inc()
 			h.log.ErrorContext(ctx, "send message", "chat_id", chatID, "attempts", attempt, "err", err)
-			return
+			return err
 		}
 		sendRetriesTotal.Inc()
 		h.log.WarnContext(ctx, "send message retry", "chat_id", chatID, "attempt", attempt, "err", err)
@@ -237,7 +258,7 @@ func (h *Handler) send(ctx context.Context, s Sender, chatID int64, text string)
 		case <-ctx.Done():
 			sendFailuresTotal.Inc()
 			h.log.ErrorContext(ctx, "send message", "chat_id", chatID, "err", ctx.Err())
-			return
+			return ctx.Err()
 		}
 	}
 }

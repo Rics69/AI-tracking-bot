@@ -18,6 +18,7 @@
 - `backend/internal/family` — членство: приглашения (в БД только хэш кода), вход через `/start <код>`, проверка доступа к боту. `ALLOWED_TELEGRAM_IDS` лишь создаёт глав семьи при старте.
 - `backend/internal/storage/postgres` — репозитории на pgx, миграции goose (вшиты через embed, применяются при старте).
 - `backend/internal/storage/memory` — in-memory репозиторий трат с той же семантикой (для eval).
+- `backend/internal/report` — итоги недели: собираются кодом (не LLM), отправка по понедельникам 10:00, `report_runs` гарантирует одну отправку. Постоянные ошибки Telegram (`telegram.ErrUndeliverable`) не ретраятся.
 - `backend/internal/metrics` — сервер `/metrics` на внутреннем порту (`METRICS_ADDR`, по умолчанию `:9091`); сами метрики объявлены в пакетах, которые их порождают (`llm`, `agent`, `telegram`, `httpapi`).
 - `monitoring/` — конфиг Prometheus, правила алертов, дашборд Grafana (подхватывается при старте).
 - `backend/internal/httpapi` — REST: `api.gen.go` генерируется из `backend/api/openapi.yaml`, руками пишется `server.go`.
