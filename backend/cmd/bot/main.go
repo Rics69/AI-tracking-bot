@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/go-telegram/bot"
 
@@ -56,8 +57,17 @@ func run() error {
 		return err
 	}
 	expenses := expense.NewService(postgres.NewExpenseRepository(pool), cfg.Location)
-	assistant := agent.New(client, expenses, expenses,
-		agent.NewHistory(cfg.HistoryTurns, cfg.HistoryTTL),
+	// History lives in PostgreSQL: a restart or redeploy does not cut dialogs short.
+	history := postgres.NewChatHistoryRepository(pool, cfg.HistoryTurns, cfg.HistoryTTL)
+	go every(ctx, time.Hour, func() {
+		n, err := history.DeleteOlderThan(ctx, cfg.HistoryRetention)
+		if err != nil {
+			log.Warn("history cleanup", "err", err)
+		} else if n > 0 {
+			log.Info("history cleanup", "deleted_turns", n)
+		}
+	})
+	assistant := agent.New(client, expenses, expenses, history,
 		agent.Config{Location: cfg.Location, MaxSteps: cfg.MaxSteps},
 		log.With("component", "agent"))
 	members := family.NewService(postgres.NewUserRepository(pool), postgres.NewInviteRepository(pool),
@@ -89,4 +99,18 @@ func run() error {
 	b.Start(ctx) // blocks until ctx is cancelled
 	log.Info("bot stopped")
 	return nil
+}
+
+// every runs fn now and then at each interval until ctx is cancelled.
+func every(ctx context.Context, interval time.Duration, fn func()) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		fn()
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
 }

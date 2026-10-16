@@ -55,7 +55,9 @@ type GigaChat struct {
 type Agent struct {
 	HistoryTurns int           `env:"AGENT_HISTORY_TURNS" envDefault:"6"`
 	HistoryTTL   time.Duration `env:"AGENT_HISTORY_TTL" envDefault:"30m"`
-	MaxSteps     int           `env:"AGENT_MAX_STEPS" envDefault:"6"`
+	// HistoryRetention: older turns are deleted from the database.
+	HistoryRetention time.Duration `env:"AGENT_HISTORY_RETENTION" envDefault:"168h"`
+	MaxSteps         int           `env:"AGENT_MAX_STEPS" envDefault:"6"`
 }
 
 // Bot is the configuration of the Telegram bot.

@@ -278,7 +278,7 @@ func TestGivesUpAfterMaxSteps(t *testing.T) {
 	if reply != replyGaveUp || len(model.requests) != DefaultMaxSteps {
 		t.Errorf("reply = %q after %d requests", reply, len(model.requests))
 	}
-	if h := a.history.Messages(anna.UserID); len(h) != 0 {
+	if h := must(a.history.Messages(context.Background(), anna.UserID)); len(h) != 0 {
 		t.Errorf("unfinished turn saved to history: %d messages", len(h))
 	}
 }
@@ -301,8 +301,8 @@ func TestHistoryCarriesOverTurns(t *testing.T) {
 		t.Errorf("second request messages = %+v", msgs)
 	}
 
-	a.Reset(anna.UserID)
-	if len(a.history.Messages(anna.UserID)) != 0 {
+	a.Reset(context.Background(), anna.UserID)
+	if len(must(a.history.Messages(context.Background(), anna.UserID))) != 0 {
 		t.Error("history not reset")
 	}
 }

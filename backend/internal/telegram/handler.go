@@ -48,7 +48,7 @@ const (
 // Replier is the agent.
 type Replier interface {
 	Reply(ctx context.Context, caller agent.Caller, text string) (string, error)
-	Reset(userID int64)
+	Reset(ctx context.Context, userID int64)
 }
 
 // Family decides who may talk to the bot; *family.Service implements it.
@@ -138,7 +138,7 @@ func (h *Handler) handle(ctx context.Context, s Sender, update *models.Update) {
 		return
 	case isCommand(text, "/start"), isCommand(text, "/help"):
 		countMessage(msgHelp)
-		h.agent.Reset(from.ID)
+		h.agent.Reset(ctx, from.ID)
 		h.send(ctx, s, chatID, replyHelp)
 		return
 	case len([]rune(text)) > maxInputRunes:

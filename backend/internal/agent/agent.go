@@ -44,14 +44,14 @@ type Agent struct {
 	llm      llm.Client
 	expenses Expenses
 	clock    Clock
-	history  *History
+	history  HistoryStore
 	loc      *time.Location
 	maxSteps int
 	log      *slog.Logger
 }
 
 // New creates an agent.
-func New(client llm.Client, expenses Expenses, clock Clock, history *History, cfg Config, log *slog.Logger) *Agent {
+func New(client llm.Client, expenses Expenses, clock Clock, history HistoryStore, cfg Config, log *slog.Logger) *Agent {
 	if cfg.MaxSteps <= 0 {
 		cfg.MaxSteps = DefaultMaxSteps
 	}
@@ -62,7 +62,11 @@ func New(client llm.Client, expenses Expenses, clock Clock, history *History, cf
 }
 
 // Reset forgets the conversation with the caller.
-func (a *Agent) Reset(userID int64) { a.history.Reset(userID) }
+func (a *Agent) Reset(ctx context.Context, userID int64) {
+	if err := a.history.Reset(ctx, userID); err != nil {
+		a.log.WarnContext(ctx, "reset history", "user_id", userID, "err", err)
+	}
+}
 
 // Reply handles one user message and returns the text to send back.
 func (a *Agent) Reply(ctx context.Context, caller Caller, text string) (string, error) {
@@ -72,7 +76,13 @@ func (a *Agent) Reply(ctx context.Context, caller Caller, text string) (string, 
 	today := a.clock.Today()
 	tools := toolDefs(today)
 	messages := []llm.Message{{Role: llm.RoleSystem, Content: systemPrompt(today, a.loc, caller.Name)}}
-	messages = append(messages, a.history.Messages(caller.UserID)...)
+	// Without history the agent still works, only follow-ups lose context:
+	// a storage hiccup must not cost the user their reply.
+	history, err := a.history.Messages(ctx, caller.UserID)
+	if err != nil {
+		a.log.WarnContext(ctx, "load history", "user_id", caller.UserID, "err", err)
+	}
+	messages = append(messages, history...)
 	messages = append(messages, userMsg)
 	turn := []llm.Message{userMsg}
 
@@ -98,7 +108,9 @@ func (a *Agent) Reply(ctx context.Context, caller Caller, text string) (string, 
 		turn = append(turn, msg)
 
 		if msg.ToolCall == nil {
-			a.history.Append(caller.UserID, turn)
+			if err := a.history.Append(ctx, caller.UserID, turn); err != nil {
+				a.log.WarnContext(ctx, "save history", "user_id", caller.UserID, "err", err)
+			}
 			a.log.InfoContext(ctx, "agent reply",
 				"user_id", caller.UserID, "steps", step+1, "duration", time.Since(start).Round(time.Millisecond),
 				"prompt_tokens", usage.PromptTokens, "cached_tokens", usage.CachedTokens,

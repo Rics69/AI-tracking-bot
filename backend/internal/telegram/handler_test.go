@@ -52,7 +52,7 @@ func (f *fakeAgent) Reply(_ context.Context, c agent.Caller, _ string) (string, 
 	return f.reply, f.err
 }
 
-func (f *fakeAgent) Reset(id int64) { f.resets = append(f.resets, id) }
+func (f *fakeAgent) Reset(_ context.Context, id int64) { f.resets = append(f.resets, id) }
 
 // fakeFamily admits members, records who was checked and accepts one invite code.
 type fakeFamily struct {

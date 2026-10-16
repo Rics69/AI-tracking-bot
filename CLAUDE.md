@@ -12,7 +12,7 @@
   - `cmd/eval` — eval агента на настоящем LLM: сценарии в `backend/eval/cases.yaml`, каждый на чистом in-memory хранилище.
 - `backend/internal/expense` — домен трат: сущности, валидация, `Service`. Без SQL и HTTP.
 - `backend/internal/llm` — интерфейс модели, не зависящий от провайдера; `llm/gigachat` — клиент GigaChat (OAuth, сертификат Минцифры, function calling); `llm/provider` — выбор провайдера по `LLM_PROVIDER`.
-- `backend/internal/agent` — агент: тулы над `expense.Service`, системный промпт, цикл tool calling, история диалога.
+- `backend/internal/agent` — агент: тулы над `expense.Service`, системный промпт, цикл tool calling. История диалога — интерфейс `HistoryStore`: в боте PostgreSQL (`postgres.ChatHistoryRepository`, ход целиком в JSONB), в eval и `cmd/chat` — память.
 - `backend/internal/telegram` — обработчик апдейтов: белый список, очередь по пользователю, «печатает…».
 - `backend/internal/user` — члены семьи (Telegram-пользователи), мягкое удаление через `removed_at`.
 - `backend/internal/family` — членство: приглашения (в БД только хэш кода), вход через `/start <код>`, проверка доступа к боту. `ALLOWED_TELEGRAM_IDS` лишь создаёт глав семьи при старте.

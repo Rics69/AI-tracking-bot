@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"os"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/expense"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/llm"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
 
@@ -57,7 +59,7 @@ func TestMain(m *testing.M) {
 
 func setup(t *testing.T) (*ExpenseRepository, *UserRepository) {
 	t.Helper()
-	if _, err := testPool.Exec(context.Background(), `TRUNCATE expenses, invites, settings, users RESTART IDENTITY`); err != nil {
+	if _, err := testPool.Exec(context.Background(), `TRUNCATE expenses, invites, settings, chat_turns, users RESTART IDENTITY`); err != nil {
 		t.Fatal(err)
 	}
 	users := NewUserRepository(testPool)
@@ -389,5 +391,70 @@ func TestSettings(t *testing.T) {
 	}
 	if v, ok, _ := s.Get(ctx, "bot"); !ok || v != "NewBot" {
 		t.Errorf("value = %q", v)
+	}
+}
+
+func TestChatHistory(t *testing.T) {
+	setup(t)
+	ctx := context.Background()
+	h := NewChatHistoryRepository(testPool, 2, 30*time.Minute)
+	turn := func(text string) []llm.Message {
+		return []llm.Message{
+			{Role: llm.RoleUser, Content: text},
+			{Role: llm.RoleAssistant, StateID: "s1", ToolCall: &llm.ToolCall{Name: "add_expense", Arguments: json.RawMessage(`{"amount":350}`)}},
+			{Role: llm.RoleTool, ToolName: "add_expense", Content: `{"added":{"id":1}}`},
+			{Role: llm.RoleAssistant, Content: "Записано"},
+		}
+	}
+	for _, text := range []string{"первый", "второй", "третий"} {
+		if err := h.Append(ctx, 1, turn(text)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	msgs, err := h.Messages(ctx, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Only the last 2 turns, oldest first, with tool calls intact.
+	if len(msgs) != 8 || msgs[0].Content != "второй" || msgs[4].Content != "третий" {
+		t.Fatalf("messages = %+v", msgs)
+	}
+	call := msgs[1]
+	var args map[string]any
+	if call.ToolCall != nil {
+		_ = json.Unmarshal(call.ToolCall.Arguments, &args) // JSONB may reformat, the content must match
+	}
+	if call.ToolCall == nil || call.ToolCall.Name != "add_expense" || args["amount"] != 350.0 ||
+		call.StateID != "s1" || msgs[2].ToolName != "add_expense" {
+		t.Errorf("tool call round trip: %+v / %+v", call, msgs[2])
+	}
+	if other, _ := h.Messages(ctx, 2); len(other) != 0 {
+		t.Errorf("history leaks between users: %d messages", len(other))
+	}
+
+	// An idle conversation starts from scratch.
+	if _, err := testPool.Exec(ctx, `UPDATE chat_turns SET created_at = now() - interval '31 minutes'`); err != nil {
+		t.Fatal(err)
+	}
+	if msgs, _ := h.Messages(ctx, 1); len(msgs) != 0 {
+		t.Errorf("expired conversation returned %d messages", len(msgs))
+	}
+
+	// Retention removes old turns; reset removes the rest.
+	if err := h.Append(ctx, 1, turn("свежий")); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := h.DeleteOlderThan(ctx, time.Hour); err != nil || n != 0 {
+		t.Errorf("deleted %d turns younger than an hour, err = %v", n, err)
+	}
+	if n, _ := h.DeleteOlderThan(ctx, 10*time.Minute); n != 3 {
+		t.Errorf("deleted %d old turns, want 3", n)
+	}
+	if err := h.Reset(ctx, 1); err != nil {
+		t.Fatal(err)
+	}
+	if msgs, _ := h.Messages(ctx, 1); len(msgs) != 0 {
+		t.Errorf("after reset: %d messages", len(msgs))
 	}
 }
