@@ -13,6 +13,7 @@ import { ExpenseFormDialog } from "./expense-form-dialog";
 import { ExpensesTable } from "./expenses-table";
 import { FiltersBar } from "./filters-bar";
 import { activeMembers, memberName } from "./member";
+import { SpendingChart } from "./spending-chart";
 import { SummaryCards } from "./summary-cards";
 import { useFilters } from "./use-filters";
 
@@ -95,6 +96,7 @@ export function Dashboard() {
             categoryLabel={categoryLabel}
             periodLabel={PERIODS[filters.period]}
           />
+          <SpendingChart query={query} categoryLabel={categoryLabel} />
           <ExpensesTable
             items={expenses.data?.items}
             total={expenses.data?.total ?? 0}

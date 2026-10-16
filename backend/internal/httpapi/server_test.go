@@ -59,6 +59,15 @@ func (f *fakeExpenses) List(_ context.Context, s expense.Scope, flt expense.Filt
 	return expense.Page{Items: []expense.Expense{sample}, Total: 1, Sum: sample.Amount}, f.err
 }
 
+func (f *fakeExpenses) TimeSeries(_ context.Context, s expense.Scope, flt expense.Filter, b expense.Bucket) ([]expense.Point, error) {
+	f.lastScope, f.lastFilter = s, flt
+	return []expense.Point{
+		{Start: time.Date(2026, 10, 12, 0, 0, 0, 0, time.UTC), Sum: decimal.NewFromInt(300), Count: 1,
+			Categories: []expense.CategoryTotal{{Category: expense.CategoryFood, Sum: decimal.NewFromInt(300), Count: 1}}},
+		{Start: time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC), Sum: decimal.Zero, Categories: []expense.CategoryTotal{}},
+	}, f.err
+}
+
 func (f *fakeExpenses) Summary(_ context.Context, s expense.Scope, flt expense.Filter) (expense.Summary, error) {
 	f.lastScope, f.lastFilter = s, flt
 	return expense.Summary{}, f.err
@@ -303,5 +312,24 @@ func TestUpdateUserWeeklyReport(t *testing.T) {
 	status, body := do(t, newTestHandler(&fakeExpenses{}, nil), http.MethodPatch, "/api/v1/users/1", `{"weekly_report":false}`)
 	if status != 200 || body["weekly_report"] != false || body["telegram_id"] != float64(1) {
 		t.Errorf("status = %d body = %v", status, body)
+	}
+}
+
+func TestTimeSeries(t *testing.T) {
+	f := &fakeExpenses{}
+	status, body := do(t, newTestHandler(f, nil), http.MethodGet, "/api/v1/expenses/timeseries?bucket=week&user_id=1", "")
+	items, _ := body["items"].([]any)
+	if status != 200 || body["bucket"] != "week" || len(items) != 2 {
+		t.Fatalf("status = %d body = %v", status, body)
+	}
+	first := items[0].(map[string]any)
+	if first["start"] != "2026-10-12" || first["sum"] != float64(300) || len(first["categories"].([]any)) != 1 {
+		t.Errorf("first point = %v", first)
+	}
+	if *f.lastFilter.UserID != 1 {
+		t.Errorf("filter = %+v", f.lastFilter)
+	}
+	if status, _ := do(t, newTestHandler(f, nil), http.MethodGet, "/api/v1/expenses/timeseries", ""); status != 400 {
+		t.Errorf("missing bucket: status = %d", status)
 	}
 }

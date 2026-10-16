@@ -4,677 +4,750 @@
  */
 
 export interface paths {
-    "/expenses": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Список трат с фильтрами
-         * @description Возвращает страницу трат и итоги (количество и сумму) по всей выборке.
-         */
-        get: operations["listExpenses"];
-        put?: never;
-        /** Создать трату */
-        post: operations["createExpense"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+  "/expenses": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/expenses/summary": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Суммы по категориям */
-        get: operations["getExpenseSummary"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Список трат с фильтрами
+     * @description Возвращает страницу трат и итоги (количество и сумму) по всей выборке.
+     */
+    get: operations["listExpenses"];
+    put?: never;
+    /** Создать трату */
+    post: operations["createExpense"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/expenses/summary": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/expenses/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        /** Получить трату */
-        get: operations["getExpense"];
-        put?: never;
-        post?: never;
-        /** Удалить трату */
-        delete: operations["deleteExpense"];
-        options?: never;
-        head?: never;
-        /**
-         * Изменить трату
-         * @description Меняет только переданные поля.
-         */
-        patch: operations["updateExpense"];
-        trace?: never;
+    /** Суммы по категориям */
+    get: operations["getExpenseSummary"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/expenses/timeseries": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/users": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Члены семьи
-         * @description Все, кто состоял в семье: сначала текущие (глава первым), затем удалённые —
-         *     их траты остаются в истории.
-         */
-        get: operations["listUsers"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Траты по дням, неделям или месяцам
+     * @description Сумма за каждый интервал с разбивкой по категориям. Интервалы без трат
+     *     присутствуют с нулём. Без `from` ряд начинается с первой подходящей траты,
+     *     без `to` — заканчивается сегодня. Не больше 400 точек.
+     */
+    get: operations["getExpenseTimeSeries"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/expenses/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
     };
-    "/users/{telegram_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Удалить из семьи
-         * @description Бот перестаёт отвечать человеку, его траты остаются. Вернуть можно новым приглашением.
-         *     Главу семьи удалить нельзя.
-         */
-        delete: operations["removeUser"];
-        options?: never;
-        head?: never;
-        /** Изменить настройки участника */
-        patch: operations["updateUser"];
-        trace?: never;
+    /** Получить трату */
+    get: operations["getExpense"];
+    put?: never;
+    post?: never;
+    /** Удалить трату */
+    delete: operations["deleteExpense"];
+    options?: never;
+    head?: never;
+    /**
+     * Изменить трату
+     * @description Меняет только переданные поля.
+     */
+    patch: operations["updateExpense"];
+    trace?: never;
+  };
+  "/users": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/invites": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Приглашения за последний месяц */
-        get: operations["listInvites"];
-        put?: never;
-        /**
-         * Создать приглашение
-         * @description Одноразовая ссылка на бота на 7 дней. Ссылка возвращается только здесь:
-         *     в базе хранится лишь хэш кода.
-         */
-        post: operations["createInvite"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Члены семьи
+     * @description Все, кто состоял в семье: сначала текущие (глава первым), затем удалённые —
+     *     их траты остаются в истории.
+     */
+    get: operations["listUsers"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/users/{telegram_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/invites/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Отозвать приглашение */
-        delete: operations["revokeInvite"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Удалить из семьи
+     * @description Бот перестаёт отвечать человеку, его траты остаются. Вернуть можно новым приглашением.
+     *     Главу семьи удалить нельзя.
+     */
+    delete: operations["removeUser"];
+    options?: never;
+    head?: never;
+    /** Изменить настройки участника */
+    patch: operations["updateUser"];
+    trace?: never;
+  };
+  "/invites": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/categories": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Справочник категорий */
-        get: operations["listCategories"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** Приглашения за последний месяц */
+    get: operations["listInvites"];
+    put?: never;
+    /**
+     * Создать приглашение
+     * @description Одноразовая ссылка на бота на 7 дней. Ссылка возвращается только здесь:
+     *     в базе хранится лишь хэш кода.
+     */
+    post: operations["createInvite"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/invites/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Отозвать приглашение */
+    delete: operations["revokeInvite"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/categories": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Справочник категорий */
+    get: operations["listCategories"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
-    schemas: {
-        /**
-         * @description Сумма в рублях, не более двух знаков после запятой.
-         * @example 350.5
-         */
-        Money: number;
-        /** @enum {string} */
-        Category: "food" | "transport" | "housing" | "entertainment" | "health" | "shopping" | "other";
-        Expense: {
-            /**
-             * Format: int64
-             * @example 42
-             */
-            id: number;
-            /**
-             * Format: int64
-             * @description Telegram ID владельца
-             * @example 123456789
-             */
-            user_id: number;
-            amount: components["schemas"]["Money"];
-            category: components["schemas"]["Category"];
-            /**
-             * Format: date
-             * @example 2026-10-15
-             */
-            spent_at: string;
-            /** @example кофе */
-            comment?: string;
-            /** Format: date-time */
-            created_at: string;
-            /** Format: date-time */
-            updated_at: string;
-        };
-        ExpenseCreate: {
-            /** Format: int64 */
-            user_id: number;
-            amount: components["schemas"]["Money"];
-            category: components["schemas"]["Category"];
-            /**
-             * Format: date
-             * @description По умолчанию — сегодня в таймзоне семьи.
-             */
-            spent_at?: string;
-            comment?: string;
-        };
-        /** @description Передаются только изменяемые поля. Пустой `comment` удаляет комментарий. */
-        ExpenseUpdate: {
-            /** Format: int64 */
-            user_id?: number;
-            amount?: components["schemas"]["Money"];
-            category?: components["schemas"]["Category"];
-            /** Format: date */
-            spent_at?: string;
-            comment?: string;
-        };
-        ExpenseList: {
-            items: components["schemas"]["Expense"][];
-            /** @description Количество трат во всей выборке */
-            total: number;
-            sum: components["schemas"]["Money"];
-        };
-        CategoryTotal: {
-            category: components["schemas"]["Category"];
-            sum: components["schemas"]["Money"];
-            count: number;
-        };
-        Summary: {
-            /** @description Категории по убыванию суммы */
-            items: components["schemas"]["CategoryTotal"][];
-            sum: components["schemas"]["Money"];
-            count: number;
-        };
-        User: {
-            /**
-             * Format: int64
-             * @example 123456789
-             */
-            telegram_id: number;
-            /** @example Данил */
-            first_name: string;
-            /** @example rics69 */
-            username?: string;
-            /** @description Глава семьи */
-            is_head: boolean;
-            /** @description Присылать итоги недели в бот по понедельникам */
-            weekly_report: boolean;
-            /**
-             * Format: date-time
-             * @description Когда удалён из семьи; нет — состоит в семье
-             */
-            removed_at?: string;
-            /** Format: date-time */
-            created_at: string;
-        };
-        UserList: {
-            items: components["schemas"]["User"][];
-        };
-        UserUpdate: {
-            weekly_report: boolean;
-        };
-        /** @enum {string} */
-        InviteStatus: "active" | "used" | "expired" | "revoked";
-        Invite: {
-            /** Format: int64 */
-            id: number;
-            status: components["schemas"]["InviteStatus"];
-            /** Format: date-time */
-            created_at: string;
-            /** Format: date-time */
-            expires_at: string;
-            /** Format: date-time */
-            used_at?: string;
-            /**
-             * Format: int64
-             * @description Telegram ID присоединившегося
-             */
-            used_by?: number;
-        };
-        CreatedInvite: {
-            /** Format: int64 */
-            id: number;
-            status: components["schemas"]["InviteStatus"];
-            /** Format: date-time */
-            created_at: string;
-            /** Format: date-time */
-            expires_at: string;
-            /**
-             * @description Ссылка для члена семьи; открывает бота и добавляет в семью
-             * @example https://t.me/FamilyExpensesBot?start=Xk9q2LmPz0aB7cD1eF3gHw
-             */
-            link: string;
-        };
-        InviteList: {
-            items: components["schemas"]["Invite"][];
-        };
-        CategoryInfo: {
-            code: components["schemas"]["Category"];
-            /** @example еда */
-            label: string;
-        };
-        CategoryList: {
-            items: components["schemas"]["CategoryInfo"][];
-        };
-        Error: {
-            error: components["schemas"]["ErrorDetail"];
-        };
-        ErrorDetail: {
-            /** @enum {string} */
-            code: "bad_request" | "validation_error" | "not_found" | "unknown_user" | "conflict" | "internal";
-            message: string;
-            /** @description Поле с ошибкой валидации */
-            field?: string;
-        };
+  schemas: {
+    /**
+     * @description Сумма в рублях, не более двух знаков после запятой.
+     * @example 350.5
+     */
+    Money: number;
+    /** @enum {string} */
+    Category: "food" | "transport" | "housing" | "entertainment" | "health" | "shopping" | "other";
+    Expense: {
+      /**
+       * Format: int64
+       * @example 42
+       */
+      id: number;
+      /**
+       * Format: int64
+       * @description Telegram ID владельца
+       * @example 123456789
+       */
+      user_id: number;
+      amount: components["schemas"]["Money"];
+      category: components["schemas"]["Category"];
+      /**
+       * Format: date
+       * @example 2026-10-15
+       */
+      spent_at: string;
+      /** @example кофе */
+      comment?: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
     };
-    responses: {
-        /** @description Некорректный запрос */
-        BadRequest: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/json": components["schemas"]["Error"];
-            };
-        };
-        /** @description Не найдено */
-        NotFound: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/json": components["schemas"]["Error"];
-            };
-        };
-        /** @description Действие невозможно в текущем состоянии */
-        Conflict: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/json": components["schemas"]["Error"];
-            };
-        };
+    ExpenseCreate: {
+      /** Format: int64 */
+      user_id: number;
+      amount: components["schemas"]["Money"];
+      category: components["schemas"]["Category"];
+      /**
+       * Format: date
+       * @description По умолчанию — сегодня в таймзоне семьи.
+       */
+      spent_at?: string;
+      comment?: string;
     };
-    parameters: {
-        /** @description Telegram ID члена семьи. */
-        UserIDQuery: number;
-        CategoryQuery: components["schemas"]["Category"];
-        /** @description Начало периода включительно. */
-        FromQuery: string;
-        /** @description Конец периода включительно. */
-        ToQuery: string;
+    /** @description Передаются только изменяемые поля. Пустой `comment` удаляет комментарий. */
+    ExpenseUpdate: {
+      /** Format: int64 */
+      user_id?: number;
+      amount?: components["schemas"]["Money"];
+      category?: components["schemas"]["Category"];
+      /** Format: date */
+      spent_at?: string;
+      comment?: string;
     };
-    requestBodies: never;
-    headers: never;
-    pathItems: never;
+    ExpenseList: {
+      items: components["schemas"]["Expense"][];
+      /** @description Количество трат во всей выборке */
+      total: number;
+      sum: components["schemas"]["Money"];
+    };
+    CategoryTotal: {
+      category: components["schemas"]["Category"];
+      sum: components["schemas"]["Money"];
+      count: number;
+    };
+    /**
+     * @description Интервал; недели начинаются с понедельника
+     * @enum {string}
+     */
+    Bucket: "day" | "week" | "month";
+    TimePoint: {
+      /**
+       * Format: date
+       * @description Первый день интервала
+       */
+      start: string;
+      sum: components["schemas"]["Money"];
+      count: number;
+      /** @description Категории по убыванию суммы */
+      categories: components["schemas"]["CategoryTotal"][];
+    };
+    TimeSeries: {
+      bucket: components["schemas"]["Bucket"];
+      items: components["schemas"]["TimePoint"][];
+    };
+    Summary: {
+      /** @description Категории по убыванию суммы */
+      items: components["schemas"]["CategoryTotal"][];
+      sum: components["schemas"]["Money"];
+      count: number;
+    };
+    User: {
+      /**
+       * Format: int64
+       * @example 123456789
+       */
+      telegram_id: number;
+      /** @example Данил */
+      first_name: string;
+      /** @example rics69 */
+      username?: string;
+      /** @description Глава семьи */
+      is_head: boolean;
+      /** @description Присылать итоги недели в бот по понедельникам */
+      weekly_report: boolean;
+      /**
+       * Format: date-time
+       * @description Когда удалён из семьи; нет — состоит в семье
+       */
+      removed_at?: string;
+      /** Format: date-time */
+      created_at: string;
+    };
+    UserList: {
+      items: components["schemas"]["User"][];
+    };
+    UserUpdate: {
+      weekly_report: boolean;
+    };
+    /** @enum {string} */
+    InviteStatus: "active" | "used" | "expired" | "revoked";
+    Invite: {
+      /** Format: int64 */
+      id: number;
+      status: components["schemas"]["InviteStatus"];
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      expires_at: string;
+      /** Format: date-time */
+      used_at?: string;
+      /**
+       * Format: int64
+       * @description Telegram ID присоединившегося
+       */
+      used_by?: number;
+    };
+    CreatedInvite: {
+      /** Format: int64 */
+      id: number;
+      status: components["schemas"]["InviteStatus"];
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      expires_at: string;
+      /**
+       * @description Ссылка для члена семьи; открывает бота и добавляет в семью
+       * @example https://t.me/FamilyExpensesBot?start=Xk9q2LmPz0aB7cD1eF3gHw
+       */
+      link: string;
+    };
+    InviteList: {
+      items: components["schemas"]["Invite"][];
+    };
+    CategoryInfo: {
+      code: components["schemas"]["Category"];
+      /** @example еда */
+      label: string;
+    };
+    CategoryList: {
+      items: components["schemas"]["CategoryInfo"][];
+    };
+    Error: {
+      error: components["schemas"]["ErrorDetail"];
+    };
+    ErrorDetail: {
+      /** @enum {string} */
+      code:
+        "bad_request" | "validation_error" | "not_found" | "unknown_user" | "conflict" | "internal";
+      message: string;
+      /** @description Поле с ошибкой валидации */
+      field?: string;
+    };
+  };
+  responses: {
+    /** @description Некорректный запрос */
+    BadRequest: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["Error"];
+      };
+    };
+    /** @description Не найдено */
+    NotFound: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["Error"];
+      };
+    };
+    /** @description Действие невозможно в текущем состоянии */
+    Conflict: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["Error"];
+      };
+    };
+  };
+  parameters: {
+    /** @description Telegram ID члена семьи. */
+    UserIDQuery: number;
+    CategoryQuery: components["schemas"]["Category"];
+    /** @description Начало периода включительно. */
+    FromQuery: string;
+    /** @description Конец периода включительно. */
+    ToQuery: string;
+  };
+  requestBodies: never;
+  headers: never;
+  pathItems: never;
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    listExpenses: {
-        parameters: {
-            query?: {
-                /** @description Telegram ID члена семьи. */
-                user_id?: components["parameters"]["UserIDQuery"];
-                category?: components["parameters"]["CategoryQuery"];
-                /** @description Начало периода включительно. */
-                from?: components["parameters"]["FromQuery"];
-                /** @description Конец периода включительно. */
-                to?: components["parameters"]["ToQuery"];
-                /** @description Поиск по подстроке комментария (без учёта регистра). */
-                q?: string;
-                limit?: number;
-                offset?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Страница трат */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ExpenseList"];
-                };
-            };
-            400: components["responses"]["BadRequest"];
-        };
+  listExpenses: {
+    parameters: {
+      query?: {
+        /** @description Telegram ID члена семьи. */
+        user_id?: components["parameters"]["UserIDQuery"];
+        category?: components["parameters"]["CategoryQuery"];
+        /** @description Начало периода включительно. */
+        from?: components["parameters"]["FromQuery"];
+        /** @description Конец периода включительно. */
+        to?: components["parameters"]["ToQuery"];
+        /** @description Поиск по подстроке комментария (без учёта регистра). */
+        q?: string;
+        limit?: number;
+        offset?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    createExpense: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Страница трат */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ExpenseCreate"];
-            };
+        content: {
+          "application/json": components["schemas"]["ExpenseList"];
         };
-        responses: {
-            /** @description Созданная трата */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Expense"];
-                };
-            };
-            400: components["responses"]["BadRequest"];
-        };
+      };
+      400: components["responses"]["BadRequest"];
     };
-    getExpenseSummary: {
-        parameters: {
-            query?: {
-                /** @description Telegram ID члена семьи. */
-                user_id?: components["parameters"]["UserIDQuery"];
-                category?: components["parameters"]["CategoryQuery"];
-                /** @description Начало периода включительно. */
-                from?: components["parameters"]["FromQuery"];
-                /** @description Конец периода включительно. */
-                to?: components["parameters"]["ToQuery"];
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Траты, сгруппированные по категориям */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Summary"];
-                };
-            };
-            400: components["responses"]["BadRequest"];
-        };
+  };
+  createExpense: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    getExpense: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Трата */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Expense"];
-                };
-            };
-            404: components["responses"]["NotFound"];
-        };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ExpenseCreate"];
+      };
     };
-    deleteExpense: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
+    responses: {
+      /** @description Созданная трата */
+      201: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Трата удалена */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            404: components["responses"]["NotFound"];
+        content: {
+          "application/json": components["schemas"]["Expense"];
         };
+      };
+      400: components["responses"]["BadRequest"];
     };
-    updateExpense: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ExpenseUpdate"];
-            };
-        };
-        responses: {
-            /** @description Изменённая трата */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Expense"];
-                };
-            };
-            400: components["responses"]["BadRequest"];
-            404: components["responses"]["NotFound"];
-        };
+  };
+  getExpenseSummary: {
+    parameters: {
+      query?: {
+        /** @description Telegram ID члена семьи. */
+        user_id?: components["parameters"]["UserIDQuery"];
+        category?: components["parameters"]["CategoryQuery"];
+        /** @description Начало периода включительно. */
+        from?: components["parameters"]["FromQuery"];
+        /** @description Конец периода включительно. */
+        to?: components["parameters"]["ToQuery"];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    listUsers: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Траты, сгруппированные по категориям */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Список членов семьи */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserList"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["Summary"];
         };
+      };
+      400: components["responses"]["BadRequest"];
     };
-    removeUser: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                telegram_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Удалён */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            404: components["responses"]["NotFound"];
-            409: components["responses"]["Conflict"];
-        };
+  };
+  getExpenseTimeSeries: {
+    parameters: {
+      query: {
+        bucket: components["schemas"]["Bucket"];
+        /** @description Telegram ID члена семьи. */
+        user_id?: components["parameters"]["UserIDQuery"];
+        category?: components["parameters"]["CategoryQuery"];
+        /** @description Начало периода включительно. */
+        from?: components["parameters"]["FromQuery"];
+        /** @description Конец периода включительно. */
+        to?: components["parameters"]["ToQuery"];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    updateUser: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                telegram_id: number;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Ряд по интервалам */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UserUpdate"];
-            };
+        content: {
+          "application/json": components["schemas"]["TimeSeries"];
         };
-        responses: {
-            /** @description Участник */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["User"];
-                };
-            };
-            404: components["responses"]["NotFound"];
-        };
+      };
+      400: components["responses"]["BadRequest"];
     };
-    listInvites: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Приглашения, новые первыми */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["InviteList"];
-                };
-            };
-        };
+  };
+  getExpense: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
     };
-    createInvite: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Трата */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Приглашение со ссылкой */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CreatedInvite"];
-                };
-            };
-            409: components["responses"]["Conflict"];
+        content: {
+          "application/json": components["schemas"]["Expense"];
         };
+      };
+      404: components["responses"]["NotFound"];
     };
-    revokeInvite: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Отозвано */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            404: components["responses"]["NotFound"];
-        };
+  };
+  deleteExpense: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
     };
-    listCategories: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Трата удалена */
+      204: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Категории с русскими названиями */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CategoryList"];
-                };
-            };
-        };
+        content?: never;
+      };
+      404: components["responses"]["NotFound"];
     };
+  };
+  updateExpense: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ExpenseUpdate"];
+      };
+    };
+    responses: {
+      /** @description Изменённая трата */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Expense"];
+        };
+      };
+      400: components["responses"]["BadRequest"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  listUsers: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Список членов семьи */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["UserList"];
+        };
+      };
+    };
+  };
+  removeUser: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        telegram_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Удалён */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      404: components["responses"]["NotFound"];
+      409: components["responses"]["Conflict"];
+    };
+  };
+  updateUser: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        telegram_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UserUpdate"];
+      };
+    };
+    responses: {
+      /** @description Участник */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["User"];
+        };
+      };
+      404: components["responses"]["NotFound"];
+    };
+  };
+  listInvites: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Приглашения, новые первыми */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["InviteList"];
+        };
+      };
+    };
+  };
+  createInvite: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Приглашение со ссылкой */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CreatedInvite"];
+        };
+      };
+      409: components["responses"]["Conflict"];
+    };
+  };
+  revokeInvite: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Отозвано */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      404: components["responses"]["NotFound"];
+    };
+  };
+  listCategories: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Категории с русскими названиями */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CategoryList"];
+        };
+      };
+    };
+  };
 }

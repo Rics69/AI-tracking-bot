@@ -12,6 +12,8 @@ export type CategoryInfo = components["schemas"]["CategoryInfo"];
 export type User = components["schemas"]["User"];
 export type Summary = components["schemas"]["Summary"];
 export type Invite = components["schemas"]["Invite"];
+export type Bucket = components["schemas"]["Bucket"];
+export type TimePoint = components["schemas"]["TimePoint"];
 export type CreatedInvite = components["schemas"]["CreatedInvite"];
 export type ApiErrorBody = components["schemas"]["Error"];
 

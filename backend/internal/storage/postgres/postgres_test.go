@@ -493,3 +493,34 @@ func TestWeeklyReportSettingAndRuns(t *testing.T) {
 		t.Error("a released report must be claimable again")
 	}
 }
+
+func TestAggregateMatchesGoBuckets(t *testing.T) {
+	repo, _ := setup(t)
+	ctx := context.Background()
+	mustCreate(t, repo, 1, "100", expense.CategoryFood, 11, "")      // Sunday
+	mustCreate(t, repo, 1, "200", expense.CategoryFood, 12, "")      // Monday
+	mustCreate(t, repo, 1, "300", expense.CategoryTransport, 18, "") // Sunday
+	mustCreate(t, repo, 2, "999", expense.CategoryFood, 12, "")      // another member
+
+	totals, err := repo.Aggregate(ctx, expense.OwnedBy(1), expense.Filter{}, expense.BucketWeek)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, tt := range totals {
+		got[tt.Start.Format(time.DateOnly)+" "+string(tt.Category)] = tt.Sum.String()
+		// PostgreSQL's date_trunc and the Go helper must agree, or zero-filling breaks.
+		if !tt.Start.Equal(expense.TruncateDate(tt.Start, expense.BucketWeek)) {
+			t.Errorf("bucket %s is not a Monday", tt.Start)
+		}
+	}
+	want := map[string]string{"2026-10-05 food": "100", "2026-10-12 food": "200", "2026-10-12 transport": "300"}
+	if len(got) != len(want) {
+		t.Fatalf("totals = %v", got)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%s = %s, want %s (all: %v)", k, got[k], v, got)
+		}
+	}
+}

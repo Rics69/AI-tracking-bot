@@ -63,6 +63,13 @@ func (r *memRepo) Summary(_ context.Context, _ Scope, f Filter) (Summary, error)
 	return Summary{}, nil
 }
 
+// aggregates is returned by Aggregate for time series tests.
+var aggregates []BucketTotal
+
+func (r *memRepo) Aggregate(context.Context, Scope, Filter, Bucket) ([]BucketTotal, error) {
+	return aggregates, nil
+}
+
 var moscow = mustLoad("Europe/Moscow")
 
 func mustLoad(name string) *time.Location {
@@ -242,5 +249,57 @@ func TestListNormalizesFilter(t *testing.T) {
 	var verr *ValidationError
 	if !errors.As(err, &verr) {
 		t.Errorf("from > to: err = %v, want ValidationError", err)
+	}
+}
+
+func TestTimeSeriesFillsGaps(t *testing.T) {
+	svc, _ := newTestService() // today is 2026-10-15
+	aggregates = []BucketTotal{
+		{Start: date(2026, 10, 12), Category: CategoryFood, Sum: decimal.NewFromInt(300), Count: 2},
+		{Start: date(2026, 10, 12), Category: CategoryHousing, Sum: decimal.NewFromInt(900), Count: 1},
+		{Start: date(2026, 10, 14), Category: CategoryFood, Sum: decimal.NewFromInt(50), Count: 1},
+	}
+	defer func() { aggregates = nil }()
+
+	points, err := svc.TimeSeries(context.Background(), AllUsers(), Filter{}, BucketDay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// From the first expense to today, one point per day, empty days included.
+	if len(points) != 4 || !points[0].Start.Equal(date(2026, 10, 12)) || !points[3].Start.Equal(date(2026, 10, 15)) {
+		t.Fatalf("points = %+v", points)
+	}
+	first := points[0]
+	if !first.Sum.Equal(decimal.NewFromInt(1200)) || first.Count != 3 || first.Categories[0].Category != CategoryHousing {
+		t.Errorf("first point = %+v", first)
+	}
+	if !points[1].Sum.IsZero() || len(points[1].Categories) != 0 {
+		t.Errorf("empty day = %+v", points[1])
+	}
+}
+
+func TestTimeSeriesValidation(t *testing.T) {
+	svc, _ := newTestService()
+	ctx := context.Background()
+	var verr *ValidationError
+	if _, err := svc.TimeSeries(ctx, AllUsers(), Filter{}, "year"); !errors.As(err, &verr) {
+		t.Errorf("unknown bucket: err = %v", err)
+	}
+	if _, err := svc.TimeSeries(ctx, AllUsers(), Filter{From: new(date(2020, 1, 1))}, BucketDay); !errors.As(err, &verr) {
+		t.Errorf("6 years by day: err = %v, want too many points", err)
+	}
+	if points, err := svc.TimeSeries(ctx, AllUsers(), Filter{}, BucketWeek); err != nil || len(points) != 0 {
+		t.Errorf("no expenses, no period: %v %v", points, err)
+	}
+}
+
+func TestTruncateDate(t *testing.T) {
+	d := date(2026, 10, 18) // Sunday
+	for b, want := range map[Bucket]time.Time{
+		BucketDay: d, BucketWeek: date(2026, 10, 12), BucketMonth: date(2026, 10, 1),
+	} {
+		if got := TruncateDate(d, b); !got.Equal(want) {
+			t.Errorf("TruncateDate(%s) = %s, want %s", b, got, want)
+		}
 	}
 }

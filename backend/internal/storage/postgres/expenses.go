@@ -150,6 +150,28 @@ func (r *ExpenseRepository) Summary(ctx context.Context, s expense.Scope, f expe
 	return sum, nil
 }
 
+func (r *ExpenseRepository) Aggregate(ctx context.Context, s expense.Scope, f expense.Filter, b expense.Bucket) ([]expense.BucketTotal, error) {
+	w := filterWhere(s, f)
+	// The bucket is passed as data, never concatenated into SQL.
+	args := append(w.args, string(b))
+	rows, err := r.pool.Query(ctx, fmt.Sprintf(`
+		SELECT date_trunc($%d, spent_at)::date AS start, category, sum(amount), count(*)
+		FROM expenses%s
+		GROUP BY 1, 2`, len(args), w.sql()), args...)
+	if err != nil {
+		return nil, fmt.Errorf("aggregate expenses: %w", err)
+	}
+	totals, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (expense.BucketTotal, error) {
+		var t expense.BucketTotal
+		err := row.Scan(&t.Start, &t.Category, &t.Sum, &t.Count)
+		return t, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("scan aggregates: %w", err)
+	}
+	return totals, nil
+}
+
 func scanExpense(row pgx.Row) (expense.Expense, error) {
 	var e expense.Expense
 	err := row.Scan(&e.ID, &e.UserID, &e.Amount, &e.Category, &e.SpentAt, &e.Comment, &e.CreatedAt, &e.UpdatedAt)

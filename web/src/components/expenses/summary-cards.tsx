@@ -64,7 +64,7 @@ export function SummaryCards({ summary, categoryLabel, periodLabel }: Props) {
               {summary.items.map((item) => (
                 <li
                   key={item.category}
-                  className="grid grid-cols-[6.5rem_minmax(0,1fr)_3rem_auto] items-center gap-3 text-sm"
+                  className="grid grid-cols-[6.5rem_minmax(0,1fr)_3rem_6.5rem] items-center gap-3 text-sm"
                 >
                   <span className="truncate">{capitalize(categoryLabel(item.category))}</span>
                   <span className="h-2 overflow-hidden rounded-full bg-muted" aria-hidden>

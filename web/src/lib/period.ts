@@ -18,6 +18,19 @@ export function isPeriod(s: string | null): s is Period {
   return s !== null && s in PERIODS;
 }
 
+/**
+ * Chart step for a date range: days up to two months, then weeks up to half a
+ * year, then months. Without a start ("all time") months keep the chart readable.
+ */
+export function bucketFor(from?: string, to?: string): "day" | "week" | "month" {
+  if (!from) return "month";
+  const days =
+    (new Date(to ?? toISODate(new Date())).getTime() - new Date(from).getTime()) / 86_400_000;
+  if (days <= 62) return "day";
+  if (days <= 183) return "week";
+  return "month";
+}
+
 /** Date range of a preset period, inclusive, as "YYYY-MM-DD" strings. */
 export function periodRange(period: Exclude<Period, "custom">, now = new Date()) {
   const y = now.getFullYear();

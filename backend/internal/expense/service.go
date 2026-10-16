@@ -31,6 +31,8 @@ type Repository interface {
 	Delete(ctx context.Context, s Scope, id int64) error
 	List(ctx context.Context, s Scope, f Filter) (Page, error)
 	Summary(ctx context.Context, s Scope, f Filter) (Summary, error)
+	// Aggregate sums expenses per bucket start and category; empty buckets are omitted.
+	Aggregate(ctx context.Context, s Scope, f Filter, b Bucket) ([]BucketTotal, error)
 }
 
 // Service implements the expense use cases on top of a Repository.

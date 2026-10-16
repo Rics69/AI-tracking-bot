@@ -124,6 +124,31 @@ func (r *ExpenseRepository) Summary(_ context.Context, s expense.Scope, f expens
 	return sum, nil
 }
 
+func (r *ExpenseRepository) Aggregate(_ context.Context, s expense.Scope, f expense.Filter, b expense.Bucket) ([]expense.BucketTotal, error) {
+	type key struct {
+		start time.Time
+		c     expense.Category
+	}
+	totals := map[key]*expense.BucketTotal{}
+	var order []key
+	for _, e := range r.match(s, f) {
+		k := key{expense.TruncateDate(e.SpentAt, b), e.Category}
+		t, ok := totals[k]
+		if !ok {
+			t = &expense.BucketTotal{Start: k.start, Category: k.c, Sum: decimal.Zero}
+			totals[k] = t
+			order = append(order, k)
+		}
+		t.Sum = t.Sum.Add(e.Amount)
+		t.Count++
+	}
+	out := make([]expense.BucketTotal, len(order))
+	for i, k := range order {
+		out[i] = *totals[k]
+	}
+	return out, nil
+}
+
 // All returns every stored expense ordered by ID, regardless of scope.
 func (r *ExpenseRepository) All() []expense.Expense {
 	r.mu.Lock()

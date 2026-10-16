@@ -25,6 +25,7 @@
 - `web/` — Next.js 16 панель главы семьи (App Router, TanStack Query, shadcn/ui). Перед правками читай `web/AGENTS.md`: API Next 16 отличаются от привычных.
   - `web/src/api/schema.d.ts` генерируется из `openapi.yaml` (`npm run gen:api`), руками не править.
   - Фильтры живут в URL (`use-filters.ts`); `/api/*` проксируется на Go API через rewrites в `next.config.ts`.
+  - График (`spending-chart.tsx`, Recharts через shadcn chart): цвет закреплён за категорией и берётся из проверенной палитры — не перекрашивать по рангу и не добавлять цвета без проверки.
 
 ## Команды
 

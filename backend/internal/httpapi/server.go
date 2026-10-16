@@ -25,6 +25,7 @@ type ExpenseService interface {
 	Delete(ctx context.Context, s expense.Scope, id int64) error
 	List(ctx context.Context, s expense.Scope, f expense.Filter) (expense.Page, error)
 	Summary(ctx context.Context, s expense.Scope, f expense.Filter) (expense.Summary, error)
+	TimeSeries(ctx context.Context, s expense.Scope, f expense.Filter, b expense.Bucket) ([]expense.Point, error)
 }
 
 // FamilyService manages members and invites; *family.Service implements it.
@@ -99,6 +100,24 @@ func (s *Server) GetExpenseSummary(ctx context.Context, req GetExpenseSummaryReq
 		items[i] = CategoryTotal{Category: Category(t.Category), Sum: t.Sum, Count: t.Count}
 	}
 	return GetExpenseSummary200JSONResponse{Items: items, Sum: sum.Sum, Count: sum.Count}, nil
+}
+
+func (s *Server) GetExpenseTimeSeries(ctx context.Context, req GetExpenseTimeSeriesRequestObject) (GetExpenseTimeSeriesResponseObject, error) {
+	p := req.Params
+	points, err := s.expenses.TimeSeries(ctx, expense.AllUsers(),
+		filterFrom(p.UserId, p.Category, p.From, p.To), expense.Bucket(p.Bucket))
+	if err != nil {
+		return nil, err
+	}
+	items := make([]TimePoint, len(points))
+	for i, pt := range points {
+		cats := make([]CategoryTotal, len(pt.Categories))
+		for j, c := range pt.Categories {
+			cats[j] = CategoryTotal{Category: Category(c.Category), Sum: c.Sum, Count: c.Count}
+		}
+		items[i] = TimePoint{Start: openapi_types.Date{Time: pt.Start}, Sum: pt.Sum, Count: pt.Count, Categories: cats}
+	}
+	return GetExpenseTimeSeries200JSONResponse{Bucket: p.Bucket, Items: items}, nil
 }
 
 func (s *Server) GetExpense(ctx context.Context, req GetExpenseRequestObject) (GetExpenseResponseObject, error) {

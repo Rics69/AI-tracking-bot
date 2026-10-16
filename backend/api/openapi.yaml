@@ -81,6 +81,32 @@ paths:
               schema: { $ref: '#/components/schemas/Summary' }
         '400': { $ref: '#/components/responses/BadRequest' }
 
+  /expenses/timeseries:
+    get:
+      operationId: getExpenseTimeSeries
+      tags: [expenses]
+      summary: Траты по дням, неделям или месяцам
+      description: |
+        Сумма за каждый интервал с разбивкой по категориям. Интервалы без трат
+        присутствуют с нулём. Без `from` ряд начинается с первой подходящей траты,
+        без `to` — заканчивается сегодня. Не больше 400 точек.
+      parameters:
+        - name: bucket
+          in: query
+          required: true
+          schema: { $ref: '#/components/schemas/Bucket' }
+        - $ref: '#/components/parameters/UserIDQuery'
+        - $ref: '#/components/parameters/CategoryQuery'
+        - $ref: '#/components/parameters/FromQuery'
+        - $ref: '#/components/parameters/ToQuery'
+      responses:
+        '200':
+          description: Ряд по интервалам
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TimeSeries' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
   /expenses/{id}:
     parameters:
       - name: id
@@ -338,6 +364,33 @@ components:
         category: { $ref: '#/components/schemas/Category' }
         sum: { $ref: '#/components/schemas/Money' }
         count: { type: integer }
+
+    Bucket:
+      type: string
+      enum: [day, week, month]
+      description: Интервал; недели начинаются с понедельника
+      x-enum-varnames: [BucketDay, BucketWeek, BucketMonth]
+
+    TimePoint:
+      type: object
+      required: [start, sum, count, categories]
+      properties:
+        start: { type: string, format: date, description: Первый день интервала }
+        sum: { $ref: '#/components/schemas/Money' }
+        count: { type: integer }
+        categories:
+          type: array
+          description: Категории по убыванию суммы
+          items: { $ref: '#/components/schemas/CategoryTotal' }
+
+    TimeSeries:
+      type: object
+      required: [bucket, items]
+      properties:
+        bucket: { $ref: '#/components/schemas/Bucket' }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/TimePoint' }
 
     Summary:
       type: object

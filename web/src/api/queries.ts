@@ -2,7 +2,14 @@
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { api, unwrap, type Category, type ExpenseCreate, type ExpenseUpdate } from "./client";
+import {
+  api,
+  unwrap,
+  type Bucket,
+  type Category,
+  type ExpenseCreate,
+  type ExpenseUpdate,
+} from "./client";
 
 export type ExpenseQuery = {
   userId?: number;
@@ -20,6 +27,7 @@ export const queryKeys = {
   expenseList: (q: ExpenseQuery, limit: number, offset: number) =>
     ["expenses", "list", q, limit, offset] as const,
   expenseSummary: (q: ExpenseQuery) => ["expenses", "summary", q] as const,
+  expenseSeries: (q: ExpenseQuery, bucket: Bucket) => ["expenses", "series", q, bucket] as const,
 };
 
 function toParams(q: ExpenseQuery) {
@@ -87,6 +95,17 @@ export function useDeleteExpense() {
     mutationFn: async (id: number) =>
       unwrap(await api.DELETE("/expenses/{id}", { params: { path: { id } } })),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.expenses }),
+  });
+}
+
+export function useTimeSeries(q: ExpenseQuery, bucket: Bucket) {
+  return useQuery({
+    queryKey: queryKeys.expenseSeries(q, bucket),
+    queryFn: async () =>
+      unwrap(
+        await api.GET("/expenses/timeseries", { params: { query: { ...toParams(q), bucket } } }),
+      ),
+    placeholderData: keepPreviousData,
   });
 }
 
