@@ -14,6 +14,7 @@ import (
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/config"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/expense"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/httpapi"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/logger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/postgres"
@@ -50,9 +51,11 @@ func run() error {
 
 	handler := httpapi.NewHandler(httpapi.Deps{
 		Expenses: expense.NewService(postgres.NewExpenseRepository(pool), cfg.Location),
-		Users:    postgres.NewUserRepository(pool),
-		Health:   pool.Ping,
-		Log:      log,
+		// The API never admits anyone, so bootstrap IDs (open/closed family) do not matter here.
+		Family: family.NewService(postgres.NewUserRepository(pool), postgres.NewInviteRepository(pool),
+			postgres.NewSettingsRepository(pool), nil),
+		Health: pool.Ping,
+		Log:    log,
 	})
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,

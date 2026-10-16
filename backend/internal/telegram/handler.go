@@ -4,6 +4,7 @@ package telegram
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/go-telegram/bot/models"
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/agent"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
 
@@ -35,8 +37,12 @@ const (
 	replyTooLong   = "Слишком длинное сообщение. Напишите трату коротко, например: «кофе 350»."
 	replyPrivate   = "Я работаю только в личных сообщениях — напишите мне напрямую."
 	replyFailure   = "Что-то пошло не так, попробуйте ещё раз через минуту."
-	replyForbidden = "Этот бот ведёт расходы одной семьи, и вас нет в списке. " +
-		"Ваш Telegram ID: %d — передайте его главе семьи."
+	replyForbidden = "Этот бот ведёт расходы одной семьи. Чтобы присоединиться, " +
+		"попросите у главы семьи ссылку-приглашение. Ваш Telegram ID: %d."
+	replyJoined        = "%s, добро пожаловать в семью!\n\n" + replyHelp
+	replyAlreadyMember = "Вы уже в семье.\n\n" + replyHelp
+	replyInviteInvalid = "Это приглашение недействительно: оно истекло, отозвано или уже использовано. " +
+		"Попросите у главы семьи новую ссылку."
 )
 
 // Replier is the agent.
@@ -45,9 +51,10 @@ type Replier interface {
 	Reset(userID int64)
 }
 
-// UserSaver records family members.
-type UserSaver interface {
-	Upsert(ctx context.Context, u user.User) (user.User, error)
+// Family decides who may talk to the bot; *family.Service implements it.
+type Family interface {
+	Admit(ctx context.Context, tg user.User) (user.User, error)
+	Join(ctx context.Context, code string, tg user.User) (member user.User, joined bool, err error)
 }
 
 // Sender is the part of the Telegram API the handler uses; *bot.Bot implements it.
@@ -59,8 +66,7 @@ type Sender interface {
 // Handler processes incoming Telegram updates.
 type Handler struct {
 	agent        Replier
-	users        UserSaver
-	allowed      map[int64]bool // empty: everyone is allowed
+	family       Family
 	replyTimeout time.Duration
 	retryDelay   time.Duration // first pause between send attempts
 	log          *slog.Logger
@@ -70,13 +76,9 @@ type Handler struct {
 	userLocks sync.Map // int64 -> *sync.Mutex
 }
 
-// NewHandler creates a handler. allowedIDs restricts the bot to family members.
-func NewHandler(a Replier, users UserSaver, allowedIDs []int64, replyTimeout time.Duration, log *slog.Logger) *Handler {
-	allowed := make(map[int64]bool, len(allowedIDs))
-	for _, id := range allowedIDs {
-		allowed[id] = true
-	}
-	return &Handler{agent: a, users: users, allowed: allowed, replyTimeout: replyTimeout, retryDelay: time.Second, log: log}
+// NewHandler creates a handler.
+func NewHandler(a Replier, f Family, replyTimeout time.Duration, log *slog.Logger) *Handler {
+	return &Handler{agent: a, family: f, replyTimeout: replyTimeout, retryDelay: time.Second, log: log}
 }
 
 // Handle is a bot.HandlerFunc.
@@ -97,13 +99,35 @@ func (h *Handler) handle(ctx context.Context, s Sender, update *models.Update) {
 		h.send(ctx, s, chatID, replyPrivate)
 		return
 	}
-	if len(h.allowed) > 0 && !h.allowed[from.ID] {
-		log.WarnContext(ctx, "message from a user outside the family", "username", from.Username)
-		h.send(ctx, s, chatID, fmt.Sprintf(replyForbidden, from.ID))
+	tg := user.User{TelegramID: from.ID, FirstName: from.FirstName, Username: from.Username}
+	text := strings.TrimSpace(msg.Text)
+
+	lock := h.userLock(from.ID)
+	lock.Lock()
+	defer lock.Unlock()
+
+	ctx, cancel := context.WithTimeout(ctx, h.replyTimeout)
+	defer cancel()
+
+	// An invite link arrives as "/start <code>"; it is the only way in for strangers.
+	if code, ok := commandArg(text, "/start"); ok && code != "" {
+		h.join(ctx, s, chatID, code, tg)
 		return
 	}
 
-	text := strings.TrimSpace(msg.Text)
+	// Membership is checked on every message: a member removed in the panel
+	// loses access immediately. Admit also refreshes the name the panel shows.
+	if _, err := h.family.Admit(ctx, tg); err != nil {
+		if errors.Is(err, family.ErrNotMember) {
+			log.WarnContext(ctx, "message from a user outside the family", "username", from.Username)
+			h.send(ctx, s, chatID, fmt.Sprintf(replyForbidden, from.ID))
+			return
+		}
+		log.ErrorContext(ctx, "check membership", "err", err)
+		h.send(ctx, s, chatID, replyFailure)
+		return
+	}
+
 	switch {
 	case text == "":
 		h.send(ctx, s, chatID, replyNotText)
@@ -117,20 +141,6 @@ func (h *Handler) handle(ctx context.Context, s Sender, update *models.Update) {
 		return
 	}
 
-	lock := h.userLock(from.ID)
-	lock.Lock()
-	defer lock.Unlock()
-
-	ctx, cancel := context.WithTimeout(ctx, h.replyTimeout)
-	defer cancel()
-
-	// The panel lists members by name, and names change: refresh on every message.
-	if _, err := h.users.Upsert(ctx, user.User{TelegramID: from.ID, FirstName: from.FirstName, Username: from.Username}); err != nil {
-		log.ErrorContext(ctx, "save user", "err", err)
-		h.send(ctx, s, chatID, replyFailure)
-		return
-	}
-
 	stopTyping := h.keepTyping(ctx, s, chatID)
 	reply, err := h.agent.Reply(ctx, agent.Caller{UserID: from.ID, Name: from.FirstName}, text)
 	stopTyping()
@@ -139,6 +149,23 @@ func (h *Handler) handle(ctx context.Context, s Sender, update *models.Update) {
 		reply = replyFailure
 	}
 	h.send(ctx, s, chatID, reply)
+}
+
+func (h *Handler) join(ctx context.Context, s Sender, chatID int64, code string, tg user.User) {
+	member, joined, err := h.family.Join(ctx, code, tg)
+	switch {
+	case errors.Is(err, family.ErrInviteInvalid):
+		h.log.WarnContext(ctx, "invalid invite", "user_id", tg.TelegramID)
+		h.send(ctx, s, chatID, replyInviteInvalid)
+	case err != nil:
+		h.log.ErrorContext(ctx, "join family", "user_id", tg.TelegramID, "err", err)
+		h.send(ctx, s, chatID, replyFailure)
+	case !joined:
+		h.send(ctx, s, chatID, replyAlreadyMember)
+	default:
+		h.log.InfoContext(ctx, "joined the family", "user_id", tg.TelegramID, "username", tg.Username)
+		h.send(ctx, s, chatID, fmt.Sprintf(replyJoined, member.FirstName))
+	}
 }
 
 // keepTyping shows "typing…" until the returned function is called:
@@ -206,7 +233,16 @@ func (h *Handler) userLock(userID int64) *sync.Mutex {
 
 // isCommand matches "/start" and "/start@MyBot".
 func isCommand(text, cmd string) bool {
-	first, _, _ := strings.Cut(text, " ")
+	_, ok := commandArg(text, cmd)
+	return ok
+}
+
+// commandArg returns the argument of a command: "/start abc" → "abc", true.
+func commandArg(text, cmd string) (string, bool) {
+	first, rest, _ := strings.Cut(text, " ")
 	name, _, _ := strings.Cut(first, "@")
-	return strings.EqualFold(name, cmd)
+	if !strings.EqualFold(name, cmd) {
+		return "", false
+	}
+	return strings.TrimSpace(rest), true
 }

@@ -7,6 +7,8 @@ import (
 	"net/http"
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/expense"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
 
 // writeError maps an error to an HTTP status and the Error schema of the spec.
@@ -20,9 +22,12 @@ func writeError(log *slog.Logger, w http.ResponseWriter, r *http.Request, err er
 	case errors.As(err, &verr):
 		status = http.StatusBadRequest
 		detail = ErrorDetail{Code: ErrCodeValidation, Message: verr.Message, Field: &verr.Field}
-	case errors.Is(err, expense.ErrNotFound):
+	case errors.Is(err, expense.ErrNotFound), errors.Is(err, user.ErrNotFound), errors.Is(err, family.ErrInviteNotFound):
 		status = http.StatusNotFound
 		detail = ErrorDetail{Code: ErrCodeNotFound, Message: err.Error()}
+	case errors.Is(err, family.ErrHeadRemoval), errors.Is(err, family.ErrBotUnknown):
+		status = http.StatusConflict
+		detail = ErrorDetail{Code: ErrCodeConflict, Message: err.Error()}
 	case errors.Is(err, expense.ErrUnknownUser):
 		status = http.StatusBadRequest
 		detail = ErrorDetail{Code: ErrCodeUnknownUser, Message: err.Error()}

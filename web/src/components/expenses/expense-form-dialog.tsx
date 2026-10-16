@@ -72,7 +72,16 @@ export function ExpenseFormDialog(props: Props) {
   );
 }
 
-function ExpenseForm({ onOpenChange, expense, defaultUserId, users, categories, onDelete }: Props) {
+function ExpenseForm({
+  onOpenChange,
+  expense,
+  defaultUserId,
+  users: allUsers,
+  categories,
+  onDelete,
+}: Props) {
+  // New expenses go to current members; editing keeps the owner even if removed.
+  const users = allUsers.filter((u) => !u.removed_at || u.telegram_id === expense?.user_id);
   const today = toISODate(new Date());
   const [fields, setFields] = useState<Fields>(() =>
     expense

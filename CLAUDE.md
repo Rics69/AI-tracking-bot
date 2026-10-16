@@ -14,7 +14,8 @@
 - `backend/internal/llm` — интерфейс модели, не зависящий от провайдера; `llm/gigachat` — клиент GigaChat (OAuth, сертификат Минцифры, function calling); `llm/provider` — выбор провайдера по `LLM_PROVIDER`.
 - `backend/internal/agent` — агент: тулы над `expense.Service`, системный промпт, цикл tool calling, история диалога.
 - `backend/internal/telegram` — обработчик апдейтов: белый список, очередь по пользователю, «печатает…».
-- `backend/internal/user` — члены семьи (Telegram-пользователи).
+- `backend/internal/user` — члены семьи (Telegram-пользователи), мягкое удаление через `removed_at`.
+- `backend/internal/family` — членство: приглашения (в БД только хэш кода), вход через `/start <код>`, проверка доступа к боту. `ALLOWED_TELEGRAM_IDS` лишь создаёт глав семьи при старте.
 - `backend/internal/storage/postgres` — репозитории на pgx, миграции goose (вшиты через embed, применяются при старте).
 - `backend/internal/storage/memory` — in-memory репозиторий трат с той же семантикой (для eval).
 - `backend/internal/httpapi` — REST: `api.gen.go` генерируется из `backend/api/openapi.yaml`, руками пишется `server.go`.

@@ -13,6 +13,7 @@ import (
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/expense"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
 
@@ -56,7 +57,7 @@ func TestMain(m *testing.M) {
 
 func setup(t *testing.T) (*ExpenseRepository, *UserRepository) {
 	t.Helper()
-	if _, err := testPool.Exec(context.Background(), `TRUNCATE expenses, users RESTART IDENTITY`); err != nil {
+	if _, err := testPool.Exec(context.Background(), `TRUNCATE expenses, invites, settings, users RESTART IDENTITY`); err != nil {
 		t.Fatal(err)
 	}
 	users := NewUserRepository(testPool)
@@ -291,4 +292,102 @@ func equalIDs(a, b []int64) bool {
 		}
 	}
 	return true
+}
+
+func TestRemovedMemberKeepsExpensesAndStaysRemoved(t *testing.T) {
+	repo, users := setup(t)
+	ctx := context.Background()
+	mustCreate(t, repo, 2, "500", expense.CategoryFood, 10, "обед")
+
+	if err := users.Remove(ctx, 2); err != nil {
+		t.Fatal(err)
+	}
+	// A name refresh must not bring the member back.
+	if _, err := users.Upsert(ctx, user.User{TelegramID: 2, FirstName: "Боря"}); err != nil {
+		t.Fatal(err)
+	}
+	boris, err := users.Get(ctx, 2)
+	if err != nil || boris.Active() || boris.FirstName != "Боря" {
+		t.Fatalf("boris = %+v, err = %v", boris, err)
+	}
+	if n, _ := users.CountActive(ctx); n != 1 {
+		t.Errorf("active members = %d, want 1", n)
+	}
+	page, _ := repo.List(ctx, expense.AllUsers(), expense.Filter{Limit: 10})
+	if page.Total != 1 {
+		t.Errorf("expenses of a removed member disappeared: total = %d", page.Total)
+	}
+	list, _ := users.List(ctx)
+	if len(list) != 2 || list[1].TelegramID != 2 {
+		t.Errorf("removed members must be listed last: %+v", list)
+	}
+	if err := users.Remove(ctx, 404); !errors.Is(err, user.ErrNotFound) {
+		t.Errorf("unknown user: err = %v", err)
+	}
+	// Adding again restores membership.
+	back, err := users.Add(ctx, user.User{TelegramID: 2, FirstName: "Борис"})
+	if err != nil || !back.Active() {
+		t.Errorf("re-added = %+v, err = %v", back, err)
+	}
+}
+
+func TestInviteRedeem(t *testing.T) {
+	_, users := setup(t)
+	invites := NewInviteRepository(testPool)
+	ctx := context.Background()
+	future := time.Now().Add(time.Hour)
+	vera := user.User{TelegramID: 3, FirstName: "Вера"}
+
+	valid, _ := invites.Create(ctx, []byte("valid"), future)
+	_, _ = invites.Create(ctx, []byte("expired"), time.Now().Add(-time.Minute))
+	revoked, _ := invites.Create(ctx, []byte("revoked"), future)
+	if err := invites.Revoke(ctx, revoked.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, hash := range []string{"expired", "revoked", "unknown"} {
+		if _, err := invites.Redeem(ctx, []byte(hash), vera); !errors.Is(err, family.ErrInviteInvalid) {
+			t.Errorf("%s: err = %v, want ErrInviteInvalid", hash, err)
+		}
+	}
+	if _, err := users.Get(ctx, 3); !errors.Is(err, user.ErrNotFound) {
+		t.Fatal("a failed redeem must not add the user")
+	}
+
+	m, err := invites.Redeem(ctx, []byte("valid"), vera)
+	if err != nil || !m.Active() || m.FirstName != "Вера" {
+		t.Fatalf("redeem: %+v, %v", m, err)
+	}
+	if _, err := invites.Redeem(ctx, []byte("valid"), user.User{TelegramID: 4, FirstName: "Гоша"}); !errors.Is(err, family.ErrInviteInvalid) {
+		t.Errorf("second redeem: err = %v", err)
+	}
+
+	list, _ := invites.List(ctx, time.Now().Add(-time.Hour))
+	statuses := map[int64]family.InviteStatus{}
+	for _, inv := range list {
+		statuses[inv.ID] = inv.Status(time.Now())
+	}
+	if statuses[valid.ID] != family.InviteUsed || statuses[revoked.ID] != family.InviteRevoked || len(list) != 3 {
+		t.Errorf("statuses = %v", statuses)
+	}
+	if err := invites.Revoke(ctx, valid.ID); !errors.Is(err, family.ErrInviteNotFound) {
+		t.Errorf("revoking a used invite: err = %v", err)
+	}
+}
+
+func TestSettings(t *testing.T) {
+	setup(t)
+	s := NewSettingsRepository(testPool)
+	ctx := context.Background()
+	if _, ok, err := s.Get(ctx, "missing"); ok || err != nil {
+		t.Fatalf("missing key: ok=%v err=%v", ok, err)
+	}
+	for _, v := range []string{"FamilyBot", "NewBot"} {
+		if err := s.Set(ctx, "bot", v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if v, ok, _ := s.Get(ctx, "bot"); !ok || v != "NewBot" {
+		t.Errorf("value = %q", v)
+	}
 }

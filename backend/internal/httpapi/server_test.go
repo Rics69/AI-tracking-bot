@@ -15,6 +15,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/expense"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
 
@@ -62,14 +63,51 @@ func (f *fakeExpenses) Summary(_ context.Context, s expense.Scope, flt expense.F
 	return expense.Summary{}, f.err
 }
 
-type fakeUsers struct{}
+// fakeFamily returns canned members and invites, or err from every call.
+type fakeFamily struct {
+	err     error
+	removed []int64
+}
 
-func (fakeUsers) List(context.Context) ([]user.User, error) { return nil, nil }
+func (f *fakeFamily) Members(context.Context) ([]user.User, error) {
+	removedAt := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	return []user.User{
+		{TelegramID: 1, FirstName: "Анна", IsHead: true},
+		{TelegramID: 2, FirstName: "Борис", RemovedAt: &removedAt},
+	}, f.err
+}
+
+func (f *fakeFamily) Remove(_ context.Context, id int64) error {
+	f.removed = append(f.removed, id)
+	return f.err
+}
+
+func (f *fakeFamily) CreateInvite(context.Context) (family.CreatedInvite, error) {
+	return family.CreatedInvite{
+		Invite: family.Invite{ID: 5, ExpiresAt: time.Now().Add(family.InviteTTL)},
+		Link:   "https://t.me/FamilyBot?start=abc",
+	}, f.err
+}
+
+func (f *fakeFamily) ListInvites(context.Context) ([]family.Invite, error) {
+	past := time.Now().Add(-time.Hour)
+	return []family.Invite{
+		{ID: 1, ExpiresAt: time.Now().Add(time.Hour)},
+		{ID: 2, ExpiresAt: past},
+	}, f.err
+}
+
+func (f *fakeFamily) RevokeInvite(context.Context, int64) error { return f.err }
+func (f *fakeFamily) Now() time.Time                            { return time.Now() }
 
 func newTestHandler(f *fakeExpenses, health error) http.Handler {
+	return newTestHandlerWithFamily(f, &fakeFamily{}, health)
+}
+
+func newTestHandlerWithFamily(f *fakeExpenses, fam *fakeFamily, health error) http.Handler {
 	return NewHandler(Deps{
 		Expenses: f,
-		Users:    fakeUsers{},
+		Family:   fam,
 		Health:   func(context.Context) error { return health },
 		Log:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
@@ -186,5 +224,61 @@ func TestHealthz(t *testing.T) {
 	}
 	if status, _ := do(t, newTestHandler(&fakeExpenses{}, errors.New("db down")), http.MethodGet, "/healthz", ""); status != 503 {
 		t.Errorf("unhealthy: status = %d", status)
+	}
+}
+
+func TestListUsersShowsMembership(t *testing.T) {
+	status, body := do(t, newTestHandler(&fakeExpenses{}, nil), http.MethodGet, "/api/v1/users", "")
+	items, _ := body["items"].([]any)
+	if status != 200 || len(items) != 2 {
+		t.Fatalf("status = %d body = %v", status, body)
+	}
+	anna, boris := items[0].(map[string]any), items[1].(map[string]any)
+	if anna["is_head"] != true || anna["removed_at"] != nil || boris["removed_at"] != "2026-10-01T12:00:00Z" {
+		t.Errorf("users = %v", items)
+	}
+}
+
+func TestInviteEndpoints(t *testing.T) {
+	h := newTestHandler(&fakeExpenses{}, nil)
+	status, body := do(t, h, http.MethodPost, "/api/v1/invites", "")
+	if status != 201 || body["link"] != "https://t.me/FamilyBot?start=abc" || body["status"] != "active" {
+		t.Errorf("create: %d %v", status, body)
+	}
+	status, body = do(t, h, http.MethodGet, "/api/v1/invites", "")
+	items, _ := body["items"].([]any)
+	if status != 200 || len(items) != 2 ||
+		items[0].(map[string]any)["status"] != "active" || items[1].(map[string]any)["status"] != "expired" {
+		t.Errorf("list: %d %v", status, body)
+	}
+	if _, ok := items[0].(map[string]any)["link"]; ok {
+		t.Error("the list must not expose invite links")
+	}
+	if status, _ := do(t, h, http.MethodDelete, "/api/v1/invites/1", ""); status != 204 {
+		t.Errorf("revoke: %d", status)
+	}
+}
+
+func TestFamilyErrorMapping(t *testing.T) {
+	tests := []struct {
+		name         string
+		err          error
+		method, path string
+		status       int
+		code         string
+	}{
+		{"remove head", family.ErrHeadRemoval, http.MethodDelete, "/api/v1/users/1", 409, "conflict"},
+		{"remove unknown", user.ErrNotFound, http.MethodDelete, "/api/v1/users/9", 404, "not_found"},
+		{"bot never started", family.ErrBotUnknown, http.MethodPost, "/api/v1/invites", 409, "conflict"},
+		{"revoke used invite", family.ErrInviteNotFound, http.MethodDelete, "/api/v1/invites/3", 404, "not_found"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newTestHandlerWithFamily(&fakeExpenses{}, &fakeFamily{err: tt.err}, nil)
+			status, body := do(t, h, tt.method, tt.path, "")
+			if status != tt.status || errorCode(body) != tt.code {
+				t.Errorf("got %d %v, want %d %s", status, body, tt.status, tt.code)
+			}
+		})
 	}
 }

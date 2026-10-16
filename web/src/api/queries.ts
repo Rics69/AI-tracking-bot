@@ -13,6 +13,7 @@ export type ExpenseQuery = {
 
 export const queryKeys = {
   users: ["users"] as const,
+  invites: ["invites"] as const,
   categories: ["categories"] as const,
   // Prefix shared by lists and summaries: invalidated together after a change.
   expenses: ["expenses"] as const,
@@ -86,5 +87,42 @@ export function useDeleteExpense() {
     mutationFn: async (id: number) =>
       unwrap(await api.DELETE("/expenses/{id}", { params: { path: { id } } })),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.expenses }),
+  });
+}
+
+export function useInvites() {
+  return useQuery({
+    queryKey: queryKeys.invites,
+    queryFn: async () => unwrap(await api.GET("/invites")).items,
+  });
+}
+
+export function useCreateInvite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => unwrap(await api.POST("/invites")),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.invites }),
+  });
+}
+
+export function useRevokeInvite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) =>
+      unwrap(await api.DELETE("/invites/{id}", { params: { path: { id } } })),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.invites }),
+  });
+}
+
+export function useRemoveMember() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (telegramId: number) =>
+      unwrap(
+        await api.DELETE("/users/{telegram_id}", {
+          params: { path: { telegram_id: telegramId } },
+        }),
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.users }),
   });
 }

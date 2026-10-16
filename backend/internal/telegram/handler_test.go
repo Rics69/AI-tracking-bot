@@ -14,6 +14,7 @@ import (
 	"github.com/go-telegram/bot/models"
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/agent"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
 
@@ -53,11 +54,34 @@ func (f *fakeAgent) Reply(_ context.Context, c agent.Caller, _ string) (string, 
 
 func (f *fakeAgent) Reset(id int64) { f.resets = append(f.resets, id) }
 
-type fakeUsers struct{ saved []user.User }
+// fakeFamily admits members, records who was checked and accepts one invite code.
+type fakeFamily struct {
+	members map[int64]bool
+	admits  []user.User
+	code    string
+	err     error
+}
 
-func (f *fakeUsers) Upsert(_ context.Context, u user.User) (user.User, error) {
-	f.saved = append(f.saved, u)
-	return u, nil
+func (f *fakeFamily) Admit(_ context.Context, tg user.User) (user.User, error) {
+	f.admits = append(f.admits, tg)
+	if f.err != nil {
+		return user.User{}, f.err
+	}
+	if !f.members[tg.TelegramID] {
+		return user.User{}, family.ErrNotMember
+	}
+	return tg, nil
+}
+
+func (f *fakeFamily) Join(_ context.Context, code string, tg user.User) (user.User, bool, error) {
+	if f.members[tg.TelegramID] {
+		return tg, false, nil
+	}
+	if code != f.code {
+		return user.User{}, false, family.ErrInviteInvalid
+	}
+	f.members[tg.TelegramID] = true
+	return tg, true, nil
 }
 
 func privateMessage(fromID int64, text string) *models.Update {
@@ -68,37 +92,68 @@ func privateMessage(fromID int64, text string) *models.Update {
 	}}
 }
 
-func setup(allowed ...int64) (*Handler, *fakeAgent, *fakeUsers, *fakeSender) {
+// setup returns a handler where user 42 is a family member.
+func setup() (*Handler, *fakeAgent, *fakeFamily, *fakeSender) {
 	a := &fakeAgent{reply: "Записал"}
-	u := &fakeUsers{}
-	h := NewHandler(a, u, allowed, time.Minute, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	f := &fakeFamily{members: map[int64]bool{42: true}, code: "secret"}
+	h := NewHandler(a, f, time.Minute, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	h.retryDelay = time.Millisecond
-	return h, a, u, &fakeSender{}
+	return h, a, f, &fakeSender{}
 }
 
 func TestMessageGoesToAgentAsSender(t *testing.T) {
-	h, a, users, s := setup()
+	h, a, f, s := setup()
 	h.handle(context.Background(), s, privateMessage(42, "кофе 350"))
 
 	if len(a.callers) != 1 || a.callers[0].UserID != 42 || a.callers[0].Name != "Анна" {
 		t.Errorf("agent callers = %+v", a.callers)
 	}
-	if len(users.saved) != 1 || users.saved[0].TelegramID != 42 || users.saved[0].Username != "anna" {
-		t.Errorf("saved users = %+v", users.saved)
+	if len(f.admits) != 1 || f.admits[0].TelegramID != 42 || f.admits[0].Username != "anna" {
+		t.Errorf("membership checks = %+v", f.admits)
 	}
 	if len(s.sent) != 1 || s.sent[0] != "Записал" {
 		t.Errorf("sent = %q", s.sent)
 	}
 }
 
-func TestAllowList(t *testing.T) {
-	h, a, users, s := setup(1, 2)
-	h.handle(context.Background(), s, privateMessage(42, "кофе 350"))
-	if len(a.callers) != 0 || len(users.saved) != 0 {
+func TestStrangerIsRefused(t *testing.T) {
+	h, a, _, s := setup()
+	h.handle(context.Background(), s, privateMessage(7, "кофе 350"))
+	if len(a.callers) != 0 {
 		t.Error("stranger reached the agent")
 	}
-	if len(s.sent) != 1 || !strings.Contains(s.sent[0], "42") {
+	if len(s.sent) != 1 || !strings.Contains(s.sent[0], "ссылку-приглашение") || !strings.Contains(s.sent[0], "7") {
 		t.Errorf("sent = %q, want a refusal with the user's ID", s.sent)
+	}
+}
+
+func TestJoinByInvite(t *testing.T) {
+	h, a, f, s := setup()
+	ctx := context.Background()
+
+	h.handle(ctx, s, privateMessage(7, "/start wrong"))
+	h.handle(ctx, s, privateMessage(7, "/start secret"))
+	h.handle(ctx, s, privateMessage(7, "кофе 350"))
+	h.handle(ctx, s, privateMessage(42, "/start secret")) // already a member
+
+	if len(s.sent) != 4 {
+		t.Fatalf("sent = %q", s.sent)
+	}
+	if s.sent[0] != replyInviteInvalid || !strings.HasPrefix(s.sent[1], "Анна, добро пожаловать") ||
+		s.sent[2] != "Записал" || !strings.HasPrefix(s.sent[3], "Вы уже в семье") {
+		t.Errorf("sent = %q", s.sent)
+	}
+	if !f.members[7] || len(a.callers) != 1 {
+		t.Errorf("members = %v, agent calls = %d", f.members, len(a.callers))
+	}
+}
+
+func TestMembershipCheckFailure(t *testing.T) {
+	h, a, f, s := setup()
+	f.err = errors.New("db down")
+	h.handle(context.Background(), s, privateMessage(42, "кофе 350"))
+	if len(a.callers) != 0 || len(s.sent) != 1 || s.sent[0] != replyFailure {
+		t.Errorf("agent calls = %d, sent = %q", len(a.callers), s.sent)
 	}
 }
 

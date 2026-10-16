@@ -52,6 +52,14 @@ export function formatDate(s: string, now = new Date()): string {
   return (d.getFullYear() === now.getFullYear() ? dayMonth : dayMonthYear).format(d);
 }
 
+const dayMonthTime = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short" });
+
+/** An ISO timestamp as a short date: "16 окт.". */
+export function formatDateTime(iso: string, now = new Date()): string {
+  const d = new Date(iso);
+  return (d.getFullYear() === now.getFullYear() ? dayMonthTime : dayMonthYear).format(d);
+}
+
 /** Russian plural: plural(3, ["трата", "траты", "трат"]) → "траты". */
 export function plural(n: number, forms: [string, string, string]): string {
   const mod10 = n % 10;

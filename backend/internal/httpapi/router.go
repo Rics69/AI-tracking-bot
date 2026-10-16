@@ -13,7 +13,7 @@ const basePath = "/api/v1"
 // Deps are the dependencies of the HTTP handler.
 type Deps struct {
 	Expenses ExpenseService
-	Users    UserLister
+	Family   FamilyService
 	// Health reports whether the service can serve requests (e.g. the database is reachable).
 	Health func(ctx context.Context) error
 	Log    *slog.Logger
@@ -24,7 +24,7 @@ type Deps struct {
 func NewHandler(d Deps) http.Handler {
 	mux := http.NewServeMux()
 
-	strict := NewStrictHandlerWithOptions(NewServer(d.Expenses, d.Users), nil, StrictHTTPServerOptions{
+	strict := NewStrictHandlerWithOptions(NewServer(d.Expenses, d.Family), nil, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) { writeBadRequest(w, err) },
 		ResponseErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 			writeError(d.Log, w, r, err)

@@ -12,7 +12,7 @@ import { DeleteExpenseDialog } from "./delete-expense-dialog";
 import { ExpenseFormDialog } from "./expense-form-dialog";
 import { ExpensesTable } from "./expenses-table";
 import { FiltersBar } from "./filters-bar";
-import { memberName } from "./member";
+import { activeMembers, memberName } from "./member";
 import { SummaryCards } from "./summary-cards";
 import { useFilters } from "./use-filters";
 
@@ -58,8 +58,12 @@ export function Dashboard() {
         />
         <Button
           className="h-10 shrink-0 self-start lg:self-auto"
-          disabled={!users.data?.length}
-          title={users.data?.length ? undefined : "Сначала кто-то из семьи должен написать боту"}
+          disabled={!activeMembers(users.data ?? []).length}
+          title={
+            activeMembers(users.data ?? []).length
+              ? undefined
+              : "В семье пока никого нет: пригласите участников в разделе «Семья»"
+          }
           onClick={() => setEditing("new")}
         >
           <PlusIcon />

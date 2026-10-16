@@ -14,6 +14,7 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/agent"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/config"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/expense"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/llm/provider"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/logger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/postgres"
@@ -56,8 +57,13 @@ func run() error {
 		agent.NewHistory(cfg.HistoryTurns, cfg.HistoryTTL),
 		agent.Config{Location: cfg.Location, MaxSteps: cfg.MaxSteps},
 		log.With("component", "agent"))
-	handler := telegram.NewHandler(assistant, postgres.NewUserRepository(pool),
-		cfg.AllowedUserIDs, cfg.ReplyTimeout, log.With("component", "telegram"))
+	members := family.NewService(postgres.NewUserRepository(pool), postgres.NewInviteRepository(pool),
+		postgres.NewSettingsRepository(pool), cfg.AllowedUserIDs)
+	// ALLOWED_TELEGRAM_IDS only seeds the family heads; later members join by invite.
+	if err := members.Bootstrap(ctx, cfg.AllowedUserIDs); err != nil {
+		return err
+	}
+	handler := telegram.NewHandler(assistant, members, cfg.ReplyTimeout, log.With("component", "telegram"))
 
 	b, err := bot.New(cfg.TelegramToken,
 		bot.WithDefaultHandler(handler.Handle),
@@ -66,8 +72,17 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("telegram: %w", err)
 	}
+	// The panel builds invite links t.me/<username>?start=<code>.
+	me, err := b.GetMe(ctx)
+	if err != nil {
+		return fmt.Errorf("telegram getMe: %w", err)
+	}
+	if err := members.SetBotUsername(ctx, me.Username); err != nil {
+		return err
+	}
 
-	log.Info("bot started", "llm", cfg.Provider, "model", cfg.GigaChat.Model, "allowed_users", len(cfg.AllowedUserIDs))
+	log.Info("bot started", "username", me.Username, "llm", cfg.Provider, "model", cfg.GigaChat.Model,
+		"family_heads", len(cfg.AllowedUserIDs), "open_family", len(cfg.AllowedUserIDs) == 0)
 	b.Start(ctx) // blocks until ctx is cancelled
 	log.Info("bot stopped")
 	return nil

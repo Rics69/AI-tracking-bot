@@ -75,12 +75,73 @@ export interface paths {
         };
         /**
          * Члены семьи
-         * @description Пользователи, которые хотя бы раз писали боту.
+         * @description Все, кто состоял в семье: сначала текущие (глава первым), затем удалённые —
+         *     их траты остаются в истории.
          */
         get: operations["listUsers"];
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{telegram_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Удалить из семьи
+         * @description Бот перестаёт отвечать человеку, его траты остаются. Вернуть можно новым приглашением.
+         *     Главу семьи удалить нельзя.
+         */
+        delete: operations["removeUser"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Приглашения за последний месяц */
+        get: operations["listInvites"];
+        put?: never;
+        /**
+         * Создать приглашение
+         * @description Одноразовая ссылка на бота на 7 дней. Ссылка возвращается только здесь:
+         *     в базе хранится лишь хэш кода.
+         */
+        post: operations["createInvite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invites/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Отозвать приглашение */
+        delete: operations["revokeInvite"];
         options?: never;
         head?: never;
         patch?: never;
@@ -189,11 +250,53 @@ export interface components {
             first_name: string;
             /** @example rics69 */
             username?: string;
+            /** @description Глава семьи */
+            is_head: boolean;
+            /**
+             * Format: date-time
+             * @description Когда удалён из семьи; нет — состоит в семье
+             */
+            removed_at?: string;
             /** Format: date-time */
             created_at: string;
         };
         UserList: {
             items: components["schemas"]["User"][];
+        };
+        /** @enum {string} */
+        InviteStatus: "active" | "used" | "expired" | "revoked";
+        Invite: {
+            /** Format: int64 */
+            id: number;
+            status: components["schemas"]["InviteStatus"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: date-time */
+            used_at?: string;
+            /**
+             * Format: int64
+             * @description Telegram ID присоединившегося
+             */
+            used_by?: number;
+        };
+        CreatedInvite: {
+            /** Format: int64 */
+            id: number;
+            status: components["schemas"]["InviteStatus"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at: string;
+            /**
+             * @description Ссылка для члена семьи; открывает бота и добавляет в семью
+             * @example https://t.me/FamilyExpensesBot?start=Xk9q2LmPz0aB7cD1eF3gHw
+             */
+            link: string;
+        };
+        InviteList: {
+            items: components["schemas"]["Invite"][];
         };
         CategoryInfo: {
             code: components["schemas"]["Category"];
@@ -208,7 +311,7 @@ export interface components {
         };
         ErrorDetail: {
             /** @enum {string} */
-            code: "bad_request" | "validation_error" | "not_found" | "unknown_user" | "internal";
+            code: "bad_request" | "validation_error" | "not_found" | "unknown_user" | "conflict" | "internal";
             message: string;
             /** @description Поле с ошибкой валидации */
             field?: string;
@@ -226,6 +329,15 @@ export interface components {
         };
         /** @description Не найдено */
         NotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Действие невозможно в текущем состоянии */
+        Conflict: {
             headers: {
                 [name: string]: unknown;
             };
@@ -426,6 +538,90 @@ export interface operations {
                     "application/json": components["schemas"]["UserList"];
                 };
             };
+        };
+    };
+    removeUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                telegram_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Удалён */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listInvites: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Приглашения, новые первыми */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteList"];
+                };
+            };
+        };
+    };
+    createInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Приглашение со ссылкой */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedInvite"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    revokeInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Отозвано */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
         };
     };
     listCategories: {

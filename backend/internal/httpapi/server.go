@@ -2,11 +2,13 @@ package httpapi
 
 import (
 	"context"
+	"time"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"github.com/shopspring/decimal"
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/expense"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
 
@@ -25,9 +27,14 @@ type ExpenseService interface {
 	Summary(ctx context.Context, s expense.Scope, f expense.Filter) (expense.Summary, error)
 }
 
-// UserLister lists family members.
-type UserLister interface {
-	List(ctx context.Context) ([]user.User, error)
+// FamilyService manages members and invites; *family.Service implements it.
+type FamilyService interface {
+	Members(ctx context.Context) ([]user.User, error)
+	Remove(ctx context.Context, telegramID int64) error
+	CreateInvite(ctx context.Context) (family.CreatedInvite, error)
+	ListInvites(ctx context.Context) ([]family.Invite, error)
+	RevokeInvite(ctx context.Context, id int64) error
+	Now() time.Time
 }
 
 // Server implements StrictServerInterface. The panel belongs to the family head,
@@ -37,13 +44,13 @@ type UserLister interface {
 // in one place (writeError), instead of building 400/404 objects in each handler.
 type Server struct {
 	expenses ExpenseService
-	users    UserLister
+	family   FamilyService
 }
 
 var _ StrictServerInterface = (*Server)(nil)
 
-func NewServer(expenses ExpenseService, users UserLister) *Server {
-	return &Server{expenses: expenses, users: users}
+func NewServer(expenses ExpenseService, family FamilyService) *Server {
+	return &Server{expenses: expenses, family: family}
 }
 
 func (s *Server) ListExpenses(ctx context.Context, req ListExpensesRequestObject) (ListExpensesResponseObject, error) {
@@ -128,7 +135,7 @@ func (s *Server) DeleteExpense(ctx context.Context, req DeleteExpenseRequestObje
 }
 
 func (s *Server) ListUsers(ctx context.Context, _ ListUsersRequestObject) (ListUsersResponseObject, error) {
-	users, err := s.users.List(ctx)
+	users, err := s.family.Members(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -138,6 +145,8 @@ func (s *Server) ListUsers(ctx context.Context, _ ListUsersRequestObject) (ListU
 			TelegramId: u.TelegramID,
 			FirstName:  u.FirstName,
 			Username:   optional(u.Username),
+			IsHead:     u.IsHead,
+			RemovedAt:  u.RemovedAt,
 			CreatedAt:  u.CreatedAt,
 		}
 	}

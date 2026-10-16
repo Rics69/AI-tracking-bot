@@ -62,7 +62,8 @@ type Bot struct {
 	LLM
 	Agent
 	TelegramToken string `env:"TELEGRAM_BOT_TOKEN,required"`
-	// AllowedUserIDs restricts the bot to family members; empty allows everyone.
+	// AllowedUserIDs are the family heads, added on every start. Others join by
+	// invite link. Empty: an open family where anyone who writes joins.
 	AllowedUserIDs []int64       `env:"ALLOWED_TELEGRAM_IDS" envSeparator:","`
 	ReplyTimeout   time.Duration `env:"REPLY_TIMEOUT" envDefault:"90s"`
 }

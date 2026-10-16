@@ -14,6 +14,7 @@ servers:
 tags:
   - name: expenses
   - name: users
+  - name: invites
   - name: categories
 
 paths:
@@ -128,13 +129,73 @@ paths:
       operationId: listUsers
       tags: [users]
       summary: Члены семьи
-      description: Пользователи, которые хотя бы раз писали боту.
+      description: |
+        Все, кто состоял в семье: сначала текущие (глава первым), затем удалённые —
+        их траты остаются в истории.
       responses:
         '200':
           description: Список членов семьи
           content:
             application/json:
               schema: { $ref: '#/components/schemas/UserList' }
+
+  /users/{telegram_id}:
+    delete:
+      operationId: removeUser
+      tags: [users]
+      summary: Удалить из семьи
+      description: |
+        Бот перестаёт отвечать человеку, его траты остаются. Вернуть можно новым приглашением.
+        Главу семьи удалить нельзя.
+      parameters:
+        - name: telegram_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '204': { description: Удалён }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /invites:
+    get:
+      operationId: listInvites
+      tags: [invites]
+      summary: Приглашения за последний месяц
+      responses:
+        '200':
+          description: Приглашения, новые первыми
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InviteList' }
+    post:
+      operationId: createInvite
+      tags: [invites]
+      summary: Создать приглашение
+      description: |
+        Одноразовая ссылка на бота на 7 дней. Ссылка возвращается только здесь:
+        в базе хранится лишь хэш кода.
+      responses:
+        '201':
+          description: Приглашение со ссылкой
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreatedInvite' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /invites/{id}:
+    delete:
+      operationId: revokeInvite
+      tags: [invites]
+      summary: Отозвать приглашение
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '204': { description: Отозвано }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /categories:
     get:
@@ -178,6 +239,11 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
     NotFound:
       description: Не найдено
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Действие невозможно в текущем состоянии
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -265,11 +331,16 @@ components:
 
     User:
       type: object
-      required: [telegram_id, first_name, created_at]
+      required: [telegram_id, first_name, is_head, created_at]
       properties:
         telegram_id: { type: integer, format: int64, example: 123456789 }
         first_name: { type: string, example: Данил }
         username: { type: string, example: rics69 }
+        is_head: { type: boolean, description: Глава семьи }
+        removed_at:
+          type: string
+          format: date-time
+          description: Когда удалён из семьи; нет — состоит в семье
         created_at: { type: string, format: date-time }
 
     UserList:
@@ -279,6 +350,43 @@ components:
         items:
           type: array
           items: { $ref: '#/components/schemas/User' }
+
+    InviteStatus:
+      type: string
+      enum: [active, used, expired, revoked]
+      x-enum-varnames: [InviteActive, InviteUsed, InviteExpired, InviteRevoked]
+
+    Invite:
+      type: object
+      required: [id, status, created_at, expires_at]
+      properties:
+        id: { type: integer, format: int64 }
+        status: { $ref: '#/components/schemas/InviteStatus' }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        used_at: { type: string, format: date-time }
+        used_by: { type: integer, format: int64, description: Telegram ID присоединившегося }
+
+    CreatedInvite:
+      type: object
+      required: [id, status, created_at, expires_at, link]
+      properties:
+        id: { type: integer, format: int64 }
+        status: { $ref: '#/components/schemas/InviteStatus' }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        link:
+          type: string
+          example: https://t.me/FamilyExpensesBot?start=Xk9q2LmPz0aB7cD1eF3gHw
+          description: Ссылка для члена семьи; открывает бота и добавляет в семью
+
+    InviteList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Invite' }
 
     CategoryInfo:
       type: object
@@ -307,8 +415,8 @@ components:
       properties:
         code:
           type: string
-          enum: [bad_request, validation_error, not_found, unknown_user, internal]
+          enum: [bad_request, validation_error, not_found, unknown_user, conflict, internal]
           x-enum-varnames:
-            [ErrCodeBadRequest, ErrCodeValidation, ErrCodeNotFound, ErrCodeUnknownUser, ErrCodeInternal]
+            [ErrCodeBadRequest, ErrCodeValidation, ErrCodeNotFound, ErrCodeUnknownUser, ErrCodeConflict, ErrCodeInternal]
         message: { type: string }
         field: { type: string, description: Поле с ошибкой валидации }
