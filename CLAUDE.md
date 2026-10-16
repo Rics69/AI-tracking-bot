@@ -16,7 +16,9 @@
 - `backend/internal/user` — члены семьи (Telegram-пользователи).
 - `backend/internal/storage/postgres` — репозитории на pgx, миграции goose (вшиты через embed, применяются при старте).
 - `backend/internal/httpapi` — REST: `api.gen.go` генерируется из `backend/api/openapi.yaml`, руками пишется `server.go`.
-- `web/` — Next.js панель (в разработке).
+- `web/` — Next.js 16 панель главы семьи (App Router, TanStack Query, shadcn/ui). Перед правками читай `web/AGENTS.md`: API Next 16 отличаются от привычных.
+  - `web/src/api/schema.d.ts` генерируется из `openapi.yaml` (`npm run gen:api`), руками не править.
+  - Фильтры живут в URL (`use-filters.ts`); `/api/*` проксируется на Go API через rewrites в `next.config.ts`.
 
 ## Команды
 
@@ -26,11 +28,16 @@ make gen         # перегенерировать код из openapi.yaml
 make test        # все тесты (интеграционные поднимают Postgres через testcontainers)
 make test-short  # только юнит-тесты
 make lint        # go vet + golangci-lint в Docker
+
+# web/
+npm run dev        # панель на :3000, API ожидается на :8080
+npm run gen:api    # TS-типы из backend/api/openapi.yaml
+npm run typecheck && npm run lint
 ```
 
 ## Правила
 
-- **Contract-first.** Любое изменение REST API начинается с `backend/api/openapi.yaml`, затем `make gen`. `api.gen.go` руками не править.
+- **Contract-first.** Любое изменение REST API начинается с `backend/api/openapi.yaml`, затем `make gen` и `npm run gen:api` в `web/`. Сгенерированный код руками не править.
 - **Scope обязателен.** Все операции с тратами принимают `expense.Scope`: `AllUsers()` для панели, `OwnedBy(telegramID)` для бота. Нулевой scope не видит ничего — не обходить это.
 - **user_id для бота берётся только из Telegram-апдейта**, никогда из аргументов LLM.
 - **Деньги — `decimal.Decimal` / `NUMERIC(12,2)`**, никаких float.
