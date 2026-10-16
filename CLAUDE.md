@@ -18,6 +18,8 @@
 - `backend/internal/family` — членство: приглашения (в БД только хэш кода), вход через `/start <код>`, проверка доступа к боту. `ALLOWED_TELEGRAM_IDS` лишь создаёт глав семьи при старте.
 - `backend/internal/storage/postgres` — репозитории на pgx, миграции goose (вшиты через embed, применяются при старте).
 - `backend/internal/storage/memory` — in-memory репозиторий трат с той же семантикой (для eval).
+- `backend/internal/metrics` — сервер `/metrics` на внутреннем порту (`METRICS_ADDR`, по умолчанию `:9091`); сами метрики объявлены в пакетах, которые их порождают (`llm`, `agent`, `telegram`, `httpapi`).
+- `monitoring/` — конфиг Prometheus, правила алертов, дашборд Grafana (подхватывается при старте).
 - `backend/internal/httpapi` — REST: `api.gen.go` генерируется из `backend/api/openapi.yaml`, руками пишется `server.go`.
 - `web/` — Next.js 16 панель главы семьи (App Router, TanStack Query, shadcn/ui). Перед правками читай `web/AGENTS.md`: API Next 16 отличаются от привычных.
   - `web/src/api/schema.d.ts` генерируется из `openapi.yaml` (`npm run gen:api`), руками не править.
@@ -47,5 +49,6 @@ npm run typecheck && npm run lint
 - **Деньги — `decimal.Decimal` / `NUMERIC(12,2)`**, никаких float.
 - **Даты трат — календарные** (`time.Time` в полночь UTC), «сегодня» считается в `APP_TIMEZONE`.
 - Доменные ошибки (`ValidationError`, `ErrNotFound`, `ErrUnknownUser`) превращаются в HTTP-ответы только в `httpapi/errors.go`.
+- **Метрики:** в лейблах только значения из фиксированного набора — никаких ID пользователей, текста, ID в путях (для HTTP — `r.Pattern`).
 - Комментарии и сообщения в коде — на английском, документация для людей — на русском.
 - После изменений: `make lint && make test`. После правок промпта, тулов или модели — `make eval` и сравнить с прошлым `report.md`.

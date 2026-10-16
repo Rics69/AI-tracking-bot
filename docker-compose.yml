@@ -60,5 +60,37 @@ services:
       - api
     restart: unless-stopped
 
+  # Monitoring: Prometheus scrapes api:9091 and bot:9091, Grafana shows the dashboard.
+  prometheus:
+    image: prom/prometheus:v3.13.4
+    volumes:
+      - ./monitoring/prometheus:/etc/prometheus:ro
+      - prometheus:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - api
+      - bot
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:13.0.11
+    environment:
+      # Local viewing without a login; in production put Grafana behind auth.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/family-expenses.json
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
 volumes:
   pgdata:
+  prometheus:
+  grafana:

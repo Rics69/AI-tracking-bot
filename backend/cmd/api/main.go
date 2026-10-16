@@ -17,6 +17,7 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/httpapi"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/logger"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/metrics"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/postgres"
 )
 
@@ -48,6 +49,8 @@ func run() error {
 		return err
 	}
 	log.Info("database ready")
+
+	metrics.Serve(ctx, cfg.MetricsAddr, pool.Ping, log)
 
 	handler := httpapi.NewHandler(httpapi.Deps{
 		Expenses: expense.NewService(postgres.NewExpenseRepository(pool), cfg.Location),

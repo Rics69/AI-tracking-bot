@@ -5,7 +5,11 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime/debug"
+	"strconv"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 const basePath = "/api/v1"
@@ -85,6 +89,19 @@ func (r *statusRecorder) WriteHeader(status int) {
 	r.ResponseWriter.WriteHeader(status)
 }
 
+var (
+	httpRequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "http_requests_total",
+		Help: "REST API requests by route pattern and status code.",
+	}, []string{"method", "route", "status"})
+
+	httpRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "http_request_duration_seconds",
+		Help:    "REST API request duration by route pattern.",
+		Buckets: prometheus.DefBuckets,
+	}, []string{"method", "route"})
+)
+
 func accessLog(log *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -93,6 +110,14 @@ func accessLog(log *slog.Logger, next http.Handler) http.Handler {
 		if r.URL.Path == "/healthz" {
 			return
 		}
+		// The mux sets the matched pattern ("GET /api/v1/expenses/{id}"):
+		// a bounded label, unlike the raw path with IDs in it.
+		route := r.Pattern
+		if route == "" {
+			route = "unmatched"
+		}
+		httpRequestsTotal.WithLabelValues(r.Method, route, strconv.Itoa(rec.status)).Inc()
+		httpRequestDuration.WithLabelValues(r.Method, route).Observe(time.Since(start).Seconds())
 		log.InfoContext(r.Context(), "http request",
 			"method", r.Method,
 			"path", r.URL.Path,

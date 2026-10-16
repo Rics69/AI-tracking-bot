@@ -149,11 +149,14 @@ func (c *Client) Chat(ctx context.Context, req llm.Request) (llm.Response, error
 		return llm.Response{}, fmt.Errorf("gigachat: encode request: %w", err)
 	}
 
+	start := time.Now()
 	var resp chatResponse
-	if err := c.doWithRetry(ctx, body, req.SessionID, &resp); err != nil {
-		return llm.Response{}, err
+	err = c.doWithRetry(ctx, body, req.SessionID, &resp)
+	var out llm.Response
+	if err == nil {
+		out, err = convertResponse(resp)
 	}
-	out, err := convertResponse(resp)
+	llm.ObserveCall(providerName, c.cfg.Model, outcome(err), time.Since(start), out.Usage)
 	if err != nil {
 		return llm.Response{}, err
 	}
@@ -179,6 +182,7 @@ func (c *Client) doWithRetry(ctx context.Context, body []byte, sessionID string,
 				return err
 			}
 			c.log.WarnContext(ctx, "gigachat retry", "err", err, "wait", backoff, "attempt", attempt+1)
+			llm.ObserveRetry(providerName, llm.OutcomeNetwork)
 			if err := c.sleep(ctx, backoff); err != nil {
 				return err
 			}
@@ -198,6 +202,7 @@ func (c *Client) doWithRetry(ctx context.Context, body []byte, sessionID string,
 		case (status == http.StatusTooManyRequests || status >= 500) && attempt < c.cfg.MaxRetries:
 			wait := retryAfter(header, backoff)
 			c.log.WarnContext(ctx, "gigachat retry", "status", status, "wait", wait, "attempt", attempt+1)
+			llm.ObserveRetry(providerName, statusOutcome(status))
 			if err := c.sleep(ctx, wait); err != nil {
 				return err
 			}
@@ -281,6 +286,34 @@ func (c *Client) invalidateToken() {
 	c.mu.Lock()
 	c.token = ""
 	c.mu.Unlock()
+}
+
+const providerName = "gigachat"
+
+// outcome classifies a call result for metrics.
+func outcome(err error) string {
+	var apiErr *APIError
+	switch {
+	case err == nil:
+		return llm.OutcomeOK
+	case errors.Is(err, llm.ErrBlocked):
+		return llm.OutcomeBlocked
+	case errors.As(err, &apiErr):
+		return statusOutcome(apiErr.Status)
+	default:
+		return llm.OutcomeNetwork // timeouts, connection errors, cancelled requests
+	}
+}
+
+func statusOutcome(status int) string {
+	switch {
+	case status == http.StatusTooManyRequests:
+		return llm.OutcomeRateLimited
+	case status >= 500:
+		return llm.OutcomeServerError
+	default:
+		return llm.OutcomeClientError
+	}
 }
 
 // APIError is a non-successful HTTP response from GigaChat.

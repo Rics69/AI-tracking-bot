@@ -1,0 +1,41 @@
+# Alert rules. They show up on the Alerts page of Prometheus (http://localhost:9090/alerts);
+# in production Alertmanager would route them to Telegram or on-call.
+groups:
+  - name: family-expenses
+    rules:
+      - alert: LLMErrorRateHigh
+        expr: |
+          sum(rate(llm_requests_total{outcome!~"ok|blocked"}[5m]))
+            / sum(rate(llm_requests_total[5m])) > 0.1
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: More than 10% of LLM calls fail
+          description: Check GigaChat availability, rate limits and the auth key.
+
+      - alert: BotRepliesSlow
+        expr: histogram_quantile(0.95, sum by (le) (rate(agent_reply_duration_seconds_bucket[10m]))) > 15
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: 95% of bot replies take longer than 15 seconds
+
+      - alert: AgentGivesUp
+        expr: sum(increase(agent_replies_total{outcome="gave_up"}[1h])) > 3
+        labels: { severity: info }
+        annotations:
+          summary: The agent hit the step limit several times in an hour
+          description: The model loops over tools; look at recent dialogs and add them to the eval.
+
+      - alert: TelegramRepliesLost
+        expr: increase(telegram_send_failures_total[15m]) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: Some users got no reply from the bot
+
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.job }} is not reachable by Prometheus"

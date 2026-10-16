@@ -17,6 +17,7 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/llm/provider"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/logger"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/metrics"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/postgres"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/telegram"
 )
@@ -47,6 +48,8 @@ func run() error {
 	if err := postgres.Migrate(ctx, pool); err != nil {
 		return err
 	}
+
+	metrics.Serve(ctx, cfg.MetricsAddr, pool.Ping, log)
 
 	client, err := provider.New(cfg.LLM, log)
 	if err != nil {

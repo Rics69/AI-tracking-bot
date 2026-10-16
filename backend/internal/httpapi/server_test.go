@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/shopspring/decimal"
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/expense"
@@ -280,5 +281,16 @@ func TestFamilyErrorMapping(t *testing.T) {
 				t.Errorf("got %d %v, want %d %s", status, body, tt.status, tt.code)
 			}
 		})
+	}
+}
+
+func TestHTTPMetricsUseRoutePatterns(t *testing.T) {
+	h := newTestHandler(&fakeExpenses{}, nil)
+	route := "GET /api/v1/expenses/{id}"
+	before := testutil.ToFloat64(httpRequestsTotal.WithLabelValues(http.MethodGet, route, "200"))
+	do(t, h, http.MethodGet, "/api/v1/expenses/7", "")
+	do(t, h, http.MethodGet, "/api/v1/expenses/8", "")
+	if d := testutil.ToFloat64(httpRequestsTotal.WithLabelValues(http.MethodGet, route, "200")) - before; d != 2 {
+		t.Errorf("requests for %s += %v, want 2 (IDs must not become labels)", route, d)
 	}
 }
