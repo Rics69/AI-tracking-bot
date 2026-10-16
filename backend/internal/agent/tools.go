@@ -32,33 +32,45 @@ const (
 const categorySchema = `{"type": "string", "enum": ["food", "transport", "housing", "entertainment", "health", "shopping", "other"],
   "description": "food — еда, продукты, кафе, кофе; transport — такси, метро, бензин; housing — аренда, ЖКХ, ремонт; entertainment — кино, игры, подписки; health — аптека, врачи, спорт; shopping — одежда, техника, подарки; other — всё остальное"}`
 
-// tools are the functions the model may call. Note that none of them has a
-// user parameter: the owner always comes from the Telegram update.
-var tools = []llm.Tool{
-	{
-		Name:        toolAdd,
-		Description: "Добавить трату пользователя.",
-		Parameters: json.RawMessage(`{
+// toolDefs returns the functions the model may call. Note that none of them
+// has a user parameter: the owner always comes from the Telegram update.
+//
+// Few-shot examples carry real dates relative to today: with placeholders like
+// "<yesterday>" the model tends to drop the date and record the expense for today.
+func toolDefs(today time.Time) []llm.Tool {
+	d := func(t time.Time) string { return t.Format(time.DateOnly) }
+	weekStart := today.AddDate(0, 0, -((int(today.Weekday()) + 6) % 7))
+	monthStart := time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, time.UTC)
+	lastMonday := lastWeekday(today, time.Monday)
+	lastSaturday := lastWeekday(today, time.Saturday)
+
+	return []llm.Tool{
+		{
+			Name:        toolAdd,
+			Description: "Добавить трату пользователя.",
+			Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {
     "amount": {"type": "number", "description": "Сумма в рублях, больше нуля. «5к» = 5000"},
     "category": ` + categorySchema + `,
-    "date": {"type": "string", "description": "Дата траты YYYY-MM-DD. Не указывай, если пользователь не назвал дату — будет сегодня"},
+    "date": {"type": "string", "description": "Дата траты YYYY-MM-DD. Если пользователь не назвал день — сегодняшняя дата. «Вчера», «в понедельник», «3 числа» — возьми из календаря в инструкциях"},
     "comment": {"type": "string", "description": "На что потрачено, коротко, как сказал пользователь: «кофе», «такси до работы»"}
   },
-  "required": ["amount", "category", "comment"]
+  "required": ["amount", "category", "comment", "date"]
 }`),
-		Examples: []llm.ToolExample{
-			{Request: "кофе 350", Params: map[string]any{"amount": 350, "category": "food", "comment": "кофе"}},
-			{Request: "такси 1200 вчера", Params: map[string]any{"amount": 1200, "category": "transport", "comment": "такси", "date": "<вчерашняя дата>"}},
-			{Request: "кроссовки 7.5к", Params: map[string]any{"amount": 7500, "category": "shopping", "comment": "кроссовки"}},
+			Examples: []llm.ToolExample{
+				{Request: "кофе 350", Params: map[string]any{"amount": 350, "category": "food", "comment": "кофе", "date": d(today)}},
+				{Request: "такси 1200 вчера", Params: map[string]any{"amount": 1200, "category": "transport", "comment": "такси", "date": d(today.AddDate(0, 0, -1))}},
+				{Request: "бензин 3000 в понедельник", Params: map[string]any{"amount": 3000, "category": "transport", "comment": "бензин", "date": d(lastMonday)}},
+				{Request: "продукты 2.5к в субботу", Params: map[string]any{"amount": 2500, "category": "food", "comment": "продукты", "date": d(lastSaturday)}},
+				{Request: "обед 450 3 числа", Params: map[string]any{"amount": 450, "category": "food", "comment": "обед", "date": d(time.Date(today.Year(), today.Month(), 3, 0, 0, 0, 0, time.UTC))}},
+			},
 		},
-	},
-	{
-		Name: toolFind,
-		Description: "Найти траты пользователя: список с id и итогом. Используй, чтобы показать траты, " +
-			"и чтобы узнать id перед изменением или удалением.",
-		Parameters: json.RawMessage(`{
+		{
+			Name: toolFind,
+			Description: "Найти траты пользователя: список с id и итогом. Используй, чтобы показать траты, " +
+				"и чтобы узнать id перед изменением или удалением.",
+			Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {
     "date_from": {"type": "string", "description": "Начало периода YYYY-MM-DD включительно"},
@@ -69,16 +81,16 @@ var tools = []llm.Tool{
     "limit": {"type": "integer", "description": "Сколько трат вернуть, по умолчанию 10, максимум 30"}
   }
 }`),
-		Examples: []llm.ToolExample{
-			{Request: "покажи траты за неделю", Params: map[string]any{"date_from": "<понедельник этой недели>", "date_to": "<сегодня>"}},
-			{Request: "последнее было не 350, а 450", Params: map[string]any{"last_added": true, "limit": 1}},
-			{Request: "удали такси", Params: map[string]any{"text": "такси"}},
+			Examples: []llm.ToolExample{
+				{Request: "покажи траты за неделю", Params: map[string]any{"date_from": d(weekStart), "date_to": d(today)}},
+				{Request: "последнее было не 350, а 450", Params: map[string]any{"last_added": true, "limit": 1}},
+				{Request: "удали такси", Params: map[string]any{"text": "такси"}},
+			},
 		},
-	},
-	{
-		Name:        toolSummary,
-		Description: "Посчитать, сколько пользователь потратил за период: общая сумма и разбивка по категориям.",
-		Parameters: json.RawMessage(`{
+		{
+			Name:        toolSummary,
+			Description: "Посчитать, сколько пользователь потратил за период: общая сумма и разбивка по категориям.",
+			Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {
     "date_from": {"type": "string", "description": "Начало периода YYYY-MM-DD включительно"},
@@ -86,14 +98,14 @@ var tools = []llm.Tool{
     "category": ` + categorySchema + `
   }
 }`),
-		Examples: []llm.ToolExample{
-			{Request: "сколько потратил на еду в этом месяце", Params: map[string]any{"date_from": "<первое число месяца>", "date_to": "<сегодня>", "category": "food"}},
+			Examples: []llm.ToolExample{
+				{Request: "сколько потратил на еду в этом месяце", Params: map[string]any{"date_from": d(monthStart), "date_to": d(today), "category": "food"}},
+			},
 		},
-	},
-	{
-		Name:        toolUpdate,
-		Description: "Изменить трату по id. Передай только поля, которые нужно поменять. id бери из find_expenses.",
-		Parameters: json.RawMessage(`{
+		{
+			Name:        toolUpdate,
+			Description: "Изменить трату по id. Передай только поля, которые нужно поменять. id бери из find_expenses.",
+			Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {
     "id": {"type": "integer", "description": "id траты"},
@@ -104,22 +116,28 @@ var tools = []llm.Tool{
   },
   "required": ["id"]
 }`),
-		Examples: []llm.ToolExample{
-			{Request: "последнее было не 350, а 450 (id последней траты 17)", Params: map[string]any{"id": 17, "amount": 450}},
+			Examples: []llm.ToolExample{
+				{Request: "последнее было не 350, а 450 (id последней траты 17)", Params: map[string]any{"id": 17, "amount": 450}},
+			},
 		},
-	},
-	{
-		Name:        toolDelete,
-		Description: "Удалить трату по id. id бери из find_expenses.",
-		Parameters: json.RawMessage(`{
+		{
+			Name:        toolDelete,
+			Description: "Удалить трату по id. id бери из find_expenses.",
+			Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {"id": {"type": "integer", "description": "id траты"}},
   "required": ["id"]
 }`),
-		Examples: []llm.ToolExample{
-			{Request: "удали такси (find_expenses нашёл одну трату с id 23)", Params: map[string]any{"id": 23}},
+			Examples: []llm.ToolExample{
+				{Request: "удали такси (find_expenses нашёл одну трату с id 23)", Params: map[string]any{"id": 23}},
+			},
 		},
-	},
+	}
+}
+
+// lastWeekday returns the most recent day with the given weekday, today included.
+func lastWeekday(today time.Time, wd time.Weekday) time.Time {
+	return today.AddDate(0, 0, -((int(today.Weekday()) - int(wd) + 7) % 7))
 }
 
 // Expenses is the part of expense.Service the agent needs.
@@ -172,7 +190,12 @@ func (a *Agent) runTool(ctx context.Context, userID int64, call *llm.ToolCall) (
 	case errors.As(err, &terr):
 		result = map[string]string{"error": terr.msg}
 	case errors.As(err, &verr):
-		result = map[string]string{"error": "invalid " + verr.Field + ": " + verr.Message}
+		msg := "invalid " + verr.Field + ": " + verr.Message
+		if verr.Field == "spent_at" {
+			msg += ". A weekday without details means the most recent past one: take its date from the list of the last 7 days. " +
+				"If the user really meant a future date, tell them only past expenses are recorded."
+		}
+		result = map[string]string{"error": msg}
 	case errors.Is(err, expense.ErrNotFound):
 		result = map[string]string{"error": "expense not found; call find_expenses to get a valid id"}
 	default:
@@ -219,7 +242,7 @@ func (a *Agent) addExpense(ctx context.Context, userID int64, raw json.RawMessag
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"added": toItem(e)}, nil
+	return map[string]any{"added": a.toItem(e)}, nil
 }
 
 type findArgs struct {
@@ -254,7 +277,7 @@ func (a *Agent) findExpenses(ctx context.Context, scope expense.Scope, raw json.
 	}
 	items := make([]item, len(page.Items))
 	for i, e := range page.Items {
-		items[i] = toItem(e)
+		items[i] = a.toItem(e)
 	}
 	return map[string]any{
 		"expenses":    items,
@@ -334,7 +357,7 @@ func (a *Agent) updateExpense(ctx context.Context, scope expense.Scope, raw json
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"before": toItem(before), "after": toItem(after)}, nil
+	return map[string]any{"before": a.toItem(before), "after": a.toItem(after)}, nil
 }
 
 type deleteArgs struct {
@@ -357,7 +380,7 @@ func (a *Agent) deleteExpense(ctx context.Context, scope expense.Scope, raw json
 	if err := a.expenses.Delete(ctx, scope, id); err != nil {
 		return nil, err
 	}
-	return map[string]any{"deleted": toItem(e)}, nil
+	return map[string]any{"deleted": a.toItem(e)}, nil
 }
 
 // item is the compact representation of an expense shown to the model.
@@ -366,16 +389,39 @@ type item struct {
 	Amount   json.Number `json:"amount"`
 	Category string      `json:"category"`
 	Date     string      `json:"date"`
-	Comment  string      `json:"comment,omitempty"`
+	// DateText is the date as the reply should say it ("вчера", "16 октября"),
+	// so the model does not format dates itself.
+	DateText string `json:"date_text"`
+	Comment  string `json:"comment,omitempty"`
 }
 
-func toItem(e expense.Expense) item {
+func (a *Agent) toItem(e expense.Expense) item {
 	return item{
 		ID:       e.ID,
 		Amount:   money(e.Amount),
 		Category: e.Category.Label(),
 		Date:     e.SpentAt.Format(time.DateOnly),
+		DateText: humanDate(e.SpentAt, a.clock.Today()),
 		Comment:  e.Comment,
+	}
+}
+
+var monthsGenitive = [...]string{"", "января", "февраля", "марта", "апреля", "мая", "июня",
+	"июля", "августа", "сентября", "октября", "ноября", "декабря"}
+
+// humanDate formats a date the way people say it in Russian.
+func humanDate(d, today time.Time) string {
+	switch {
+	case d.Equal(today):
+		return "сегодня"
+	case d.Equal(today.AddDate(0, 0, -1)):
+		return "вчера"
+	case d.Equal(today.AddDate(0, 0, -2)):
+		return "позавчера"
+	case d.Year() == today.Year():
+		return fmt.Sprintf("%d %s", d.Day(), monthsGenitive[d.Month()])
+	default:
+		return fmt.Sprintf("%d %s %d", d.Day(), monthsGenitive[d.Month()], d.Year())
 	}
 }
 

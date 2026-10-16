@@ -69,7 +69,9 @@ func (a *Agent) Reply(ctx context.Context, caller Caller, text string) (string, 
 	start := time.Now()
 	userMsg := llm.Message{Role: llm.RoleUser, Content: text}
 
-	messages := []llm.Message{{Role: llm.RoleSystem, Content: systemPrompt(a.clock.Today(), a.loc, caller.Name)}}
+	today := a.clock.Today()
+	tools := toolDefs(today)
+	messages := []llm.Message{{Role: llm.RoleSystem, Content: systemPrompt(today, a.loc, caller.Name)}}
 	messages = append(messages, a.history.Messages(caller.UserID)...)
 	messages = append(messages, userMsg)
 	turn := []llm.Message{userMsg}

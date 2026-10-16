@@ -322,7 +322,7 @@ func TestSystemPromptCalendar(t *testing.T) {
 	p := systemPrompt(today, time.UTC, "Анна")
 	for _, want := range []string{
 		"сегодня: 2026-10-16, пятница",
-		"вчера: 2026-10-15; позавчера: 2026-10-14",
+		"последние 7 дней: пт 2026-10-16 (сегодня), чт 2026-10-15 (вчера), ср 2026-10-14, вт 2026-10-13, пн 2026-10-12, вс 2026-10-11, сб 2026-10-10",
 		"эта неделя: 2026-10-12 — 2026-10-18; прошлая неделя: 2026-10-05 — 2026-10-11",
 		"этот месяц: 2026-10-01 — 2026-10-31; прошлый месяц: 2026-09-01 — 2026-09-30",
 		"Пользователь: Анна",
@@ -338,7 +338,7 @@ func TestSystemPromptCalendar(t *testing.T) {
 }
 
 func TestToolSchemasAreValidJSON(t *testing.T) {
-	for _, tool := range tools {
+	for _, tool := range toolDefs(today) {
 		var schema map[string]any
 		if err := json.Unmarshal(tool.Parameters, &schema); err != nil {
 			t.Errorf("%s: %v", tool.Name, err)
@@ -346,5 +346,41 @@ func TestToolSchemasAreValidJSON(t *testing.T) {
 		if _, ok := schema["properties"].(map[string]any)["user_id"]; ok {
 			t.Errorf("%s exposes user_id to the model", tool.Name)
 		}
+	}
+}
+
+func TestHumanDate(t *testing.T) {
+	for d, want := range map[time.Time]string{
+		today:                    "сегодня",
+		today.AddDate(0, 0, -1):  "вчера",
+		today.AddDate(0, 0, -2):  "позавчера",
+		today.AddDate(0, 0, -10): "6 октября",
+		today.AddDate(-1, 0, 0):  "16 октября 2025",
+	} {
+		if got := humanDate(d, today); got != want {
+			t.Errorf("humanDate(%s) = %q, want %q", d.Format(time.DateOnly), got, want)
+		}
+	}
+}
+
+func TestToolExamplesUseRealDates(t *testing.T) {
+	var add llm.Tool
+	for _, tool := range toolDefs(today) {
+		if tool.Name == toolAdd {
+			add = tool
+		}
+	}
+	want := map[string]string{
+		"такси 1200 вчера":          "2026-10-15",
+		"бензин 3000 в понедельник": "2026-10-12",
+		"продукты 2.5к в субботу":   "2026-10-10",
+	}
+	for _, ex := range add.Examples {
+		if w, ok := want[ex.Request]; ok && ex.Params["date"] != w {
+			t.Errorf("%q: date = %v, want %s", ex.Request, ex.Params["date"], w)
+		}
+	}
+	if got := lastWeekday(today, time.Friday); !got.Equal(today) {
+		t.Errorf("lastWeekday(Friday) on a Friday = %s, want today", got)
 	}
 }
