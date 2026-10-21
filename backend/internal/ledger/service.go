@@ -1,4 +1,4 @@
-package expense
+package ledger
 
 import (
 	"context"
@@ -25,9 +25,9 @@ var (
 // Repository persists expenses. Every method honours the scope:
 // expenses outside it behave as if they did not exist.
 type Repository interface {
-	Create(ctx context.Context, e Expense) (Expense, error)
-	Get(ctx context.Context, s Scope, id int64) (Expense, error)
-	Update(ctx context.Context, s Scope, e Expense) (Expense, error)
+	Create(ctx context.Context, e Operation) (Operation, error)
+	Get(ctx context.Context, s Scope, id int64) (Operation, error)
+	Update(ctx context.Context, s Scope, e Operation) (Operation, error)
 	Delete(ctx context.Context, s Scope, id int64) error
 	List(ctx context.Context, s Scope, f Filter) (Page, error)
 	Summary(ctx context.Context, s Scope, f Filter) (Summary, error)
@@ -66,37 +66,37 @@ func (s *Service) today(t time.Time) time.Time {
 }
 
 // Create validates and stores a new expense.
-func (s *Service) Create(ctx context.Context, in CreateInput) (Expense, error) {
-	e := Expense{
+func (s *Service) Create(ctx context.Context, in CreateInput) (Operation, error) {
+	e := Operation{
 		UserID:   in.UserID,
 		Amount:   in.Amount,
 		Category: in.Category,
 		Comment:  in.Comment,
-		SpentAt:  s.today(in.Today),
+		Date:     s.today(in.Today),
 	}
-	if in.SpentAt != nil {
-		e.SpentAt = dateOf(*in.SpentAt)
+	if in.Date != nil {
+		e.Date = dateOf(*in.Date)
 	}
 	if err := s.normalize(&e, s.today(in.Today)); err != nil {
-		return Expense{}, err
+		return Operation{}, err
 	}
 	return s.repo.Create(ctx, e)
 }
 
 // Get returns one expense visible in the scope.
-func (s *Service) Get(ctx context.Context, sc Scope, id int64) (Expense, error) {
+func (s *Service) Get(ctx context.Context, sc Scope, id int64) (Operation, error) {
 	return s.repo.Get(ctx, sc, id)
 }
 
 // Update applies a patch to an expense visible in the scope.
-func (s *Service) Update(ctx context.Context, sc Scope, id int64, p Patch) (Expense, error) {
+func (s *Service) Update(ctx context.Context, sc Scope, id int64, p Patch) (Operation, error) {
 	if p.UserID != nil && sc.FamilyID() == 0 {
 		// Only the head moves an expense between members of the family.
-		return Expense{}, invalid("user_id", "cannot reassign an expense to another user")
+		return Operation{}, invalid("user_id", "cannot reassign an expense to another user")
 	}
 	e, err := s.repo.Get(ctx, sc, id)
 	if err != nil {
-		return Expense{}, err
+		return Operation{}, err
 	}
 	if p.UserID != nil {
 		e.UserID = *p.UserID
@@ -107,14 +107,14 @@ func (s *Service) Update(ctx context.Context, sc Scope, id int64, p Patch) (Expe
 	if p.Category != nil {
 		e.Category = *p.Category
 	}
-	if p.SpentAt != nil {
-		e.SpentAt = dateOf(*p.SpentAt)
+	if p.Date != nil {
+		e.Date = dateOf(*p.Date)
 	}
 	if p.Comment != nil {
 		e.Comment = *p.Comment
 	}
 	if err := s.normalize(&e, s.today(p.Today)); err != nil {
-		return Expense{}, err
+		return Operation{}, err
 	}
 	return s.repo.Update(ctx, sc, e)
 }
@@ -142,7 +142,7 @@ func (s *Service) Summary(ctx context.Context, sc Scope, f Filter) (Summary, err
 
 // normalize validates e and brings it to canonical form.
 // today is the current date of whoever makes the change.
-func (s *Service) normalize(e *Expense, today time.Time) error {
+func (s *Service) normalize(e *Operation, today time.Time) error {
 	if e.UserID <= 0 {
 		return invalid("user_id", "must be a positive Telegram ID")
 	}
@@ -158,10 +158,10 @@ func (s *Service) normalize(e *Expense, today time.Time) error {
 	if !e.Category.Valid() {
 		return invalid("category", "unknown category %q", e.Category)
 	}
-	if e.SpentAt.Before(minSpentAt) {
+	if e.Date.Before(minSpentAt) {
 		return invalid("spent_at", "must not be earlier than %s", minSpentAt.Format(time.DateOnly))
 	}
-	if e.SpentAt.After(today) {
+	if e.Date.After(today) {
 		return invalid("spent_at", "must not be in the future")
 	}
 	e.Comment = strings.TrimSpace(e.Comment)

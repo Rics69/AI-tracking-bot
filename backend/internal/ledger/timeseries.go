@@ -1,4 +1,4 @@
-package expense
+package ledger
 
 import (
 	"context"

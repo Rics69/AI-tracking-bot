@@ -1,4 +1,4 @@
-package expense
+package ledger
 
 import (
 	"context"
@@ -12,37 +12,39 @@ import (
 
 // memRepo is a minimal in-memory Repository for service tests.
 type memRepo struct {
-	items  map[int64]Expense
+	items  map[int64]Operation
 	nextID int64
 	// lastFilter records what the service passed to List/Summary.
 	lastFilter Filter
 }
 
-func newMemRepo() *memRepo { return &memRepo{items: map[int64]Expense{}} }
+func newMemRepo() *memRepo { return &memRepo{items: map[int64]Operation{}} }
 
 // Every user of memRepo belongs to family 1.
-func (r *memRepo) visible(s Scope, e Expense) bool { return s.FamilyID() == 1 || e.UserID == s.UserID() }
+func (r *memRepo) visible(s Scope, e Operation) bool {
+	return s.FamilyID() == 1 || e.UserID == s.UserID()
+}
 
 var family = InFamily(1)
 
-func (r *memRepo) Create(_ context.Context, e Expense) (Expense, error) {
+func (r *memRepo) Create(_ context.Context, e Operation) (Operation, error) {
 	r.nextID++
 	e.ID = r.nextID
 	r.items[e.ID] = e
 	return e, nil
 }
 
-func (r *memRepo) Get(_ context.Context, s Scope, id int64) (Expense, error) {
+func (r *memRepo) Get(_ context.Context, s Scope, id int64) (Operation, error) {
 	e, ok := r.items[id]
 	if !ok || !r.visible(s, e) {
-		return Expense{}, ErrNotFound
+		return Operation{}, ErrNotFound
 	}
 	return e, nil
 }
 
-func (r *memRepo) Update(ctx context.Context, s Scope, e Expense) (Expense, error) {
+func (r *memRepo) Update(ctx context.Context, s Scope, e Operation) (Operation, error) {
 	if _, err := r.Get(ctx, s, e.ID); err != nil {
-		return Expense{}, err
+		return Operation{}, err
 	}
 	r.items[e.ID] = e
 	return e, nil
@@ -104,15 +106,15 @@ func TestCreateDefaultsToTodayInFamilyTimezone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := date(2026, 10, 15); !e.SpentAt.Equal(want) {
-		t.Errorf("SpentAt = %s, want %s", e.SpentAt, want)
+	if want := date(2026, 10, 15); !e.Date.Equal(want) {
+		t.Errorf("Date = %s, want %s", e.Date, want)
 	}
 }
 
 func TestFutureIsJudgedByTheCallersToday(t *testing.T) {
 	svc, _ := newTestService() // 15 October in Moscow, still 14 October in UTC
 	in := validInput()
-	in.SpentAt = new(date(2026, 10, 15))
+	in.Date = new(date(2026, 10, 15))
 	in.Today = date(2026, 10, 14) // a user to the west of Moscow
 	var verr *ValidationError
 	if _, err := svc.Create(context.Background(), in); !errors.As(err, &verr) || verr.Field != "spent_at" {
@@ -138,8 +140,8 @@ func TestCreateValidation(t *testing.T) {
 		{"three decimals", func(in *CreateInput) { in.Amount = decimal.RequireFromString("1.005") }, "amount"},
 		{"too large", func(in *CreateInput) { in.Amount = decimal.New(1, 10) }, "amount"},
 		{"unknown category", func(in *CreateInput) { in.Category = "coffee" }, "category"},
-		{"future date", func(in *CreateInput) { in.SpentAt = new(date(2026, 10, 16)) }, "spent_at"},
-		{"ancient date", func(in *CreateInput) { in.SpentAt = new(date(1999, 12, 31)) }, "spent_at"},
+		{"future date", func(in *CreateInput) { in.Date = new(date(2026, 10, 16)) }, "spent_at"},
+		{"ancient date", func(in *CreateInput) { in.Date = new(date(1999, 12, 31)) }, "spent_at"},
 		{"long comment", func(in *CreateInput) { in.Comment = strings.Repeat("я", MaxCommentLength+1) }, "comment"},
 		{"no user", func(in *CreateInput) { in.UserID = 0 }, "user_id"},
 	}
@@ -165,7 +167,7 @@ func TestCreateNormalizes(t *testing.T) {
 	in := validInput()
 	in.Comment = "  кофе  "
 	in.Amount = decimal.RequireFromString("99.90")
-	in.SpentAt = new(time.Date(2026, 10, 10, 23, 59, 0, 0, time.UTC))
+	in.Date = new(time.Date(2026, 10, 10, 23, 59, 0, 0, time.UTC))
 	e, err := svc.Create(context.Background(), in)
 	if err != nil {
 		t.Fatal(err)
@@ -173,8 +175,8 @@ func TestCreateNormalizes(t *testing.T) {
 	if e.Comment != "кофе" {
 		t.Errorf("Comment = %q, want trimmed", e.Comment)
 	}
-	if !e.SpentAt.Equal(date(2026, 10, 10)) {
-		t.Errorf("SpentAt = %s, want the date without time", e.SpentAt)
+	if !e.Date.Equal(date(2026, 10, 10)) {
+		t.Errorf("Date = %s, want the date without time", e.Date)
 	}
 }
 

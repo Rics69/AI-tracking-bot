@@ -14,62 +14,62 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"github.com/rics69/ai-expense-tracking-bot/backend/internal/expense"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
 
 // fakeExpenses records calls and returns canned results.
 type fakeExpenses struct {
 	err        error
-	lastScope  expense.Scope
-	lastFilter expense.Filter
-	lastCreate expense.CreateInput
-	lastPatch  expense.Patch
+	lastScope  ledger.Scope
+	lastFilter ledger.Filter
+	lastCreate ledger.CreateInput
+	lastPatch  ledger.Patch
 }
 
-var sample = expense.Expense{
-	ID: 7, UserID: 111, Amount: decimal.RequireFromString("350.50"), Category: expense.CategoryFood,
-	SpentAt: time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC), Comment: "кофе",
+var sample = ledger.Operation{
+	ID: 7, UserID: 111, Amount: decimal.RequireFromString("350.50"), Category: ledger.CategoryFood,
+	Date: time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC), Comment: "кофе",
 }
 
-func (f *fakeExpenses) Create(_ context.Context, in expense.CreateInput) (expense.Expense, error) {
+func (f *fakeExpenses) Create(_ context.Context, in ledger.CreateInput) (ledger.Operation, error) {
 	f.lastCreate = in
 	return sample, f.err
 }
 
-func (f *fakeExpenses) Get(_ context.Context, s expense.Scope, _ int64) (expense.Expense, error) {
+func (f *fakeExpenses) Get(_ context.Context, s ledger.Scope, _ int64) (ledger.Operation, error) {
 	f.lastScope = s
 	return sample, f.err
 }
 
-func (f *fakeExpenses) Update(_ context.Context, s expense.Scope, _ int64, p expense.Patch) (expense.Expense, error) {
+func (f *fakeExpenses) Update(_ context.Context, s ledger.Scope, _ int64, p ledger.Patch) (ledger.Operation, error) {
 	f.lastScope, f.lastPatch = s, p
 	return sample, f.err
 }
 
-func (f *fakeExpenses) Delete(_ context.Context, s expense.Scope, _ int64) error {
+func (f *fakeExpenses) Delete(_ context.Context, s ledger.Scope, _ int64) error {
 	f.lastScope = s
 	return f.err
 }
 
-func (f *fakeExpenses) List(_ context.Context, s expense.Scope, flt expense.Filter) (expense.Page, error) {
+func (f *fakeExpenses) List(_ context.Context, s ledger.Scope, flt ledger.Filter) (ledger.Page, error) {
 	f.lastScope, f.lastFilter = s, flt
-	return expense.Page{Items: []expense.Expense{sample}, Total: 1, Sum: sample.Amount}, f.err
+	return ledger.Page{Items: []ledger.Operation{sample}, Total: 1, Sum: sample.Amount}, f.err
 }
 
-func (f *fakeExpenses) TimeSeries(_ context.Context, s expense.Scope, flt expense.Filter, b expense.Bucket) ([]expense.Point, error) {
+func (f *fakeExpenses) TimeSeries(_ context.Context, s ledger.Scope, flt ledger.Filter, b ledger.Bucket) ([]ledger.Point, error) {
 	f.lastScope, f.lastFilter = s, flt
-	return []expense.Point{
+	return []ledger.Point{
 		{Start: time.Date(2026, 10, 12, 0, 0, 0, 0, time.UTC), Sum: decimal.NewFromInt(300), Count: 1,
-			Categories: []expense.CategoryTotal{{Category: expense.CategoryFood, Sum: decimal.NewFromInt(300), Count: 1}}},
-		{Start: time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC), Sum: decimal.Zero, Categories: []expense.CategoryTotal{}},
+			Categories: []ledger.CategoryTotal{{Category: ledger.CategoryFood, Sum: decimal.NewFromInt(300), Count: 1}}},
+		{Start: time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC), Sum: decimal.Zero, Categories: []ledger.CategoryTotal{}},
 	}, f.err
 }
 
-func (f *fakeExpenses) Summary(_ context.Context, s expense.Scope, flt expense.Filter) (expense.Summary, error) {
+func (f *fakeExpenses) Summary(_ context.Context, s ledger.Scope, flt ledger.Filter) (ledger.Summary, error) {
 	f.lastScope, f.lastFilter = s, flt
-	return expense.Summary{}, f.err
+	return ledger.Summary{}, f.err
 }
 
 // head is the panel's viewer in tests: the head of family 10.
@@ -174,8 +174,8 @@ func TestCreateExpense(t *testing.T) {
 		t.Errorf("body = %v", body)
 	}
 	in := f.lastCreate
-	if in.UserID != 111 || !in.Amount.Equal(decimal.RequireFromString("350.5")) || in.Category != expense.CategoryFood ||
-		in.SpentAt == nil || in.SpentAt.Format(time.DateOnly) != "2026-10-14" || in.Comment != "кофе" {
+	if in.UserID != 111 || !in.Amount.Equal(decimal.RequireFromString("350.5")) || in.Category != ledger.CategoryFood ||
+		in.Date == nil || in.Date.Format(time.DateOnly) != "2026-10-14" || in.Comment != "кофе" {
 		t.Errorf("service got %+v", in)
 	}
 }
@@ -189,7 +189,7 @@ func TestListExpensesPassesFilter(t *testing.T) {
 		t.Fatalf("status = %d, body = %v", status, body)
 	}
 	flt := f.lastFilter
-	if *flt.UserID != 111 || *flt.Category != expense.CategoryFood ||
+	if *flt.UserID != 111 || *flt.Category != ledger.CategoryFood ||
 		flt.From.Format(time.DateOnly) != "2026-10-01" || flt.To.Format(time.DateOnly) != "2026-10-31" ||
 		flt.Query != "кофе" || flt.Limit != 5 || flt.Offset != 10 {
 		t.Errorf("filter = %+v", flt)
@@ -207,7 +207,7 @@ func TestUpdateExpenseSendsOnlyGivenFields(t *testing.T) {
 	}
 	p := f.lastPatch
 	if p.Amount == nil || !p.Amount.Equal(decimal.NewFromInt(450)) ||
-		p.Category != nil || p.Comment != nil || p.SpentAt != nil || p.UserID != nil {
+		p.Category != nil || p.Comment != nil || p.Date != nil || p.UserID != nil {
 		t.Errorf("patch = %+v", p)
 	}
 }
@@ -221,11 +221,11 @@ func TestErrorMapping(t *testing.T) {
 		status     int
 		code       string
 	}{
-		{"validation", &expense.ValidationError{Field: "amount", Message: "must be greater than zero"},
+		{"validation", &ledger.ValidationError{Field: "amount", Message: "must be greater than zero"},
 			http.MethodPost, "/api/v1/expenses", `{"user_id":1,"amount":0,"category":"food"}`, 400, "validation_error"},
-		{"not found", expense.ErrNotFound, http.MethodGet, "/api/v1/expenses/1", "", 404, "not_found"},
-		{"delete not found", expense.ErrNotFound, http.MethodDelete, "/api/v1/expenses/1", "", 404, "not_found"},
-		{"unknown user", expense.ErrUnknownUser,
+		{"not found", ledger.ErrNotFound, http.MethodGet, "/api/v1/expenses/1", "", 404, "not_found"},
+		{"delete not found", ledger.ErrNotFound, http.MethodDelete, "/api/v1/expenses/1", "", 404, "not_found"},
+		{"unknown user", ledger.ErrUnknownUser,
 			http.MethodPost, "/api/v1/expenses", `{"user_id":9,"amount":1,"category":"food"}`, 400, "unknown_user"},
 		{"unexpected", errors.New("connection refused"), http.MethodGet, "/api/v1/expenses", "", 500, "internal"},
 		{"malformed json", nil, http.MethodPost, "/api/v1/expenses", `{"user_id":`, 400, "bad_request"},
@@ -279,7 +279,7 @@ func TestPanelNeedsAFamilyHead(t *testing.T) {
 					t.Errorf("%s: %d %v", path, status, body)
 				}
 			}
-			if f.lastScope != (expense.Scope{}) {
+			if f.lastScope != (ledger.Scope{}) {
 				t.Error("the service was called without a viewer")
 			}
 		})

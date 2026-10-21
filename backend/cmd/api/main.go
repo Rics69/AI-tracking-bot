@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/config"
-	"github.com/rics69/ai-expense-tracking-bot/backend/internal/expense"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/httpapi"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/logger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/postgres"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
@@ -52,7 +52,7 @@ func run() error {
 
 	users := postgres.NewUserRepository(pool)
 	handler := httpapi.NewHandler(httpapi.Deps{
-		Expenses: expense.NewService(postgres.NewExpenseRepository(pool), cfg.Location),
+		Expenses: ledger.NewService(postgres.NewOperationRepository(pool), cfg.Location),
 		Family:   family.NewService(users, postgres.NewInviteRepository(pool), postgres.NewSettingsRepository(pool)),
 		// Until the mini app signs users in with Telegram, the panel is the owner's.
 		Viewer: func(ctx context.Context) (user.User, error) {

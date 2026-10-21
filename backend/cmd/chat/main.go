@@ -15,7 +15,7 @@ import (
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/agent"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/config"
-	"github.com/rics69/ai-expense-tracking-bot/backend/internal/expense"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/llm/provider"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/logger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/postgres"
@@ -59,7 +59,7 @@ func run(userID int64, name string) error {
 	if err != nil {
 		return err
 	}
-	expenses := expense.NewService(postgres.NewExpenseRepository(pool), cfg.Location)
+	expenses := ledger.NewService(postgres.NewOperationRepository(pool), cfg.Location)
 	assistant := agent.New(client, expenses, expenses,
 		agent.NewHistory(cfg.HistoryTurns, cfg.HistoryTTL),
 		agent.Config{Location: cfg.Location, MaxSteps: cfg.MaxSteps}, log)

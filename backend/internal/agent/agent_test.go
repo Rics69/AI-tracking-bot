@@ -12,7 +12,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"github.com/rics69/ai-expense-tracking-bot/backend/internal/expense"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/llm"
 )
 
@@ -49,45 +49,45 @@ func text(s string) llm.Response {
 
 // memExpenses is an in-memory Expenses honouring scopes.
 type memExpenses struct {
-	items   map[int64]expense.Expense
+	items   map[int64]ledger.Operation
 	nextID  int64
 	lastLoc *time.Location // the timezone the agent asked "today" for
 }
 
-func newMemExpenses() *memExpenses { return &memExpenses{items: map[int64]expense.Expense{}} }
+func newMemExpenses() *memExpenses { return &memExpenses{items: map[int64]ledger.Operation{}} }
 
 func (m *memExpenses) TodayIn(loc *time.Location) time.Time {
 	m.lastLoc = loc
 	return today
 }
 
-func (m *memExpenses) visible(s expense.Scope, e expense.Expense) bool {
+func (m *memExpenses) visible(s ledger.Scope, e ledger.Operation) bool {
 	return e.UserID == s.UserID() // the agent only ever uses OwnedBy scopes
 }
 
-func (m *memExpenses) Create(_ context.Context, in expense.CreateInput) (expense.Expense, error) {
+func (m *memExpenses) Create(_ context.Context, in ledger.CreateInput) (ledger.Operation, error) {
 	if !in.Category.Valid() {
-		return expense.Expense{}, &expense.ValidationError{Field: "category", Message: "unknown"}
+		return ledger.Operation{}, &ledger.ValidationError{Field: "category", Message: "unknown"}
 	}
 	m.nextID++
-	e := expense.Expense{ID: m.nextID, UserID: in.UserID, Amount: in.Amount, Category: in.Category,
-		SpentAt: today, Comment: in.Comment, CreatedAt: time.Unix(m.nextID, 0)}
-	if in.SpentAt != nil {
-		e.SpentAt = *in.SpentAt
+	e := ledger.Operation{ID: m.nextID, UserID: in.UserID, Amount: in.Amount, Category: in.Category,
+		Date: today, Comment: in.Comment, CreatedAt: time.Unix(m.nextID, 0)}
+	if in.Date != nil {
+		e.Date = *in.Date
 	}
 	m.items[e.ID] = e
 	return e, nil
 }
 
-func (m *memExpenses) Get(_ context.Context, s expense.Scope, id int64) (expense.Expense, error) {
+func (m *memExpenses) Get(_ context.Context, s ledger.Scope, id int64) (ledger.Operation, error) {
 	e, ok := m.items[id]
 	if !ok || !m.visible(s, e) {
-		return expense.Expense{}, expense.ErrNotFound
+		return ledger.Operation{}, ledger.ErrNotFound
 	}
 	return e, nil
 }
 
-func (m *memExpenses) Update(ctx context.Context, s expense.Scope, id int64, p expense.Patch) (expense.Expense, error) {
+func (m *memExpenses) Update(ctx context.Context, s ledger.Scope, id int64, p ledger.Patch) (ledger.Operation, error) {
 	e, err := m.Get(ctx, s, id)
 	if err != nil {
 		return e, err
@@ -102,7 +102,7 @@ func (m *memExpenses) Update(ctx context.Context, s expense.Scope, id int64, p e
 	return e, nil
 }
 
-func (m *memExpenses) Delete(ctx context.Context, s expense.Scope, id int64) error {
+func (m *memExpenses) Delete(ctx context.Context, s ledger.Scope, id int64) error {
 	if _, err := m.Get(ctx, s, id); err != nil {
 		return err
 	}
@@ -110,8 +110,8 @@ func (m *memExpenses) Delete(ctx context.Context, s expense.Scope, id int64) err
 	return nil
 }
 
-func (m *memExpenses) List(_ context.Context, s expense.Scope, f expense.Filter) (expense.Page, error) {
-	page := expense.Page{Sum: decimal.Zero}
+func (m *memExpenses) List(_ context.Context, s ledger.Scope, f ledger.Filter) (ledger.Page, error) {
+	page := ledger.Page{Sum: decimal.Zero}
 	for id := m.nextID; id > 0; id-- { // newest first
 		e, ok := m.items[id]
 		if !ok || !m.visible(s, e) || (f.Query != "" && !strings.Contains(e.Comment, f.Query)) {
@@ -126,8 +126,8 @@ func (m *memExpenses) List(_ context.Context, s expense.Scope, f expense.Filter)
 	return page, nil
 }
 
-func (m *memExpenses) Summary(context.Context, expense.Scope, expense.Filter) (expense.Summary, error) {
-	return expense.Summary{Sum: decimal.Zero}, nil
+func (m *memExpenses) Summary(context.Context, ledger.Scope, ledger.Filter) (ledger.Summary, error) {
+	return ledger.Summary{Sum: decimal.Zero}, nil
 }
 
 func newTestAgent(l llm.Client, exp *memExpenses) *Agent {
@@ -161,8 +161,8 @@ func TestAddExpense(t *testing.T) {
 		t.Errorf("reply = %q", reply)
 	}
 	e := exp.items[1]
-	if e.UserID != anna.UserID || !e.Amount.Equal(decimal.NewFromInt(350)) || e.Category != expense.CategoryFood ||
-		e.Comment != "кофе" || !e.SpentAt.Equal(today) {
+	if e.UserID != anna.UserID || !e.Amount.Equal(decimal.NewFromInt(350)) || e.Category != ledger.CategoryFood ||
+		e.Comment != "кофе" || !e.Date.Equal(today) {
 		t.Errorf("saved %+v", e)
 	}
 	if res := lastToolResult(t, model.requests[1]); !strings.Contains(res, `"added"`) || !strings.Contains(res, `"amount":350.00`) {
@@ -191,8 +191,8 @@ func TestOwnerComesFromTelegramNotFromModel(t *testing.T) {
 
 func TestCannotTouchOtherUsersExpense(t *testing.T) {
 	exp := newMemExpenses()
-	borisExpense, _ := exp.Create(context.Background(), expense.CreateInput{
-		UserID: 2, Amount: decimal.NewFromInt(500), Category: expense.CategoryFood})
+	borisExpense, _ := exp.Create(context.Background(), ledger.CreateInput{
+		UserID: 2, Amount: decimal.NewFromInt(500), Category: ledger.CategoryFood})
 
 	model := &scriptedLLM{responses: []llm.Response{
 		call(toolDelete, `{"id": 1}`),
@@ -228,7 +228,7 @@ func TestToolErrorIsReturnedToModel(t *testing.T) {
 	}
 	// Russian category names and string amounts are accepted.
 	e := exp.items[1]
-	if e.Category != expense.CategoryFood || !e.SpentAt.Equal(today.AddDate(0, 0, -1)) {
+	if e.Category != ledger.CategoryFood || !e.Date.Equal(today.AddDate(0, 0, -1)) {
 		t.Errorf("saved %+v", e)
 	}
 }
@@ -236,8 +236,8 @@ func TestToolErrorIsReturnedToModel(t *testing.T) {
 func TestEditLastExpense(t *testing.T) {
 	exp := newMemExpenses()
 	ctx := context.Background()
-	_, _ = exp.Create(ctx, expense.CreateInput{UserID: 1, Amount: decimal.NewFromInt(1200), Category: expense.CategoryTransport, Comment: "такси"})
-	last, _ := exp.Create(ctx, expense.CreateInput{UserID: 1, Amount: decimal.NewFromInt(350), Category: expense.CategoryFood, Comment: "кофе"})
+	_, _ = exp.Create(ctx, ledger.CreateInput{UserID: 1, Amount: decimal.NewFromInt(1200), Category: ledger.CategoryTransport, Comment: "такси"})
+	last, _ := exp.Create(ctx, ledger.CreateInput{UserID: 1, Amount: decimal.NewFromInt(350), Category: ledger.CategoryFood, Comment: "кофе"})
 
 	model := &scriptedLLM{responses: []llm.Response{
 		call(toolFind, `{"last_added": true, "limit": 1}`),

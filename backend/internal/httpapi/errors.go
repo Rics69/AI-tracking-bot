@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/rics69/ai-expense-tracking-bot/backend/internal/expense"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
 
@@ -17,12 +17,12 @@ func writeError(log *slog.Logger, w http.ResponseWriter, r *http.Request, err er
 	status := http.StatusInternalServerError
 	detail := ErrorDetail{Code: ErrCodeInternal, Message: "internal server error"}
 
-	var verr *expense.ValidationError
+	var verr *ledger.ValidationError
 	switch {
 	case errors.As(err, &verr):
 		status = http.StatusBadRequest
 		detail = ErrorDetail{Code: ErrCodeValidation, Message: verr.Message, Field: &verr.Field}
-	case errors.Is(err, expense.ErrNotFound), errors.Is(err, user.ErrNotFound), errors.Is(err, family.ErrInviteNotFound),
+	case errors.Is(err, ledger.ErrNotFound), errors.Is(err, user.ErrNotFound), errors.Is(err, family.ErrInviteNotFound),
 		errors.Is(err, family.ErrNotMember):
 		status = http.StatusNotFound
 		detail = ErrorDetail{Code: ErrCodeNotFound, Message: err.Error()}
@@ -32,7 +32,7 @@ func writeError(log *slog.Logger, w http.ResponseWriter, r *http.Request, err er
 	case errors.Is(err, ErrNoViewer), errors.Is(err, family.ErrNotHead):
 		status = http.StatusForbidden
 		detail = ErrorDetail{Code: ErrCodeForbidden, Message: err.Error()}
-	case errors.Is(err, expense.ErrUnknownUser):
+	case errors.Is(err, ledger.ErrUnknownUser):
 		status = http.StatusBadRequest
 		detail = ErrorDetail{Code: ErrCodeUnknownUser, Message: err.Error()}
 	default:

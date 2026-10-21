@@ -10,7 +10,7 @@ import (
 	"unicode"
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/agent"
-	"github.com/rics69/ai-expense-tracking-bot/backend/internal/expense"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/llm"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/memory"
 )
@@ -68,8 +68,8 @@ type runner struct {
 // run plays one case against a fresh store and a fresh conversation.
 func (rn runner) run(ctx context.Context, c Case) Result {
 	res := Result{Case: c}
-	repo := memory.NewExpenseRepository()
-	svc := expense.NewService(repo, rn.loc)
+	repo := memory.NewOperationRepository()
+	svc := ledger.NewService(repo, rn.loc)
 	today := svc.Today()
 
 	seed := func(owner int64, spec ExpenseSpec) error {
@@ -77,8 +77,8 @@ func (rn runner) run(ctx context.Context, c Case) Result {
 		if err != nil {
 			return err
 		}
-		_, err = svc.Create(ctx, expense.CreateInput{
-			UserID: owner, Amount: r.Amount, Category: r.Category, SpentAt: &r.Date, Comment: r.Comment,
+		_, err = svc.Create(ctx, ledger.CreateInput{
+			UserID: owner, Amount: r.Amount, Category: r.Category, Date: &r.Date, Comment: r.Comment,
 		})
 		return err
 	}
@@ -113,7 +113,7 @@ func (rn runner) run(ctx context.Context, c Case) Result {
 }
 
 // check compares the outcome with the expectations of the case.
-func check(c Case, today time.Time, before, after []expense.Expense, res Result) []string {
+func check(c Case, today time.Time, before, after []ledger.Operation, res Result) []string {
 	var fails []string
 	e := c.Expect
 
@@ -160,7 +160,7 @@ func check(c Case, today time.Time, before, after []expense.Expense, res Result)
 }
 
 // matchExpenses pairs every expected expense with a distinct actual one.
-func matchExpenses(want []ExpenseSpec, got []expense.Expense, today time.Time) string {
+func matchExpenses(want []ExpenseSpec, got []ledger.Operation, today time.Time) string {
 	remaining := slices.Clone(got)
 	var missing []string
 	for _, spec := range want {
@@ -168,8 +168,8 @@ func matchExpenses(want []ExpenseSpec, got []expense.Expense, today time.Time) s
 		if err != nil {
 			return "bad expectation: " + err.Error()
 		}
-		i := slices.IndexFunc(remaining, func(e expense.Expense) bool {
-			return e.Amount.Equal(w.Amount) && e.Category == w.Category && e.SpentAt.Equal(w.Date) &&
+		i := slices.IndexFunc(remaining, func(e ledger.Operation) bool {
+			return e.Amount.Equal(w.Amount) && e.Category == w.Category && e.Date.Equal(w.Date) &&
 				strings.Contains(strings.ToLower(e.Comment), strings.ToLower(w.Comment))
 		})
 		if i < 0 {
@@ -184,8 +184,8 @@ func matchExpenses(want []ExpenseSpec, got []expense.Expense, today time.Time) s
 	return fmt.Sprintf("expenses: missing [%s]; actual: %s", strings.Join(missing, "; "), describe(got))
 }
 
-func owned(all []expense.Expense, user int64) []expense.Expense {
-	var out []expense.Expense
+func owned(all []ledger.Operation, user int64) []ledger.Operation {
+	var out []ledger.Operation
 	for _, e := range all {
 		if e.UserID == user {
 			out = append(out, e)
@@ -194,18 +194,18 @@ func owned(all []expense.Expense, user int64) []expense.Expense {
 	return out
 }
 
-func sameExpense(a, b expense.Expense) bool {
+func sameExpense(a, b ledger.Operation) bool {
 	return a.ID == b.ID && a.Amount.Equal(b.Amount) && a.Category == b.Category &&
-		a.SpentAt.Equal(b.SpentAt) && a.Comment == b.Comment
+		a.Date.Equal(b.Date) && a.Comment == b.Comment
 }
 
-func describe(es []expense.Expense) string {
+func describe(es []ledger.Operation) string {
 	if len(es) == 0 {
 		return "none"
 	}
 	parts := make([]string, len(es))
 	for i, e := range es {
-		parts[i] = resolved{Amount: e.Amount, Category: e.Category, Date: e.SpentAt, Comment: e.Comment}.String()
+		parts[i] = resolved{Amount: e.Amount, Category: e.Category, Date: e.Date, Comment: e.Comment}.String()
 	}
 	return strings.Join(parts, "; ")
 }

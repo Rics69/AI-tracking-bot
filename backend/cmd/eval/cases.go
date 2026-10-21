@@ -10,7 +10,7 @@ import (
 	"github.com/shopspring/decimal"
 	"gopkg.in/yaml.v3"
 
-	"github.com/rics69/ai-expense-tracking-bot/backend/internal/expense"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 )
 
 // Case is one eval scenario: a dialog with the agent and what must be true after it.
@@ -69,7 +69,7 @@ func loadCases(path string) ([]Case, error) {
 // resolved is an ExpenseSpec with concrete values.
 type resolved struct {
 	Amount   decimal.Decimal
-	Category expense.Category
+	Category ledger.Category
 	Date     time.Time
 	Comment  string
 }
@@ -79,7 +79,7 @@ func (s ExpenseSpec) resolve(today time.Time) (resolved, error) {
 	if err != nil {
 		return resolved{}, fmt.Errorf("amount %q: %w", s.Amount, err)
 	}
-	c := expense.Category(s.Category)
+	c := ledger.Category(s.Category)
 	if !c.Valid() {
 		return resolved{}, fmt.Errorf("unknown category %q", s.Category)
 	}

@@ -15,8 +15,8 @@ import (
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/agent"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/config"
-	"github.com/rics69/ai-expense-tracking-bot/backend/internal/expense"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/llm/provider"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/logger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/report"
@@ -57,7 +57,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	expenses := expense.NewService(postgres.NewExpenseRepository(pool), cfg.Location)
+	expenses := ledger.NewService(postgres.NewOperationRepository(pool), cfg.Location)
 	// History lives in PostgreSQL: a restart or redeploy does not cut dialogs short.
 	history := postgres.NewChatHistoryRepository(pool, cfg.HistoryTurns, cfg.HistoryTTL)
 	go every(ctx, time.Hour, func() {

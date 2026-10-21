@@ -12,7 +12,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"github.com/rics69/ai-expense-tracking-bot/backend/internal/expense"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/memory"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
@@ -79,24 +79,24 @@ type sent struct {
 
 func setup(t *testing.T) (*Weekly, *[]sent, *bool) {
 	t.Helper()
-	repo := memory.NewExpenseRepository()
-	svc := expense.NewService(repo, moscow)
-	add := func(user int64, sum string, c expense.Category, d time.Time, comment string) {
-		if _, err := repo.Create(context.Background(), expense.Expense{
-			UserID: user, Amount: decimal.RequireFromString(sum), Category: c, SpentAt: d, Comment: comment,
+	repo := memory.NewOperationRepository()
+	svc := ledger.NewService(repo, moscow)
+	add := func(user int64, sum string, c ledger.Category, d time.Time, comment string) {
+		if _, err := repo.Create(context.Background(), ledger.Operation{
+			UserID: user, Amount: decimal.RequireFromString(sum), Category: c, Date: d, Comment: comment,
 		}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	// Week of Oct 12–18 for Anna, a smaller previous week, and an expense outside both.
-	add(1, "45000", expense.CategoryHousing, day(10, 14), "аренда")
-	add(1, "350", expense.CategoryFood, day(10, 18), "кофе")
-	add(1, "2480.50", expense.CategoryFood, day(10, 12), "продукты")
-	add(1, "1200", expense.CategoryTransport, day(10, 13), "такси")
-	add(1, "10000", expense.CategoryFood, day(10, 7), "прошлая неделя")
-	add(1, "999", expense.CategoryOther, day(10, 19), "уже эта неделя")
-	add(4, "100", expense.CategoryFood, day(10, 14), "заблокирован")
-	add(5, "100", expense.CategoryFood, day(10, 14), "без согласия")
+	add(1, "45000", ledger.CategoryHousing, day(10, 14), "аренда")
+	add(1, "350", ledger.CategoryFood, day(10, 18), "кофе")
+	add(1, "2480.50", ledger.CategoryFood, day(10, 12), "продукты")
+	add(1, "1200", ledger.CategoryTransport, day(10, 13), "такси")
+	add(1, "10000", ledger.CategoryFood, day(10, 7), "прошлая неделя")
+	add(1, "999", ledger.CategoryOther, day(10, 19), "уже эта неделя")
+	add(4, "100", ledger.CategoryFood, day(10, 14), "заблокирован")
+	add(5, "100", ledger.CategoryFood, day(10, 14), "без согласия")
 
 	now := time.Date(2026, 10, 19, 10, 30, 0, 0, moscow)
 	consented := now.AddDate(0, -1, 0)

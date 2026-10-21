@@ -14,7 +14,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"github.com/rics69/ai-expense-tracking-bot/backend/internal/expense"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
 
@@ -25,10 +25,10 @@ const (
 	topExpenses  = 3
 )
 
-// Expenses is the part of expense.Service a report needs.
+// Expenses is the part of ledger.Service a report needs.
 type Expenses interface {
-	List(ctx context.Context, s expense.Scope, f expense.Filter) (expense.Page, error)
-	Summary(ctx context.Context, s expense.Scope, f expense.Filter) (expense.Summary, error)
+	List(ctx context.Context, s ledger.Scope, f ledger.Filter) (ledger.Page, error)
+	Summary(ctx context.Context, s ledger.Scope, f ledger.Filter) (ledger.Summary, error)
 }
 
 // Members lists everyone the bot knows.
@@ -142,23 +142,23 @@ func reportWeek(now time.Time) (weekStart time.Time, due bool) {
 // Build renders the report of the week starting at weekStart for a member.
 // empty is true when there were no expenses that week.
 func (w *Weekly) Build(ctx context.Context, userID int64, weekStart time.Time) (text string, empty bool, err error) {
-	scope := expense.OwnedBy(userID)
+	scope := ledger.OwnedBy(userID)
 	weekEnd := weekStart.AddDate(0, 0, 6)
 	prevStart, prevEnd := weekStart.AddDate(0, 0, -7), weekStart.AddDate(0, 0, -1)
 
-	cur, err := w.expenses.Summary(ctx, scope, expense.Filter{From: &weekStart, To: &weekEnd})
+	cur, err := w.expenses.Summary(ctx, scope, ledger.Filter{From: &weekStart, To: &weekEnd})
 	if err != nil {
 		return "", false, err
 	}
 	if cur.Count == 0 {
 		return "", true, nil
 	}
-	prev, err := w.expenses.Summary(ctx, scope, expense.Filter{From: &prevStart, To: &prevEnd})
+	prev, err := w.expenses.Summary(ctx, scope, ledger.Filter{From: &prevStart, To: &prevEnd})
 	if err != nil {
 		return "", false, err
 	}
-	top, err := w.expenses.List(ctx, scope, expense.Filter{
-		From: &weekStart, To: &weekEnd, Sort: expense.SortByAmount, Limit: topExpenses,
+	top, err := w.expenses.List(ctx, scope, ledger.Filter{
+		From: &weekStart, To: &weekEnd, Sort: ledger.SortByAmount, Limit: topExpenses,
 	})
 	if err != nil {
 		return "", false, err
@@ -166,7 +166,7 @@ func (w *Weekly) Build(ctx context.Context, userID int64, weekStart time.Time) (
 	return render(weekStart, cur, prev, top.Items), false, nil
 }
 
-func render(weekStart time.Time, cur, prev expense.Summary, top []expense.Expense) string {
+func render(weekStart time.Time, cur, prev ledger.Summary, top []ledger.Operation) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Итоги недели · %s\n\n", weekRange(weekStart))
 	fmt.Fprintf(&b, "Потрачено %s — %d %s", Money(cur.Sum), cur.Count, plural(cur.Count, "трата", "траты", "трат"))
@@ -184,7 +184,7 @@ func render(weekStart time.Time, cur, prev expense.Summary, top []expense.Expens
 			if what == "" {
 				what = e.Category.Label()
 			}
-			fmt.Fprintf(&b, "\n• %s — %s, %s", what, Money(e.Amount), dayMonth(e.SpentAt))
+			fmt.Fprintf(&b, "\n• %s — %s, %s", what, Money(e.Amount), dayMonth(e.Date))
 		}
 	}
 	b.WriteString("\n\nОтключить итоги — /settings")

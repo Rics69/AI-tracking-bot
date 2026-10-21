@@ -16,8 +16,8 @@ import (
 	"github.com/shopspring/decimal"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
-	"github.com/rics69/ai-expense-tracking-bot/backend/internal/expense"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/llm"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
@@ -60,7 +60,7 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func setup(t *testing.T) (*ExpenseRepository, *UserRepository) {
+func setup(t *testing.T) (*OperationRepository, *UserRepository) {
 	t.Helper()
 	truncate(t)
 	users := NewUserRepository(testPool)
@@ -70,7 +70,7 @@ func setup(t *testing.T) (*ExpenseRepository, *UserRepository) {
 			t.Fatal(err)
 		}
 	}
-	return NewExpenseRepository(testPool), users
+	return NewOperationRepository(testPool), users
 }
 
 func truncate(t *testing.T) {
@@ -103,10 +103,10 @@ func day(d int) time.Time { return time.Date(2026, 10, d, 0, 0, 0, 0, time.UTC) 
 
 func amount(s string) decimal.Decimal { return decimal.RequireFromString(s) }
 
-func mustCreate(t *testing.T, r *ExpenseRepository, userID int64, sum string, c expense.Category, d int, comment string) expense.Expense {
+func mustCreate(t *testing.T, r *OperationRepository, userID int64, sum string, c ledger.Category, d int, comment string) ledger.Operation {
 	t.Helper()
-	e, err := r.Create(context.Background(), expense.Expense{
-		UserID: userID, Amount: amount(sum), Category: c, SpentAt: day(d), Comment: comment,
+	e, err := r.Create(context.Background(), ledger.Operation{
+		UserID: userID, Amount: amount(sum), Category: c, Date: day(d), Comment: comment,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -114,7 +114,7 @@ func mustCreate(t *testing.T, r *ExpenseRepository, userID int64, sum string, c 
 	return e
 }
 
-func ids(items []expense.Expense) []int64 {
+func ids(items []ledger.Operation) []int64 {
 	out := make([]int64, len(items))
 	for i, e := range items {
 		out[i] = e.ID
@@ -126,17 +126,17 @@ func TestCreateAndGetRoundTrip(t *testing.T) {
 	repo, _ := setup(t)
 	ctx := context.Background()
 
-	created := mustCreate(t, repo, 1, "350.50", expense.CategoryFood, 15, "кофе")
-	got, err := repo.Get(ctx, expense.OwnedBy(1), created.ID)
+	created := mustCreate(t, repo, 1, "350.50", ledger.CategoryFood, 15, "кофе")
+	got, err := repo.Get(ctx, ledger.OwnedBy(1), created.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.Amount.Equal(amount("350.50")) || got.Category != expense.CategoryFood ||
-		!got.SpentAt.Equal(day(15)) || got.Comment != "кофе" || got.UserID != 1 {
+	if !got.Amount.Equal(amount("350.50")) || got.Category != ledger.CategoryFood ||
+		!got.Date.Equal(day(15)) || got.Comment != "кофе" || got.UserID != 1 {
 		t.Errorf("got %+v", got)
 	}
 
-	noComment := mustCreate(t, repo, 1, "10", expense.CategoryOther, 15, "")
+	noComment := mustCreate(t, repo, 1, "10", ledger.CategoryOther, 15, "")
 	if noComment.Comment != "" {
 		t.Errorf("empty comment came back as %q", noComment.Comment)
 	}
@@ -144,10 +144,10 @@ func TestCreateAndGetRoundTrip(t *testing.T) {
 
 func TestCreateForUnknownUser(t *testing.T) {
 	repo, _ := setup(t)
-	_, err := repo.Create(context.Background(), expense.Expense{
-		UserID: 999, Amount: amount("1"), Category: expense.CategoryOther, SpentAt: day(1),
+	_, err := repo.Create(context.Background(), ledger.Operation{
+		UserID: 999, Amount: amount("1"), Category: ledger.CategoryOther, Date: day(1),
 	})
-	if !errors.Is(err, expense.ErrUnknownUser) {
+	if !errors.Is(err, ledger.ErrUnknownUser) {
 		t.Fatalf("err = %v, want ErrUnknownUser", err)
 	}
 }
@@ -155,21 +155,21 @@ func TestCreateForUnknownUser(t *testing.T) {
 func TestScopeIsolation(t *testing.T) {
 	repo, _ := setup(t)
 	ctx := context.Background()
-	annas := mustCreate(t, repo, 1, "100", expense.CategoryFood, 10, "")
-	mustCreate(t, repo, 2, "200", expense.CategoryFood, 10, "")
+	annas := mustCreate(t, repo, 1, "100", ledger.CategoryFood, 10, "")
+	mustCreate(t, repo, 2, "200", ledger.CategoryFood, 10, "")
 
-	borisScope := expense.OwnedBy(2)
-	if _, err := repo.Get(ctx, borisScope, annas.ID); !errors.Is(err, expense.ErrNotFound) {
+	borisScope := ledger.OwnedBy(2)
+	if _, err := repo.Get(ctx, borisScope, annas.ID); !errors.Is(err, ledger.ErrNotFound) {
 		t.Errorf("Get: err = %v, want ErrNotFound", err)
 	}
 	annas.Amount = amount("1")
-	if _, err := repo.Update(ctx, borisScope, annas); !errors.Is(err, expense.ErrNotFound) {
+	if _, err := repo.Update(ctx, borisScope, annas); !errors.Is(err, ledger.ErrNotFound) {
 		t.Errorf("Update: err = %v, want ErrNotFound", err)
 	}
-	if err := repo.Delete(ctx, borisScope, annas.ID); !errors.Is(err, expense.ErrNotFound) {
+	if err := repo.Delete(ctx, borisScope, annas.ID); !errors.Is(err, ledger.ErrNotFound) {
 		t.Errorf("Delete: err = %v, want ErrNotFound", err)
 	}
-	page, err := repo.List(ctx, borisScope, expense.Filter{Limit: 10})
+	page, err := repo.List(ctx, borisScope, ledger.Filter{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,17 +177,17 @@ func TestScopeIsolation(t *testing.T) {
 		t.Errorf("Boris sees %+v", page.Items)
 	}
 	// Even with an explicit filter for Anna, the scope wins.
-	page, _ = repo.List(ctx, borisScope, expense.Filter{UserID: new(int64(1)), Limit: 10})
+	page, _ = repo.List(ctx, borisScope, ledger.Filter{UserID: new(int64(1)), Limit: 10})
 	if page.Total != 0 {
 		t.Errorf("filter overrode scope: %+v", page.Items)
 	}
 	// The zero scope sees nothing.
-	page, _ = repo.List(ctx, expense.Scope{}, expense.Filter{Limit: 10})
+	page, _ = repo.List(ctx, ledger.Scope{}, ledger.Filter{Limit: 10})
 	if page.Total != 0 {
 		t.Errorf("zero scope sees %d expenses", page.Total)
 	}
 	// Anna's expense is untouched.
-	got, _ := repo.Get(ctx, expense.OwnedBy(1), annas.ID)
+	got, _ := repo.Get(ctx, ledger.OwnedBy(1), annas.ID)
 	if !got.Amount.Equal(amount("100")) {
 		t.Errorf("Anna's amount changed to %s", got.Amount)
 	}
@@ -199,26 +199,26 @@ func TestFamilyScope(t *testing.T) {
 	if _, err := users.Admit(ctx, user.User{TelegramID: 3, FirstName: "Вера"}); err != nil {
 		t.Fatal(err)
 	}
-	mustCreate(t, repo, 1, "100", expense.CategoryFood, 10, "")
-	boris := mustCreate(t, repo, 2, "200", expense.CategoryFood, 10, "")
-	veras := mustCreate(t, repo, 3, "300", expense.CategoryFood, 10, "")
+	mustCreate(t, repo, 1, "100", ledger.CategoryFood, 10, "")
+	boris := mustCreate(t, repo, 2, "200", ledger.CategoryFood, 10, "")
+	veras := mustCreate(t, repo, 3, "300", ledger.CategoryFood, 10, "")
 	joinFamily(t, 1, 2)
 	anna, _ := users.Get(ctx, 1)
-	family := expense.InFamily(anna.FamilyID)
+	family := ledger.InFamily(anna.FamilyID)
 
-	page, err := repo.List(ctx, family, expense.Filter{Limit: 10})
+	page, err := repo.List(ctx, family, ledger.Filter{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if page.Total != 2 || !page.Sum.Equal(amount("300")) {
 		t.Errorf("the head sees %+v, want Anna's and Boris's expenses", page.Items)
 	}
-	if _, err := repo.Get(ctx, family, veras.ID); !errors.Is(err, expense.ErrNotFound) {
+	if _, err := repo.Get(ctx, family, veras.ID); !errors.Is(err, ledger.ErrNotFound) {
 		t.Errorf("another family's expense: err = %v", err)
 	}
 	// The head cannot hand an expense to someone outside the family.
 	boris.UserID = 3
-	if _, err := repo.Update(ctx, family, boris); !errors.Is(err, expense.ErrNotFound) {
+	if _, err := repo.Update(ctx, family, boris); !errors.Is(err, ledger.ErrNotFound) {
 		t.Errorf("hand over to a stranger: err = %v", err)
 	}
 	boris.UserID = 1
@@ -226,7 +226,7 @@ func TestFamilyScope(t *testing.T) {
 		t.Errorf("hand over within the family: %+v, %v", moved, err)
 	}
 	// Family 0 is the zero scope: nothing.
-	if page, _ := repo.List(ctx, expense.InFamily(0), expense.Filter{Limit: 10}); page.Total != 0 {
+	if page, _ := repo.List(ctx, ledger.InFamily(0), ledger.Filter{Limit: 10}); page.Total != 0 {
 		t.Errorf("family 0 sees %d", page.Total)
 	}
 }
@@ -236,25 +236,25 @@ func TestListFiltersAndTotals(t *testing.T) {
 	ctx := context.Background()
 	joinFamily(t, 1, 2)
 	anna, _ := users.Get(ctx, 1)
-	family := expense.InFamily(anna.FamilyID)
-	coffee := mustCreate(t, repo, 1, "350", expense.CategoryFood, 14, "Кофе в зёрнах")
-	taxi := mustCreate(t, repo, 1, "1200", expense.CategoryTransport, 13, "такси")
-	lunch := mustCreate(t, repo, 2, "500.25", expense.CategoryFood, 15, "обед")
-	old := mustCreate(t, repo, 1, "100", expense.CategoryFood, 1, "100%_скидка")
+	family := ledger.InFamily(anna.FamilyID)
+	coffee := mustCreate(t, repo, 1, "350", ledger.CategoryFood, 14, "Кофе в зёрнах")
+	taxi := mustCreate(t, repo, 1, "1200", ledger.CategoryTransport, 13, "такси")
+	lunch := mustCreate(t, repo, 2, "500.25", ledger.CategoryFood, 15, "обед")
+	old := mustCreate(t, repo, 1, "100", ledger.CategoryFood, 1, "100%_скидка")
 
 	tests := []struct {
 		name string
-		f    expense.Filter
+		f    ledger.Filter
 		want []int64
 		sum  string
 	}{
-		{"all, newest spent first", expense.Filter{}, []int64{lunch.ID, coffee.ID, taxi.ID, old.ID}, "2150.25"},
-		{"by member", expense.Filter{UserID: new(int64(1))}, []int64{coffee.ID, taxi.ID, old.ID}, "1650"},
-		{"by category", expense.Filter{Category: new(expense.CategoryFood)}, []int64{lunch.ID, coffee.ID, old.ID}, "950.25"},
-		{"period inclusive", expense.Filter{From: new(day(13)), To: new(day(14))}, []int64{coffee.ID, taxi.ID}, "1550"},
-		{"comment search is case-insensitive", expense.Filter{Query: "кофе"}, []int64{coffee.ID}, "350"},
-		{"LIKE wildcards are literal", expense.Filter{Query: "%_"}, []int64{old.ID}, "100"},
-		{"no matches", expense.Filter{Query: "самолёт"}, []int64{}, "0"},
+		{"all, newest spent first", ledger.Filter{}, []int64{lunch.ID, coffee.ID, taxi.ID, old.ID}, "2150.25"},
+		{"by member", ledger.Filter{UserID: new(int64(1))}, []int64{coffee.ID, taxi.ID, old.ID}, "1650"},
+		{"by category", ledger.Filter{Category: new(ledger.CategoryFood)}, []int64{lunch.ID, coffee.ID, old.ID}, "950.25"},
+		{"period inclusive", ledger.Filter{From: new(day(13)), To: new(day(14))}, []int64{coffee.ID, taxi.ID}, "1550"},
+		{"comment search is case-insensitive", ledger.Filter{Query: "кофе"}, []int64{coffee.ID}, "350"},
+		{"LIKE wildcards are literal", ledger.Filter{Query: "%_"}, []int64{old.ID}, "100"},
+		{"no matches", ledger.Filter{Query: "самолёт"}, []int64{}, "0"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -273,7 +273,7 @@ func TestListFiltersAndTotals(t *testing.T) {
 	}
 
 	t.Run("paging keeps totals of the whole selection", func(t *testing.T) {
-		page, err := repo.List(ctx, family, expense.Filter{Limit: 1, Offset: 1})
+		page, err := repo.List(ctx, family, ledger.Filter{Limit: 1, Offset: 1})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -283,7 +283,7 @@ func TestListFiltersAndTotals(t *testing.T) {
 	})
 
 	t.Run("sort by creation finds the last added", func(t *testing.T) {
-		page, _ := repo.List(ctx, expense.OwnedBy(1), expense.Filter{Sort: expense.SortByCreatedAt, Limit: 1})
+		page, _ := repo.List(ctx, ledger.OwnedBy(1), ledger.Filter{Sort: ledger.SortByCreatedAt, Limit: 1})
 		if !equalIDs(ids(page.Items), []int64{old.ID}) {
 			t.Errorf("last added = %v, want %d", ids(page.Items), old.ID)
 		}
@@ -293,11 +293,11 @@ func TestListFiltersAndTotals(t *testing.T) {
 func TestUpdateAndDelete(t *testing.T) {
 	repo, _ := setup(t)
 	ctx := context.Background()
-	e := mustCreate(t, repo, 1, "350", expense.CategoryFood, 15, "кофе")
+	e := mustCreate(t, repo, 1, "350", ledger.CategoryFood, 15, "кофе")
 
 	e.Amount = amount("450")
 	e.Comment = ""
-	updated, err := repo.Update(ctx, expense.OwnedBy(1), e)
+	updated, err := repo.Update(ctx, ledger.OwnedBy(1), e)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -308,10 +308,10 @@ func TestUpdateAndDelete(t *testing.T) {
 		t.Errorf("updated_at %s before created_at %s", updated.UpdatedAt, updated.CreatedAt)
 	}
 
-	if err := repo.Delete(ctx, expense.OwnedBy(1), e.ID); err != nil {
+	if err := repo.Delete(ctx, ledger.OwnedBy(1), e.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.Delete(ctx, expense.OwnedBy(1), e.ID); !errors.Is(err, expense.ErrNotFound) {
+	if err := repo.Delete(ctx, ledger.OwnedBy(1), e.ID); !errors.Is(err, ledger.ErrNotFound) {
 		t.Errorf("second delete: err = %v, want ErrNotFound", err)
 	}
 }
@@ -319,18 +319,18 @@ func TestUpdateAndDelete(t *testing.T) {
 func TestSummary(t *testing.T) {
 	repo, _ := setup(t)
 	ctx := context.Background()
-	mustCreate(t, repo, 1, "350", expense.CategoryFood, 14, "")
-	mustCreate(t, repo, 1, "150.50", expense.CategoryFood, 15, "")
-	mustCreate(t, repo, 1, "1200", expense.CategoryTransport, 15, "")
-	mustCreate(t, repo, 2, "9999", expense.CategoryHousing, 15, "")
+	mustCreate(t, repo, 1, "350", ledger.CategoryFood, 14, "")
+	mustCreate(t, repo, 1, "150.50", ledger.CategoryFood, 15, "")
+	mustCreate(t, repo, 1, "1200", ledger.CategoryTransport, 15, "")
+	mustCreate(t, repo, 2, "9999", ledger.CategoryHousing, 15, "")
 
-	sum, err := repo.Summary(ctx, expense.OwnedBy(1), expense.Filter{})
+	sum, err := repo.Summary(ctx, ledger.OwnedBy(1), ledger.Filter{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(sum.Items) != 2 ||
-		sum.Items[0].Category != expense.CategoryTransport || !sum.Items[0].Sum.Equal(amount("1200")) ||
-		sum.Items[1].Category != expense.CategoryFood || !sum.Items[1].Sum.Equal(amount("500.50")) || sum.Items[1].Count != 2 {
+		sum.Items[0].Category != ledger.CategoryTransport || !sum.Items[0].Sum.Equal(amount("1200")) ||
+		sum.Items[1].Category != ledger.CategoryFood || !sum.Items[1].Sum.Equal(amount("500.50")) || sum.Items[1].Count != 2 {
 		t.Errorf("items = %+v", sum.Items)
 	}
 	if !sum.Sum.Equal(amount("1700.50")) || sum.Count != 3 {
@@ -395,13 +395,13 @@ func equalIDs(a, b []int64) bool {
 func TestDetachTakesExpensesAlong(t *testing.T) {
 	repo, users := setup(t)
 	ctx := context.Background()
-	mustCreate(t, repo, 2, "500", expense.CategoryFood, 10, "обед")
+	mustCreate(t, repo, 2, "500", ledger.CategoryFood, 10, "обед")
 	joinFamily(t, 1, 2)
 	anna, _ := users.Get(ctx, 1)
 	if members, _ := users.Family(ctx, anna.FamilyID); len(members) != 2 || members[0].TelegramID != 1 {
 		t.Fatalf("family = %+v, want Anna (head) first", members)
 	}
-	if page, _ := repo.List(ctx, expense.InFamily(anna.FamilyID), expense.Filter{}); page.Total != 1 {
+	if page, _ := repo.List(ctx, ledger.InFamily(anna.FamilyID), ledger.Filter{}); page.Total != 1 {
 		t.Fatalf("the head does not see Boris's expense")
 	}
 
@@ -409,10 +409,10 @@ func TestDetachTakesExpensesAlong(t *testing.T) {
 	if err != nil || !boris.IsHead || boris.FamilyID == anna.FamilyID {
 		t.Fatalf("detached = %+v, %v", boris, err)
 	}
-	if page, _ := repo.List(ctx, expense.InFamily(anna.FamilyID), expense.Filter{}); page.Total != 0 {
+	if page, _ := repo.List(ctx, ledger.InFamily(anna.FamilyID), ledger.Filter{}); page.Total != 0 {
 		t.Error("the head still sees the expense of someone who left")
 	}
-	if page, _ := repo.List(ctx, expense.InFamily(boris.FamilyID), expense.Filter{}); page.Total != 1 {
+	if page, _ := repo.List(ctx, ledger.InFamily(boris.FamilyID), ledger.Filter{}); page.Total != 1 {
 		t.Error("Boris lost his expense")
 	}
 	if _, err := users.Detach(ctx, 404); !errors.Is(err, user.ErrNotFound) {
@@ -423,7 +423,7 @@ func TestDetachTakesExpensesAlong(t *testing.T) {
 func TestDeleteUser(t *testing.T) {
 	repo, users := setup(t)
 	ctx := context.Background()
-	mustCreate(t, repo, 2, "500", expense.CategoryFood, 10, "обед")
+	mustCreate(t, repo, 2, "500", ledger.CategoryFood, 10, "обед")
 	boris, _ := users.Get(ctx, 2)
 	if err := NewUsageRepository(testPool).Add(ctx, 2, day(10), llm.Usage{PromptTokens: 10}, false); err != nil {
 		t.Fatal(err)
@@ -647,12 +647,12 @@ func TestWeeklyReportSettingAndRuns(t *testing.T) {
 func TestAggregateMatchesGoBuckets(t *testing.T) {
 	repo, _ := setup(t)
 	ctx := context.Background()
-	mustCreate(t, repo, 1, "100", expense.CategoryFood, 11, "")      // Sunday
-	mustCreate(t, repo, 1, "200", expense.CategoryFood, 12, "")      // Monday
-	mustCreate(t, repo, 1, "300", expense.CategoryTransport, 18, "") // Sunday
-	mustCreate(t, repo, 2, "999", expense.CategoryFood, 12, "")      // another member
+	mustCreate(t, repo, 1, "100", ledger.CategoryFood, 11, "")      // Sunday
+	mustCreate(t, repo, 1, "200", ledger.CategoryFood, 12, "")      // Monday
+	mustCreate(t, repo, 1, "300", ledger.CategoryTransport, 18, "") // Sunday
+	mustCreate(t, repo, 2, "999", ledger.CategoryFood, 12, "")      // another member
 
-	totals, err := repo.Aggregate(ctx, expense.OwnedBy(1), expense.Filter{}, expense.BucketWeek)
+	totals, err := repo.Aggregate(ctx, ledger.OwnedBy(1), ledger.Filter{}, ledger.BucketWeek)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -660,7 +660,7 @@ func TestAggregateMatchesGoBuckets(t *testing.T) {
 	for _, tt := range totals {
 		got[tt.Start.Format(time.DateOnly)+" "+string(tt.Category)] = tt.Sum.String()
 		// PostgreSQL's date_trunc and the Go helper must agree, or zero-filling breaks.
-		if !tt.Start.Equal(expense.TruncateDate(tt.Start, expense.BucketWeek)) {
+		if !tt.Start.Equal(ledger.TruncateDate(tt.Start, ledger.BucketWeek)) {
 			t.Errorf("bucket %s is not a Monday", tt.Start)
 		}
 	}
@@ -722,7 +722,7 @@ func TestFamiliesMigrationKeepsExistingData(t *testing.T) {
 	if !gosha.IsHead || gosha.FamilyID == anna.FamilyID {
 		t.Errorf("removed member = %+v, want a family of his own", gosha)
 	}
-	if page, _ := NewExpenseRepository(testPool).List(ctx, expense.InFamily(gosha.FamilyID), expense.Filter{}); page.Total != 1 {
+	if page, _ := NewOperationRepository(testPool).List(ctx, ledger.InFamily(gosha.FamilyID), ledger.Filter{}); page.Total != 1 {
 		t.Error("the removed member lost his expense")
 	}
 	if anna.Consented() {

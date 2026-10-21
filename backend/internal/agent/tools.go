@@ -10,7 +10,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"github.com/rics69/ai-expense-tracking-bot/backend/internal/expense"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/llm"
 )
 
@@ -140,14 +140,14 @@ func lastWeekday(today time.Time, wd time.Weekday) time.Time {
 	return today.AddDate(0, 0, -((int(today.Weekday()) - int(wd) + 7) % 7))
 }
 
-// Expenses is the part of expense.Service the agent needs.
+// Expenses is the part of ledger.Service the agent needs.
 type Expenses interface {
-	Create(ctx context.Context, in expense.CreateInput) (expense.Expense, error)
-	Get(ctx context.Context, s expense.Scope, id int64) (expense.Expense, error)
-	Update(ctx context.Context, s expense.Scope, id int64, p expense.Patch) (expense.Expense, error)
-	Delete(ctx context.Context, s expense.Scope, id int64) error
-	List(ctx context.Context, s expense.Scope, f expense.Filter) (expense.Page, error)
-	Summary(ctx context.Context, s expense.Scope, f expense.Filter) (expense.Summary, error)
+	Create(ctx context.Context, in ledger.CreateInput) (ledger.Operation, error)
+	Get(ctx context.Context, s ledger.Scope, id int64) (ledger.Operation, error)
+	Update(ctx context.Context, s ledger.Scope, id int64, p ledger.Patch) (ledger.Operation, error)
+	Delete(ctx context.Context, s ledger.Scope, id int64) error
+	List(ctx context.Context, s ledger.Scope, f ledger.Filter) (ledger.Page, error)
+	Summary(ctx context.Context, s ledger.Scope, f ledger.Filter) (ledger.Summary, error)
 }
 
 // toolError is an error the model can fix: it is sent back as the tool result.
@@ -164,7 +164,7 @@ type turn struct {
 	today  time.Time
 }
 
-func (t turn) scope() expense.Scope { return expense.OwnedBy(t.userID) }
+func (t turn) scope() ledger.Scope { return ledger.OwnedBy(t.userID) }
 
 // runTool executes a tool call for the turn's user and returns the JSON result
 // for the model. Errors the model can react to are encoded into the result;
@@ -191,7 +191,7 @@ func (a *Agent) runTool(ctx context.Context, t turn, call *llm.ToolCall) (string
 
 	var (
 		terr *toolError
-		verr *expense.ValidationError
+		verr *ledger.ValidationError
 	)
 	switch {
 	case err == nil:
@@ -204,7 +204,7 @@ func (a *Agent) runTool(ctx context.Context, t turn, call *llm.ToolCall) (string
 				"If the user really meant a future date, tell them only past expenses are recorded."
 		}
 		result = map[string]string{"error": msg}
-	case errors.Is(err, expense.ErrNotFound):
+	case errors.Is(err, ledger.ErrNotFound):
 		result = map[string]string{"error": "expense not found; call find_expenses to get a valid id"}
 	default:
 		return "", err
@@ -240,11 +240,11 @@ func (a *Agent) addExpense(ctx context.Context, t turn, raw json.RawMessage) (an
 	if err != nil {
 		return nil, err
 	}
-	e, err := a.expenses.Create(ctx, expense.CreateInput{
+	e, err := a.expenses.Create(ctx, ledger.CreateInput{
 		UserID:   t.userID,
 		Amount:   *amount,
 		Category: *category,
-		SpentAt:  date,
+		Date:     date,
 		Comment:  args.Comment,
 		Today:    t.today,
 	})
@@ -279,7 +279,7 @@ func (a *Agent) findExpenses(ctx context.Context, t turn, raw json.RawMessage) (
 		f.Limit = defaultFindLimit
 	}
 	if args.LastAdded {
-		f.Sort = expense.SortByCreatedAt
+		f.Sort = ledger.SortByCreatedAt
 	}
 	page, err := a.expenses.List(ctx, scope, f)
 	if err != nil {
@@ -346,19 +346,19 @@ func (a *Agent) updateExpense(ctx context.Context, t turn, raw json.RawMessage) 
 	if err != nil {
 		return nil, err
 	}
-	var p expense.Patch
+	var p ledger.Patch
 	if p.Amount, err = parseAmount(args.Amount, false); err != nil {
 		return nil, err
 	}
 	if p.Category, err = parseCategory(args.Category, false); err != nil {
 		return nil, err
 	}
-	if p.SpentAt, err = parseDate("date", args.Date); err != nil {
+	if p.Date, err = parseDate("date", args.Date); err != nil {
 		return nil, err
 	}
 	p.Comment = args.Comment
 	p.Today = t.today
-	if p.Amount == nil && p.Category == nil && p.SpentAt == nil && p.Comment == nil {
+	if p.Amount == nil && p.Category == nil && p.Date == nil && p.Comment == nil {
 		return nil, badArgs("nothing to update: pass at least one of amount, category, date, comment")
 	}
 
@@ -409,13 +409,13 @@ type item struct {
 	Comment  string `json:"comment,omitempty"`
 }
 
-func (t turn) item(e expense.Expense) item {
+func (t turn) item(e ledger.Operation) item {
 	return item{
 		ID:       e.ID,
 		Amount:   money(e.Amount),
 		Category: e.Category.Label(),
-		Date:     e.SpentAt.Format(time.DateOnly),
-		DateText: humanDate(e.SpentAt, t.today),
+		Date:     e.Date.Format(time.DateOnly),
+		DateText: humanDate(e.Date, t.today),
 		Comment:  e.Comment,
 	}
 }
@@ -471,9 +471,9 @@ func parseAmount(n json.Number, required bool) (*decimal.Decimal, error) {
 }
 
 // categoryAliases accept Russian names too: models sometimes ignore the enum.
-var categoryAliases = func() map[string]expense.Category {
-	m := map[string]expense.Category{}
-	for _, c := range expense.Categories {
+var categoryAliases = func() map[string]ledger.Category {
+	m := map[string]ledger.Category{}
+	for _, c := range ledger.Categories {
 		m[string(c)] = c
 		m[c.Label()] = c
 		m[strings.ReplaceAll(c.Label(), "ё", "е")] = c
@@ -481,7 +481,7 @@ var categoryAliases = func() map[string]expense.Category {
 	return m
 }()
 
-func parseCategory(s string, required bool) (*expense.Category, error) {
+func parseCategory(s string, required bool) (*ledger.Category, error) {
 	s = strings.ToLower(strings.TrimSpace(s))
 	if s == "" {
 		if required {
@@ -508,9 +508,9 @@ func parseDate(field, s string) (*time.Time, error) {
 	return &t, nil
 }
 
-func periodFilter(from, to, category string) (expense.Filter, error) {
+func periodFilter(from, to, category string) (ledger.Filter, error) {
 	var (
-		f   expense.Filter
+		f   ledger.Filter
 		err error
 	)
 	if f.From, err = parseDate("date_from", from); err != nil {

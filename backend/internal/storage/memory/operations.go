@@ -1,4 +1,4 @@
-// Package memory is an in-memory expense.Repository. It mirrors the semantics
+// Package memory is an in-memory ledger.Repository. It mirrors the semantics
 // of the PostgreSQL repository and is used where a database is overkill:
 // agent evals run every case on a fresh, isolated store.
 package memory
@@ -13,26 +13,26 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"github.com/rics69/ai-expense-tracking-bot/backend/internal/expense"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 )
 
-// ExpenseRepository implements expense.Repository in memory.
-type ExpenseRepository struct {
+// OperationRepository implements ledger.Repository in memory.
+type OperationRepository struct {
 	mu     sync.Mutex
-	items  map[int64]expense.Expense
+	items  map[int64]ledger.Operation
 	nextID int64
 	// families maps users to their family, standing in for the users table.
 	families map[int64]int64
 	clock    time.Time // creation timestamps: strictly increasing, so "last added" is stable
 }
 
-var _ expense.Repository = (*ExpenseRepository)(nil)
+var _ ledger.Repository = (*OperationRepository)(nil)
 
-func NewExpenseRepository() *ExpenseRepository {
-	return &ExpenseRepository{items: map[int64]expense.Expense{}, families: map[int64]int64{}, clock: time.Now()}
+func NewOperationRepository() *OperationRepository {
+	return &OperationRepository{items: map[int64]ledger.Operation{}, families: map[int64]int64{}, clock: time.Now()}
 }
 
-func (r *ExpenseRepository) Create(_ context.Context, e expense.Expense) (expense.Expense, error) {
+func (r *OperationRepository) Create(_ context.Context, e ledger.Operation) (ledger.Operation, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.nextID++
@@ -43,22 +43,22 @@ func (r *ExpenseRepository) Create(_ context.Context, e expense.Expense) (expens
 	return e, nil
 }
 
-func (r *ExpenseRepository) Get(_ context.Context, s expense.Scope, id int64) (expense.Expense, error) {
+func (r *OperationRepository) Get(_ context.Context, s ledger.Scope, id int64) (ledger.Operation, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	e, ok := r.items[id]
 	if !ok || !r.visible(s, e) {
-		return expense.Expense{}, expense.ErrNotFound
+		return ledger.Operation{}, ledger.ErrNotFound
 	}
 	return e, nil
 }
 
-func (r *ExpenseRepository) Update(_ context.Context, s expense.Scope, e expense.Expense) (expense.Expense, error) {
+func (r *OperationRepository) Update(_ context.Context, s ledger.Scope, e ledger.Operation) (ledger.Operation, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	old, ok := r.items[e.ID]
 	if !ok || !r.visible(s, old) || !r.visible(s, e) {
-		return expense.Expense{}, expense.ErrNotFound
+		return ledger.Operation{}, ledger.ErrNotFound
 	}
 	r.clock = r.clock.Add(time.Millisecond)
 	e.CreatedAt, e.UpdatedAt = old.CreatedAt, r.clock
@@ -66,34 +66,34 @@ func (r *ExpenseRepository) Update(_ context.Context, s expense.Scope, e expense
 	return e, nil
 }
 
-func (r *ExpenseRepository) Delete(_ context.Context, s expense.Scope, id int64) error {
+func (r *OperationRepository) Delete(_ context.Context, s ledger.Scope, id int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	e, ok := r.items[id]
 	if !ok || !r.visible(s, e) {
-		return expense.ErrNotFound
+		return ledger.ErrNotFound
 	}
 	delete(r.items, id)
 	return nil
 }
 
-func (r *ExpenseRepository) List(_ context.Context, s expense.Scope, f expense.Filter) (expense.Page, error) {
+func (r *OperationRepository) List(_ context.Context, s ledger.Scope, f ledger.Filter) (ledger.Page, error) {
 	matched := r.match(s, f)
 	switch f.Sort {
-	case expense.SortByCreatedAt:
-		slices.SortFunc(matched, func(a, b expense.Expense) int {
+	case ledger.SortByCreatedAt:
+		slices.SortFunc(matched, func(a, b ledger.Operation) int {
 			return cmp.Or(b.CreatedAt.Compare(a.CreatedAt), cmp.Compare(b.ID, a.ID))
 		})
-	case expense.SortByAmount:
-		slices.SortFunc(matched, func(a, b expense.Expense) int {
+	case ledger.SortByAmount:
+		slices.SortFunc(matched, func(a, b ledger.Operation) int {
 			return cmp.Or(b.Amount.Cmp(a.Amount), cmp.Compare(b.ID, a.ID))
 		})
 	default:
-		slices.SortFunc(matched, func(a, b expense.Expense) int {
-			return cmp.Or(b.SpentAt.Compare(a.SpentAt), cmp.Compare(b.ID, a.ID))
+		slices.SortFunc(matched, func(a, b ledger.Operation) int {
+			return cmp.Or(b.Date.Compare(a.Date), cmp.Compare(b.ID, a.ID))
 		})
 	}
-	page := expense.Page{Items: []expense.Expense{}, Total: len(matched), Sum: decimal.Zero}
+	page := ledger.Page{Items: []ledger.Operation{}, Total: len(matched), Sum: decimal.Zero}
 	for _, e := range matched {
 		page.Sum = page.Sum.Add(e.Amount)
 	}
@@ -103,13 +103,13 @@ func (r *ExpenseRepository) List(_ context.Context, s expense.Scope, f expense.F
 	return page, nil
 }
 
-func (r *ExpenseRepository) Summary(_ context.Context, s expense.Scope, f expense.Filter) (expense.Summary, error) {
-	byCategory := map[expense.Category]*expense.CategoryTotal{}
-	sum := expense.Summary{Sum: decimal.Zero}
+func (r *OperationRepository) Summary(_ context.Context, s ledger.Scope, f ledger.Filter) (ledger.Summary, error) {
+	byCategory := map[ledger.Category]*ledger.CategoryTotal{}
+	sum := ledger.Summary{Sum: decimal.Zero}
 	for _, e := range r.match(s, f) {
 		t, ok := byCategory[e.Category]
 		if !ok {
-			t = &expense.CategoryTotal{Category: e.Category, Sum: decimal.Zero}
+			t = &ledger.CategoryTotal{Category: e.Category, Sum: decimal.Zero}
 			byCategory[e.Category] = t
 		}
 		t.Sum = t.Sum.Add(e.Amount)
@@ -120,31 +120,31 @@ func (r *ExpenseRepository) Summary(_ context.Context, s expense.Scope, f expens
 	for _, t := range byCategory {
 		sum.Items = append(sum.Items, *t)
 	}
-	slices.SortFunc(sum.Items, func(a, b expense.CategoryTotal) int {
+	slices.SortFunc(sum.Items, func(a, b ledger.CategoryTotal) int {
 		return cmp.Or(b.Sum.Cmp(a.Sum), cmp.Compare(a.Category, b.Category))
 	})
 	return sum, nil
 }
 
-func (r *ExpenseRepository) Aggregate(_ context.Context, s expense.Scope, f expense.Filter, b expense.Bucket) ([]expense.BucketTotal, error) {
+func (r *OperationRepository) Aggregate(_ context.Context, s ledger.Scope, f ledger.Filter, b ledger.Bucket) ([]ledger.BucketTotal, error) {
 	type key struct {
 		start time.Time
-		c     expense.Category
+		c     ledger.Category
 	}
-	totals := map[key]*expense.BucketTotal{}
+	totals := map[key]*ledger.BucketTotal{}
 	var order []key
 	for _, e := range r.match(s, f) {
-		k := key{expense.TruncateDate(e.SpentAt, b), e.Category}
+		k := key{ledger.TruncateDate(e.Date, b), e.Category}
 		t, ok := totals[k]
 		if !ok {
-			t = &expense.BucketTotal{Start: k.start, Category: k.c, Sum: decimal.Zero}
+			t = &ledger.BucketTotal{Start: k.start, Category: k.c, Sum: decimal.Zero}
 			totals[k] = t
 			order = append(order, k)
 		}
 		t.Sum = t.Sum.Add(e.Amount)
 		t.Count++
 	}
-	out := make([]expense.BucketTotal, len(order))
+	out := make([]ledger.BucketTotal, len(order))
 	for i, k := range order {
 		out[i] = *totals[k]
 	}
@@ -152,29 +152,29 @@ func (r *ExpenseRepository) Aggregate(_ context.Context, s expense.Scope, f expe
 }
 
 // All returns every stored expense ordered by ID, regardless of scope.
-func (r *ExpenseRepository) All() []expense.Expense {
+func (r *OperationRepository) All() []ledger.Operation {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	out := make([]expense.Expense, 0, len(r.items))
+	out := make([]ledger.Operation, 0, len(r.items))
 	for _, e := range r.items {
 		out = append(out, e)
 	}
-	slices.SortFunc(out, func(a, b expense.Expense) int { return cmp.Compare(a.ID, b.ID) })
+	slices.SortFunc(out, func(a, b ledger.Operation) int { return cmp.Compare(a.ID, b.ID) })
 	return out
 }
 
-func (r *ExpenseRepository) match(s expense.Scope, f expense.Filter) []expense.Expense {
+func (r *OperationRepository) match(s ledger.Scope, f ledger.Filter) []ledger.Operation {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	query := strings.ToLower(f.Query)
-	var out []expense.Expense
+	var out []ledger.Operation
 	for _, e := range r.items {
 		switch {
 		case !r.visible(s, e),
 			f.UserID != nil && e.UserID != *f.UserID,
 			f.Category != nil && e.Category != *f.Category,
-			f.From != nil && e.SpentAt.Before(*f.From),
-			f.To != nil && e.SpentAt.After(*f.To),
+			f.From != nil && e.Date.Before(*f.From),
+			f.To != nil && e.Date.After(*f.To),
 			query != "" && !strings.Contains(strings.ToLower(e.Comment), query):
 			continue
 		}
@@ -184,7 +184,7 @@ func (r *ExpenseRepository) match(s expense.Scope, f expense.Filter) []expense.E
 }
 
 // visible applies the scope like the SQL repository: the zero scope sees nothing.
-func (r *ExpenseRepository) visible(s expense.Scope, e expense.Expense) bool {
+func (r *OperationRepository) visible(s ledger.Scope, e ledger.Operation) bool {
 	if s.FamilyID() != 0 {
 		return r.families[e.UserID] == s.FamilyID()
 	}
@@ -192,7 +192,7 @@ func (r *ExpenseRepository) visible(s expense.Scope, e expense.Expense) bool {
 }
 
 // deleteOwner drops a deleted user's expenses, like ON DELETE CASCADE.
-func (r *ExpenseRepository) deleteOwner(userID int64) {
+func (r *OperationRepository) deleteOwner(userID int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for id, e := range r.items {
@@ -205,7 +205,7 @@ func (r *ExpenseRepository) deleteOwner(userID int64) {
 
 // SetFamily records the family of a user for InFamily scopes; users without
 // one are in no family.
-func (r *ExpenseRepository) SetFamily(userID, familyID int64) {
+func (r *OperationRepository) SetFamily(userID, familyID int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.families[userID] = familyID

@@ -23,7 +23,7 @@ type Users struct {
 	nextFamily int64
 	// Expenses, if set, learns every family change, so InFamily scopes follow
 	// membership like the SQL subquery does.
-	Expenses *ExpenseRepository
+	Expenses *OperationRepository
 	now      func() time.Time
 }
 

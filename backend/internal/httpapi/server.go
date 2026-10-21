@@ -8,8 +8,8 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"github.com/shopspring/decimal"
 
-	"github.com/rics69/ai-expense-tracking-bot/backend/internal/expense"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
 
@@ -18,15 +18,15 @@ func init() {
 	decimal.MarshalJSONWithoutQuotes = true
 }
 
-// ExpenseService is the part of expense.Service the API needs.
+// ExpenseService is the part of ledger.Service the API needs.
 type ExpenseService interface {
-	Create(ctx context.Context, in expense.CreateInput) (expense.Expense, error)
-	Get(ctx context.Context, s expense.Scope, id int64) (expense.Expense, error)
-	Update(ctx context.Context, s expense.Scope, id int64, p expense.Patch) (expense.Expense, error)
-	Delete(ctx context.Context, s expense.Scope, id int64) error
-	List(ctx context.Context, s expense.Scope, f expense.Filter) (expense.Page, error)
-	Summary(ctx context.Context, s expense.Scope, f expense.Filter) (expense.Summary, error)
-	TimeSeries(ctx context.Context, s expense.Scope, f expense.Filter, b expense.Bucket) ([]expense.Point, error)
+	Create(ctx context.Context, in ledger.CreateInput) (ledger.Operation, error)
+	Get(ctx context.Context, s ledger.Scope, id int64) (ledger.Operation, error)
+	Update(ctx context.Context, s ledger.Scope, id int64, p ledger.Patch) (ledger.Operation, error)
+	Delete(ctx context.Context, s ledger.Scope, id int64) error
+	List(ctx context.Context, s ledger.Scope, f ledger.Filter) (ledger.Page, error)
+	Summary(ctx context.Context, s ledger.Scope, f ledger.Filter) (ledger.Summary, error)
+	TimeSeries(ctx context.Context, s ledger.Scope, f ledger.Filter, b ledger.Bucket) ([]ledger.Point, error)
 }
 
 // FamilyService manages members and invites; *family.Service implements it.
@@ -77,19 +77,19 @@ func (s *Server) head(ctx context.Context) (user.User, error) {
 }
 
 // scope is the head's family: what the panel may see and change.
-func (s *Server) scope(ctx context.Context) (expense.Scope, user.User, error) {
+func (s *Server) scope(ctx context.Context) (ledger.Scope, user.User, error) {
 	u, err := s.head(ctx)
 	if err != nil {
-		return expense.Scope{}, user.User{}, err
+		return ledger.Scope{}, user.User{}, err
 	}
-	return expense.InFamily(u.FamilyID), u, nil
+	return ledger.InFamily(u.FamilyID), u, nil
 }
 
 // member checks that an expense owner chosen in the panel is in the family.
 func (s *Server) member(ctx context.Context, head user.User, telegramID int64) error {
 	_, err := s.family.Member(ctx, head.FamilyID, telegramID)
 	if errors.Is(err, family.ErrNotMember) {
-		return expense.ErrUnknownUser
+		return ledger.ErrUnknownUser
 	}
 	return err
 }
@@ -125,11 +125,11 @@ func (s *Server) CreateExpense(ctx context.Context, req CreateExpenseRequestObje
 	if err := s.member(ctx, head, b.UserId); err != nil {
 		return nil, err
 	}
-	in := expense.CreateInput{
+	in := ledger.CreateInput{
 		UserID:   b.UserId,
 		Amount:   b.Amount,
-		Category: expense.Category(b.Category),
-		SpentAt:  dateTime(b.SpentAt),
+		Category: ledger.Category(b.Category),
+		Date:     dateTime(b.SpentAt),
 		Comment:  deref(b.Comment),
 	}
 	e, err := s.expenses.Create(ctx, in)
@@ -163,7 +163,7 @@ func (s *Server) GetExpenseTimeSeries(ctx context.Context, req GetExpenseTimeSer
 		return nil, err
 	}
 	points, err := s.expenses.TimeSeries(ctx, scope,
-		filterFrom(p.UserId, p.Category, p.From, p.To), expense.Bucket(p.Bucket))
+		filterFrom(p.UserId, p.Category, p.From, p.To), ledger.Bucket(p.Bucket))
 	if err != nil {
 		return nil, err
 	}
@@ -201,14 +201,14 @@ func (s *Server) UpdateExpense(ctx context.Context, req UpdateExpenseRequestObje
 			return nil, err
 		}
 	}
-	p := expense.Patch{
+	p := ledger.Patch{
 		UserID:  b.UserId,
 		Amount:  b.Amount,
-		SpentAt: dateTime(b.SpentAt),
+		Date:    dateTime(b.SpentAt),
 		Comment: b.Comment,
 	}
 	if b.Category != nil {
-		c := expense.Category(*b.Category)
+		c := ledger.Category(*b.Category)
 		p.Category = &c
 	}
 	e, err := s.expenses.Update(ctx, scope, req.Id, p)
@@ -246,30 +246,30 @@ func (s *Server) ListUsers(ctx context.Context, _ ListUsersRequestObject) (ListU
 }
 
 func (s *Server) ListCategories(context.Context, ListCategoriesRequestObject) (ListCategoriesResponseObject, error) {
-	items := make([]CategoryInfo, len(expense.Categories))
-	for i, c := range expense.Categories {
+	items := make([]CategoryInfo, len(ledger.Categories))
+	for i, c := range ledger.Categories {
 		items[i] = CategoryInfo{Code: Category(c), Label: c.Label()}
 	}
 	return ListCategories200JSONResponse{Items: items}, nil
 }
 
-func toAPIExpense(e expense.Expense) Expense {
+func toAPIExpense(e ledger.Operation) Expense {
 	return Expense{
 		Id:        e.ID,
 		UserId:    e.UserID,
 		Amount:    e.Amount,
 		Category:  Category(e.Category),
-		SpentAt:   openapi_types.Date{Time: e.SpentAt},
+		SpentAt:   openapi_types.Date{Time: e.Date},
 		Comment:   optional(e.Comment),
 		CreatedAt: e.CreatedAt,
 		UpdatedAt: e.UpdatedAt,
 	}
 }
 
-func filterFrom(userID *int64, category *Category, from, to *openapi_types.Date) expense.Filter {
-	f := expense.Filter{UserID: userID, From: dateTime(from), To: dateTime(to)}
+func filterFrom(userID *int64, category *Category, from, to *openapi_types.Date) ledger.Filter {
+	f := ledger.Filter{UserID: userID, From: dateTime(from), To: dateTime(to)}
 	if category != nil {
-		c := expense.Category(*category)
+		c := ledger.Category(*category)
 		f.Category = &c
 	}
 	return f

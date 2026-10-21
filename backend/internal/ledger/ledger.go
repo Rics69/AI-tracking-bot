@@ -1,6 +1,6 @@
-// Package expense contains the expense domain: entities, validation rules
-// and the service used by both the REST API and the Telegram bot.
-package expense
+// Package ledger is the money domain: operations (so far, expenses), validation
+// rules and the service used by both the REST API and the Telegram bot.
+package ledger
 
 import (
 	"errors"
@@ -49,13 +49,13 @@ func (c Category) Valid() bool {
 // Label returns the Russian name of the category.
 func (c Category) Label() string { return categoryLabels[c] }
 
-// Expense is a single spending record of a family member.
-type Expense struct {
+// Operation is a single spending record of a family member.
+type Operation struct {
 	ID        int64
 	UserID    int64 // Telegram ID of the owner
 	Amount    decimal.Decimal
 	Category  Category
-	SpentAt   time.Time // calendar date, midnight UTC
+	Date      time.Time // calendar date, midnight UTC
 	Comment   string    // empty means no comment
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -66,7 +66,7 @@ type CreateInput struct {
 	UserID   int64
 	Amount   decimal.Decimal
 	Category Category
-	SpentAt  *time.Time // nil means Today
+	Date     *time.Time // nil means Today
 	Comment  string
 	// Today is the current date of whoever records the expense, in their
 	// timezone: later dates are rejected. Zero means today in the service timezone.
@@ -79,7 +79,7 @@ type Patch struct {
 	UserID   *int64
 	Amount   *decimal.Decimal
 	Category *Category
-	SpentAt  *time.Time
+	Date     *time.Time
 	Comment  *string
 	// Today is the current date of whoever edits, as in CreateInput.
 	Today time.Time
@@ -110,7 +110,7 @@ type Filter struct {
 
 // Page is one page of a list together with totals over the whole selection.
 type Page struct {
-	Items []Expense
+	Items []Operation
 	Total int             // number of matching expenses
 	Sum   decimal.Decimal // sum of matching expenses
 }

@@ -25,7 +25,9 @@ func (m memStore) Add(_ context.Context, userID int64, _ time.Time, u llm.Usage,
 	return nil
 }
 
-func (m memStore) Get(_ context.Context, userID int64, _ time.Time) (Day, error) { return m[userID], nil }
+func (m memStore) Get(_ context.Context, userID int64, _ time.Time) (Day, error) {
+	return m[userID], nil
+}
 
 func TestLimits(t *testing.T) {
 	ctx := context.Background()
