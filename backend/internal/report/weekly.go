@@ -12,8 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/shopspring/decimal"
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/expense"
@@ -26,11 +24,6 @@ const (
 	tickInterval = 5 * time.Minute
 	topExpenses  = 3
 )
-
-var reportsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-	Name: "weekly_reports_total",
-	Help: "Weekly reports by result: sent, empty (no expenses, nothing sent), undeliverable (blocked bot), failed.",
-}, []string{"result"})
 
 // Expenses is the part of expense.Service a report needs.
 type Expenses interface {
@@ -104,7 +97,6 @@ func (w *Weekly) Tick(ctx context.Context) {
 			continue
 		}
 		if err := w.sendOne(ctx, m, weekStart); err != nil {
-			reportsTotal.WithLabelValues("failed").Inc()
 			w.log.ErrorContext(ctx, "weekly report", "user_id", m.TelegramID, "err", err)
 		}
 	}
@@ -117,14 +109,12 @@ func (w *Weekly) sendOne(ctx context.Context, m user.User, weekStart time.Time) 
 	}
 	text, empty, err := w.Build(ctx, m.TelegramID, weekStart)
 	if err == nil && empty {
-		reportsTotal.WithLabelValues("empty").Inc()
 		return nil // nothing to report: stay quiet, but mark the week as handled
 	}
 	if err == nil {
 		err = w.send(ctx, m.TelegramID, text)
 	}
 	if errors.Is(err, ErrUndeliverable) {
-		reportsTotal.WithLabelValues("undeliverable").Inc()
 		w.log.WarnContext(ctx, "weekly report undeliverable", "user_id", m.TelegramID, "err", err)
 		return nil // keep the claim: the member will not get this week's report
 	}
@@ -135,7 +125,6 @@ func (w *Weekly) sendOne(ctx context.Context, m user.User, weekStart time.Time) 
 		}
 		return err
 	}
-	reportsTotal.WithLabelValues("sent").Inc()
 	w.log.InfoContext(ctx, "weekly report sent", "user_id", m.TelegramID, "week", weekStart.Format(time.DateOnly))
 	return nil
 }

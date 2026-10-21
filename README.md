@@ -20,8 +20,6 @@ docker compose up -d --build
 | Веб-панель | http://localhost:3000 |
 | REST API | http://localhost:8080/api/v1 |
 | Swagger UI | http://localhost:8080/docs |
-| Grafana (дашборд) | http://localhost:3001 |
-| Prometheus (метрики, алерты) | http://localhost:9090 |
 
 Дальше — написать боту в Telegram. Чтобы посмотреть панель без бота, загрузите демо-данные (три члена семьи и месяц трат):
 
@@ -153,23 +151,9 @@ LLM не возвращает «распарсенный JSON траты», а �
 
 Суммы — `NUMERIC(12,2)` в БД и `decimal.Decimal` в Go, без float. Даты трат календарные (`DATE`), «сегодня» считается в таймзоне семьи (`APP_TIMEZONE`), а не сервера.
 
-## Мониторинг
+## Наблюдение за ботом
 
-`api` и `bot` отдают метрики Prometheus на внутреннем порту `9091` — он не публикуется наружу, Prometheus забирает метрики по сети compose. Grafana поднимается с готовым дашбордом, алерты описаны в [`monitoring/prometheus/alerts.yml`](monitoring/prometheus/alerts.yml).
-
-| Метрика | Что показывает |
-|---|---|
-| `agent_replies_total{outcome}` | ответы бота: ok / gave_up (лимит шагов) / blocked / error |
-| `agent_reply_duration_seconds` | время от сообщения до ответа — p50/p95 на дашборде |
-| `agent_tool_calls_total{tool,result}` | вызовы тулов; рост `tool_error` — модель путается в аргументах |
-| `llm_requests_total{outcome}`, `llm_retries_total` | вызовы GigaChat: ok / rate_limited / server_error / network |
-| `llm_request_duration_seconds` | время вызова модели с ретраями |
-| `llm_tokens_total{type}` | токены: prompt (оплачиваемые) / cached / completion |
-| `telegram_messages_total{result}`, `telegram_send_failures_total` | входящие сообщения и ответы, которые не дошли |
-| `weekly_reports_total{result}` | итоги недели: sent / empty / undeliverable / failed |
-| `http_requests_total{route,status}`, `http_request_duration_seconds` | REST API по шаблонам маршрутов |
-
-В лейблах только значения из фиксированного набора: ни ID пользователей, ни текста, ни ID трат в путях (`/expenses/{id}`, а не `/expenses/42`) — иначе число временных рядов растёт без предела. Eval отвечает, хорош ли агент на тестах, метрики — как он ведёт себя на живых пользователях.
+Сервисы пишут структурированные логи (`slog`): ответ агента с числом шагов и токенов, каждый вызов тула, ретраи GigaChat и Telegram. Prometheus и Grafana убраны — для одного сервиса это лишняя инфраструктура; сводка для владельца (пользователи, активность, токены) будет командой `/stats` в боте.
 
 ## Качество агента: eval
 

@@ -185,11 +185,8 @@ func (a *Agent) runTool(ctx context.Context, userID int64, call *llm.ToolCall) (
 		terr *toolError
 		verr *expense.ValidationError
 	)
-	toolResult := "tool_error"
-	defer func() { toolCallsTotal.WithLabelValues(knownTool(call.Name), toolResult).Inc() }()
 	switch {
 	case err == nil:
-		toolResult = "ok"
 	case errors.As(err, &terr):
 		result = map[string]string{"error": terr.msg}
 	case errors.As(err, &verr):
@@ -202,7 +199,6 @@ func (a *Agent) runTool(ctx context.Context, userID int64, call *llm.ToolCall) (
 	case errors.Is(err, expense.ErrNotFound):
 		result = map[string]string{"error": "expense not found; call find_expenses to get a valid id"}
 	default:
-		toolResult = "failure"
 		return "", err
 	}
 	out, err := json.Marshal(result)

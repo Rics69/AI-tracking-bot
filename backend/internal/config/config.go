@@ -17,8 +17,6 @@ type Common struct {
 	Timezone    string     `env:"APP_TIMEZONE" envDefault:"Europe/Moscow"`
 	LogLevel    slog.Level `env:"LOG_LEVEL" envDefault:"info"`
 	LogFormat   string     `env:"LOG_FORMAT" envDefault:"text"`
-	// MetricsAddr serves /metrics for Prometheus; keep it off the public network.
-	MetricsAddr string `env:"METRICS_ADDR" envDefault:":9091"`
 
 	// Location is parsed from Timezone by Load.
 	Location *time.Location `env:"-"`

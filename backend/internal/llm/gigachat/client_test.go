@@ -272,19 +272,3 @@ func TestDoesNotRetryWhenCallerGaveUp(t *testing.T) {
 		t.Errorf("sent %d requests after cancellation", fake.chats.Load())
 	}
 }
-
-func TestOutcomeClassification(t *testing.T) {
-	for err, want := range map[error]string{
-		nil:                            llm.OutcomeOK,
-		llm.ErrBlocked:                 llm.OutcomeBlocked,
-		&APIError{Status: 429}:         llm.OutcomeRateLimited,
-		&APIError{Status: 503}:         llm.OutcomeServerError,
-		&APIError{Status: 400}:         llm.OutcomeClientError,
-		context.DeadlineExceeded:       llm.OutcomeNetwork,
-		errors.New("connection reset"): llm.OutcomeNetwork,
-	} {
-		if got := outcome(err); got != want {
-			t.Errorf("outcome(%v) = %s, want %s", err, got, want)
-		}
-	}
-}

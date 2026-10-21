@@ -106,7 +106,6 @@ func (h *Handler) handle(ctx context.Context, s Sender, update *models.Update) {
 	log := h.log.With("user_id", from.ID)
 
 	if msg.Chat.Type != models.ChatTypePrivate {
-		countMessage(msgIgnored)
 		h.send(ctx, s, chatID, replyPrivate)
 		return
 	}
@@ -130,12 +129,10 @@ func (h *Handler) handle(ctx context.Context, s Sender, update *models.Update) {
 	// loses access immediately. Admit also refreshes the name the panel shows.
 	if _, err := h.family.Admit(ctx, tg); err != nil {
 		if errors.Is(err, family.ErrNotMember) {
-			countMessage(msgRefused)
 			log.WarnContext(ctx, "message from a user outside the family", "username", from.Username)
 			h.send(ctx, s, chatID, fmt.Sprintf(replyForbidden, from.ID))
 			return
 		}
-		countMessage(msgFailure)
 		log.ErrorContext(ctx, "check membership", "err", err)
 		h.send(ctx, s, chatID, replyFailure)
 		return
@@ -143,16 +140,13 @@ func (h *Handler) handle(ctx context.Context, s Sender, update *models.Update) {
 
 	switch {
 	case text == "":
-		countMessage(msgIgnored)
 		h.send(ctx, s, chatID, replyNotText)
 		return
 	case isCommand(text, "/start"), isCommand(text, "/help"):
-		countMessage(msgHelp)
 		h.agent.Reset(ctx, from.ID)
 		h.send(ctx, s, chatID, replyHelp)
 		return
 	case len([]rune(text)) > maxInputRunes:
-		countMessage(msgIgnored)
 		h.send(ctx, s, chatID, replyTooLong)
 		return
 	}
@@ -161,11 +155,8 @@ func (h *Handler) handle(ctx context.Context, s Sender, update *models.Update) {
 	reply, err := h.agent.Reply(ctx, agent.Caller{UserID: from.ID, Name: from.FirstName}, text)
 	stopTyping()
 	if err != nil {
-		countMessage(msgAgentFailed)
 		log.ErrorContext(ctx, "agent failed", "err", err)
 		reply = replyFailure
-	} else {
-		countMessage(msgAnswered)
 	}
 	h.send(ctx, s, chatID, reply)
 }
@@ -174,18 +165,14 @@ func (h *Handler) join(ctx context.Context, s Sender, chatID int64, code string,
 	member, joined, err := h.family.Join(ctx, code, tg)
 	switch {
 	case errors.Is(err, family.ErrInviteInvalid):
-		countMessage(msgInviteInvalid)
 		h.log.WarnContext(ctx, "invalid invite", "user_id", tg.TelegramID)
 		h.send(ctx, s, chatID, replyInviteInvalid)
 	case err != nil:
-		countMessage(msgFailure)
 		h.log.ErrorContext(ctx, "join family", "user_id", tg.TelegramID, "err", err)
 		h.send(ctx, s, chatID, replyFailure)
 	case !joined:
-		countMessage(msgAlreadyMember)
 		h.send(ctx, s, chatID, replyAlreadyMember)
 	default:
-		countMessage(msgJoined)
 		h.log.InfoContext(ctx, "joined the family", "user_id", tg.TelegramID, "username", tg.Username)
 		h.send(ctx, s, chatID, fmt.Sprintf(replyJoined, member.FirstName))
 	}
@@ -216,7 +203,7 @@ func (h *Handler) keepTyping(ctx context.Context, s Sender, chatID int64) (stop 
 }
 
 func (h *Handler) send(ctx context.Context, s Sender, chatID int64, text string) {
-	_ = h.Send(ctx, s, chatID, text) // logged and counted inside
+	_ = h.Send(ctx, s, chatID, text) // logged inside
 }
 
 // Send delivers a plain-text message, retrying network failures. It is used
@@ -241,22 +228,18 @@ func (h *Handler) Send(ctx context.Context, s Sender, chatID int64, text string)
 			return nil
 		}
 		if permanent(err) {
-			sendFailuresTotal.Inc()
 			h.log.WarnContext(ctx, "message undeliverable", "chat_id", chatID, "err", err)
 			return fmt.Errorf("%w: %w", ErrUndeliverable, err)
 		}
 		if attempt == sendAttempts {
-			sendFailuresTotal.Inc()
 			h.log.ErrorContext(ctx, "send message", "chat_id", chatID, "attempts", attempt, "err", err)
 			return err
 		}
-		sendRetriesTotal.Inc()
 		h.log.WarnContext(ctx, "send message retry", "chat_id", chatID, "attempt", attempt, "err", err)
 		select {
 		case <-time.After(delay):
 			delay *= 2
 		case <-ctx.Done():
-			sendFailuresTotal.Inc()
 			h.log.ErrorContext(ctx, "send message", "chat_id", chatID, "err", ctx.Err())
 			return ctx.Err()
 		}

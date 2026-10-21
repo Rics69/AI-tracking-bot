@@ -19,12 +19,11 @@
 - `backend/internal/storage/postgres` — репозитории на pgx, миграции goose (вшиты через embed, применяются при старте).
 - `backend/internal/storage/memory` — in-memory репозиторий трат с той же семантикой (для eval).
 - `backend/internal/report` — итоги недели: собираются кодом (не LLM), отправка по понедельникам 10:00, `report_runs` гарантирует одну отправку. Постоянные ошибки Telegram (`telegram.ErrUndeliverable`) не ретраятся.
-- `backend/internal/metrics` — сервер `/metrics` на внутреннем порту (`METRICS_ADDR`, по умолчанию `:9091`); сами метрики объявлены в пакетах, которые их порождают (`llm`, `agent`, `telegram`, `httpapi`).
-- `monitoring/` — конфиг Prometheus, правила алертов, дашборд Grafana (подхватывается при старте).
 - `backend/internal/httpapi` — REST: `api.gen.go` генерируется из `backend/api/openapi.yaml`, руками пишется `server.go`.
 - `web/` — Next.js 16 панель главы семьи (App Router, TanStack Query, shadcn/ui). Перед правками читай `web/AGENTS.md`: API Next 16 отличаются от привычных.
   - `web/src/api/schema.d.ts` генерируется из `openapi.yaml` (`npm run gen:api`), руками не править.
   - Фильтры живут в URL (`use-filters.ts`); `/api/*` проксируется на Go API через rewrites в `next.config.ts`.
+  - Позы Сейвика: исходники в `poses/*.png` (не в git), `npm run poses` собирает `web/public/savik/{512,256}/*.webp`. Руками webp не править.
   - График (`spending-chart.tsx`, Recharts через shadcn chart): цвет закреплён за категорией и берётся из проверенной палитры — не перекрашивать по рангу и не добавлять цвета без проверки.
 
 ## Команды
@@ -51,6 +50,5 @@ npm run typecheck && npm run lint
 - **Деньги — `decimal.Decimal` / `NUMERIC(12,2)`**, никаких float.
 - **Даты трат — календарные** (`time.Time` в полночь UTC), «сегодня» считается в `APP_TIMEZONE`.
 - Доменные ошибки (`ValidationError`, `ErrNotFound`, `ErrUnknownUser`) превращаются в HTTP-ответы только в `httpapi/errors.go`.
-- **Метрики:** в лейблах только значения из фиксированного набора — никаких ID пользователей, текста, ID в путях (для HTTP — `r.Pattern`).
 - Комментарии и сообщения в коде — на английском, документация для людей — на русском.
 - После изменений: `make lint && make test`. После правок промпта, тулов или модели — `make eval` и сравнить с прошлым `report.md`.

@@ -94,11 +94,9 @@ func (a *Agent) Reply(ctx context.Context, caller Caller, text string) (string, 
 			SessionID: fmt.Sprintf("tg-%d", caller.UserID),
 		})
 		if errors.Is(err, llm.ErrBlocked) {
-			observeReply(outcomeBlocked, step+1, time.Since(start))
 			return replyBlocked, nil
 		}
 		if err != nil {
-			observeReply(outcomeError, step, time.Since(start))
 			return "", fmt.Errorf("llm: %w", err)
 		}
 		addUsage(&usage, resp.Usage)
@@ -115,7 +113,6 @@ func (a *Agent) Reply(ctx context.Context, caller Caller, text string) (string, 
 				"user_id", caller.UserID, "steps", step+1, "duration", time.Since(start).Round(time.Millisecond),
 				"prompt_tokens", usage.PromptTokens, "cached_tokens", usage.CachedTokens,
 				"completion_tokens", usage.CompletionTokens)
-			observeReply(outcomeOK, step+1, time.Since(start))
 			if strings.TrimSpace(msg.Content) == "" {
 				return replyNoAnswer, nil
 			}
@@ -124,7 +121,6 @@ func (a *Agent) Reply(ctx context.Context, caller Caller, text string) (string, 
 
 		result, err := a.runTool(ctx, caller.UserID, msg.ToolCall)
 		if err != nil {
-			observeReply(outcomeError, step+1, time.Since(start))
 			return "", fmt.Errorf("tool %s: %w", msg.ToolCall.Name, err)
 		}
 		a.log.InfoContext(ctx, "tool call",
@@ -139,7 +135,6 @@ func (a *Agent) Reply(ctx context.Context, caller Caller, text string) (string, 
 	// The model kept calling tools without answering. The unfinished turn is
 	// not saved so it does not confuse the next request.
 	a.log.WarnContext(ctx, "agent gave up", "user_id", caller.UserID, "steps", a.maxSteps)
-	observeReply(outcomeGaveUp, a.maxSteps, time.Since(start))
 	return replyGaveUp, nil
 }
 
