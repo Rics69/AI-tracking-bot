@@ -15,3 +15,6 @@ coverage.out
 node_modules/
 web/.next/
 web/out/
+
+# Savik pose sources (large PNGs); the app uses web/public/savik, built by `npm run poses`
+/poses/

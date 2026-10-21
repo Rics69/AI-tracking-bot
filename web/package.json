@@ -9,7 +9,8 @@
     "lint": "eslint",
     "gen:api": "openapi-typescript ../backend/api/openapi.yaml -o src/api/schema.d.ts",
     "typecheck": "tsc --noEmit",
-    "format": "prettier --write src/components/expenses src/api/client.ts src/api/queries.ts src/lib src/app next.config.ts"
+    "format": "prettier --write src/components/expenses src/api/client.ts src/api/queries.ts src/lib src/app next.config.ts",
+    "poses": "node scripts/build-poses.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.104.3",
@@ -35,6 +36,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.4.2",
     "openapi-typescript": "^7.13.0",
+    "sharp": "0.35.5",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
