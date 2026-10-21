@@ -21,7 +21,11 @@ func writeError(log *slog.Logger, w http.ResponseWriter, r *http.Request, err er
 	switch {
 	case errors.As(err, &verr):
 		status = http.StatusBadRequest
-		detail = ErrorDetail{Code: ErrCodeValidation, Message: verr.Message, Field: &verr.Field}
+		field := verr.Field
+		if field == "date" {
+			field = "spent_at" // the expenses API calls the date spent_at
+		}
+		detail = ErrorDetail{Code: ErrCodeValidation, Message: verr.Message, Field: &field}
 	case errors.Is(err, ledger.ErrNotFound), errors.Is(err, user.ErrNotFound), errors.Is(err, family.ErrInviteNotFound),
 		errors.Is(err, family.ErrNotMember):
 		status = http.StatusNotFound

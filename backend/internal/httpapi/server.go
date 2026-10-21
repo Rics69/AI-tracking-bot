@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -113,7 +114,7 @@ func (s *Server) ListExpenses(ctx context.Context, req ListExpensesRequestObject
 	for i, e := range page.Items {
 		items[i] = toAPIExpense(e)
 	}
-	return ListExpenses200JSONResponse{Items: items, Total: page.Total, Sum: page.Sum}, nil
+	return ListExpenses200JSONResponse{Items: items, Total: page.Total, Sum: page.ExpenseSum}, nil
 }
 
 func (s *Server) CreateExpense(ctx context.Context, req CreateExpenseRequestObject) (CreateExpenseResponseObject, error) {
@@ -123,6 +124,9 @@ func (s *Server) CreateExpense(ctx context.Context, req CreateExpenseRequestObje
 	}
 	b := req.Body
 	if err := s.member(ctx, head, b.UserId); err != nil {
+		return nil, err
+	}
+	if err := expenseCategory(ledger.Category(b.Category)); err != nil {
 		return nil, err
 	}
 	in := ledger.CreateInput{
@@ -149,11 +153,12 @@ func (s *Server) GetExpenseSummary(ctx context.Context, req GetExpenseSummaryReq
 	if err != nil {
 		return nil, err
 	}
-	items := make([]CategoryTotal, len(sum.Items))
-	for i, t := range sum.Items {
+	spent := sum.Of(ledger.KindExpense)
+	items := make([]CategoryTotal, len(spent))
+	for i, t := range spent {
 		items[i] = CategoryTotal{Category: Category(t.Category), Sum: t.Sum, Count: t.Count}
 	}
-	return GetExpenseSummary200JSONResponse{Items: items, Sum: sum.Sum, Count: sum.Count}, nil
+	return GetExpenseSummary200JSONResponse{Items: items, Sum: sum.Expense.Sum, Count: sum.Expense.Count}, nil
 }
 
 func (s *Server) GetExpenseTimeSeries(ctx context.Context, req GetExpenseTimeSeriesRequestObject) (GetExpenseTimeSeriesResponseObject, error) {
@@ -183,7 +188,7 @@ func (s *Server) GetExpense(ctx context.Context, req GetExpenseRequestObject) (G
 	if err != nil {
 		return nil, err
 	}
-	e, err := s.expenses.Get(ctx, scope, req.Id)
+	e, err := s.getExpense(ctx, scope, req.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +214,13 @@ func (s *Server) UpdateExpense(ctx context.Context, req UpdateExpenseRequestObje
 	}
 	if b.Category != nil {
 		c := ledger.Category(*b.Category)
+		if err := expenseCategory(c); err != nil {
+			return nil, err
+		}
 		p.Category = &c
+	}
+	if _, err := s.getExpense(ctx, scope, req.Id); err != nil {
+		return nil, err
 	}
 	e, err := s.expenses.Update(ctx, scope, req.Id, p)
 	if err != nil {
@@ -223,10 +234,33 @@ func (s *Server) DeleteExpense(ctx context.Context, req DeleteExpenseRequestObje
 	if err != nil {
 		return nil, err
 	}
+	if _, err := s.getExpense(ctx, scope, req.Id); err != nil {
+		return nil, err
+	}
 	if err := s.expenses.Delete(ctx, scope, req.Id); err != nil {
 		return nil, err
 	}
 	return DeleteExpense204Response{}, nil
+}
+
+// getExpense returns an operation only if it is an expense: incomes are not
+// part of this API yet, so for it they do not exist.
+func (s *Server) getExpense(ctx context.Context, scope ledger.Scope, id int64) (ledger.Operation, error) {
+	e, err := s.expenses.Get(ctx, scope, id)
+	if err != nil {
+		return ledger.Operation{}, err
+	}
+	if e.Kind() != ledger.KindExpense {
+		return ledger.Operation{}, ledger.ErrNotFound
+	}
+	return e, nil
+}
+
+func expenseCategory(c ledger.Category) error {
+	if !c.Valid() || c.Kind() != ledger.KindExpense {
+		return &ledger.ValidationError{Field: "category", Message: fmt.Sprintf("unknown expense category %q", c)}
+	}
+	return nil
 }
 
 func (s *Server) ListUsers(ctx context.Context, _ ListUsersRequestObject) (ListUsersResponseObject, error) {
@@ -246,8 +280,8 @@ func (s *Server) ListUsers(ctx context.Context, _ ListUsersRequestObject) (ListU
 }
 
 func (s *Server) ListCategories(context.Context, ListCategoriesRequestObject) (ListCategoriesResponseObject, error) {
-	items := make([]CategoryInfo, len(ledger.Categories))
-	for i, c := range ledger.Categories {
+	items := make([]CategoryInfo, len(ledger.ExpenseCategories))
+	for i, c := range ledger.ExpenseCategories {
 		items[i] = CategoryInfo{Code: Category(c), Label: c.Label()}
 	}
 	return ListCategories200JSONResponse{Items: items}, nil
@@ -266,8 +300,10 @@ func toAPIExpense(e ledger.Operation) Expense {
 	}
 }
 
+// filterFrom builds a filter of expenses: the API does not serve incomes yet.
 func filterFrom(userID *int64, category *Category, from, to *openapi_types.Date) ledger.Filter {
-	f := ledger.Filter{UserID: userID, From: dateTime(from), To: dateTime(to)}
+	expense := ledger.KindExpense
+	f := ledger.Filter{UserID: userID, Kind: &expense, From: dateTime(from), To: dateTime(to)}
 	if category != nil {
 		c := ledger.Category(*category)
 		f.Category = &c

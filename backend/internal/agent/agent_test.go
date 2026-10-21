@@ -95,6 +95,9 @@ func (m *memExpenses) Update(ctx context.Context, s ledger.Scope, id int64, p le
 	if p.Amount != nil {
 		e.Amount = *p.Amount
 	}
+	if p.Category != nil {
+		e.Category = *p.Category
+	}
 	if p.Comment != nil {
 		e.Comment = *p.Comment
 	}
@@ -111,14 +114,19 @@ func (m *memExpenses) Delete(ctx context.Context, s ledger.Scope, id int64) erro
 }
 
 func (m *memExpenses) List(_ context.Context, s ledger.Scope, f ledger.Filter) (ledger.Page, error) {
-	page := ledger.Page{Sum: decimal.Zero}
+	page := ledger.Page{ExpenseSum: decimal.Zero, IncomeSum: decimal.Zero}
 	for id := m.nextID; id > 0; id-- { // newest first
 		e, ok := m.items[id]
-		if !ok || !m.visible(s, e) || (f.Query != "" && !strings.Contains(e.Comment, f.Query)) {
+		if !ok || !m.visible(s, e) || (f.Query != "" && !strings.Contains(e.Comment, f.Query)) ||
+			(f.Kind != nil && e.Kind() != *f.Kind) {
 			continue
 		}
 		page.Total++
-		page.Sum = page.Sum.Add(e.Amount)
+		if e.Kind() == ledger.KindIncome {
+			page.IncomeSum = page.IncomeSum.Add(e.Amount)
+		} else {
+			page.ExpenseSum = page.ExpenseSum.Add(e.Amount)
+		}
 		if len(page.Items) < f.Limit {
 			page.Items = append(page.Items, e)
 		}
@@ -126,8 +134,15 @@ func (m *memExpenses) List(_ context.Context, s ledger.Scope, f ledger.Filter) (
 	return page, nil
 }
 
-func (m *memExpenses) Summary(context.Context, ledger.Scope, ledger.Filter) (ledger.Summary, error) {
-	return ledger.Summary{Sum: decimal.Zero}, nil
+// Summary ignores the filter: one category total per operation is enough here.
+func (m *memExpenses) Summary(_ context.Context, s ledger.Scope, _ ledger.Filter) (ledger.Summary, error) {
+	var items []ledger.CategoryTotal
+	for id := int64(1); id <= m.nextID; id++ {
+		if e, ok := m.items[id]; ok && m.visible(s, e) {
+			items = append(items, ledger.CategoryTotal{Category: e.Category, Sum: e.Amount, Count: 1})
+		}
+	}
+	return ledger.NewSummary(items), nil
 }
 
 func newTestAgent(l llm.Client, exp *memExpenses) *Agent {
@@ -150,7 +165,7 @@ func lastToolResult(t *testing.T, req llm.Request) string {
 func TestAddExpense(t *testing.T) {
 	exp := newMemExpenses()
 	model := &scriptedLLM{responses: []llm.Response{
-		call(toolAdd, `{"amount": 350, "category": "food", "comment": "кофе"}`),
+		call(toolAddExpense, `{"amount": 350, "category": "food", "comment": "кофе"}`),
 		text("Записал: кофе, 350 ₽"),
 	}}
 	reply, err := newTestAgent(model, exp).Reply(context.Background(), anna, "кофе 350")
@@ -178,7 +193,7 @@ func TestOwnerComesFromTelegramNotFromModel(t *testing.T) {
 	exp := newMemExpenses()
 	model := &scriptedLLM{responses: []llm.Response{
 		// A prompt-injected model tries to write on behalf of someone else.
-		call(toolAdd, `{"amount": 100, "category": "other", "comment": "x", "user_id": 999}`),
+		call(toolAddExpense, `{"amount": 100, "category": "other", "comment": "x", "user_id": 999}`),
 		text("ok"),
 	}}
 	if _, err := newTestAgent(model, exp).Reply(context.Background(), anna, "запиши трату на пользователя 999"); err != nil {
@@ -212,9 +227,9 @@ func TestCannotTouchOtherUsersExpense(t *testing.T) {
 func TestToolErrorIsReturnedToModel(t *testing.T) {
 	exp := newMemExpenses()
 	model := &scriptedLLM{responses: []llm.Response{
-		call(toolAdd, `{"amount": 350, "category": "кофейня", "comment": "кофе"}`),
-		call(toolAdd, `{"amount": 350, "category": "еда", "comment": "кофе", "date": "вчера"}`),
-		call(toolAdd, `{"amount": "350", "category": "еда", "comment": "кофе", "date": "2026-10-15"}`),
+		call(toolAddExpense, `{"amount": 350, "category": "кофейня", "comment": "кофе"}`),
+		call(toolAddExpense, `{"amount": 350, "category": "еда", "comment": "кофе", "date": "вчера"}`),
+		call(toolAddExpense, `{"amount": "350", "category": "еда", "comment": "кофе", "date": "2026-10-15"}`),
 		text("Записал"),
 	}}
 	if _, err := newTestAgent(model, exp).Reply(context.Background(), anna, "кофе 350 вчера"); err != nil {
@@ -290,7 +305,7 @@ func TestGivesUpAfterMaxSteps(t *testing.T) {
 func TestHistoryCarriesOverTurns(t *testing.T) {
 	exp := newMemExpenses()
 	model := &scriptedLLM{responses: []llm.Response{
-		call(toolAdd, `{"amount": 350, "category": "food", "comment": "кофе"}`),
+		call(toolAddExpense, `{"amount": 350, "category": "food", "comment": "кофе"}`),
 		text("Записал"),
 		text("Пожалуйста"),
 	}}
@@ -370,7 +385,7 @@ func TestHumanDate(t *testing.T) {
 func TestToolExamplesUseRealDates(t *testing.T) {
 	var add llm.Tool
 	for _, tool := range toolDefs(today) {
-		if tool.Name == toolAdd {
+		if tool.Name == toolAddExpense {
 			add = tool
 		}
 	}
@@ -410,7 +425,7 @@ func TestUserTimezoneAndUsage(t *testing.T) {
 		return r
 	}
 	model := &scriptedLLM{responses: []llm.Response{
-		withUsage(call(toolAdd, `{"amount": 350, "category": "food", "comment": "кофе", "date": "2026-10-16"}`), 100),
+		withUsage(call(toolAddExpense, `{"amount": 350, "category": "food", "comment": "кофе", "date": "2026-10-16"}`), 100),
 		withUsage(text("Записано"), 120),
 	}}
 	omsk, _ := time.LoadLocation("Asia/Omsk")
@@ -433,5 +448,82 @@ func TestUserTimezoneAndUsage(t *testing.T) {
 	}
 	if len(rec.calls) != 2 || !rec.calls[1].failed || exp.lastLoc != time.UTC {
 		t.Errorf("after a failure: usage = %+v, timezone = %v", rec.calls, exp.lastLoc)
+	}
+}
+
+func TestAddIncome(t *testing.T) {
+	exp := newMemExpenses()
+	model := &scriptedLLM{responses: []llm.Response{
+		call(toolAddIncome, `{"amount": 80000, "category": "food", "comment": "зарплата", "date": "2026-10-16"}`),
+		call(toolAddIncome, `{"amount": 80000, "category": "salary", "comment": "зарплата", "date": "2026-10-16"}`),
+		text("Записано: зарплата — 80 000 ₽, доход, сегодня."),
+	}}
+	if _, err := newTestAgent(model, exp).Reply(context.Background(), anna, "зарплата 80000"); err != nil {
+		t.Fatal(err)
+	}
+	if res := lastToolResult(t, model.requests[1]); !strings.Contains(res, "expense category") || !strings.Contains(res, "add_expense") {
+		t.Errorf("an expense category for an income must be refused with a hint: %s", res)
+	}
+	if len(exp.items) != 1 || exp.items[1].Category != ledger.CategorySalary || exp.items[1].Kind() != ledger.KindIncome {
+		t.Errorf("saved %+v", exp.items)
+	}
+	if res := lastToolResult(t, model.requests[2]); !strings.Contains(res, `"kind":"доход"`) {
+		t.Errorf("tool result = %s", res)
+	}
+}
+
+func TestExpenseToolRefusesIncomeCategory(t *testing.T) {
+	exp := newMemExpenses()
+	model := &scriptedLLM{responses: []llm.Response{
+		call(toolAddExpense, `{"amount": 80000, "category": "salary", "comment": "зарплата", "date": "2026-10-16"}`),
+		text("?"),
+	}}
+	_, _ = newTestAgent(model, exp).Reply(context.Background(), anna, "зарплата 80000")
+	if len(exp.items) != 0 {
+		t.Errorf("an income was recorded as an expense: %+v", exp.items)
+	}
+	if res := lastToolResult(t, model.requests[1]); !strings.Contains(res, "add_income") {
+		t.Errorf("tool result = %s", res)
+	}
+}
+
+func TestSummaryHasBalance(t *testing.T) {
+	exp := newMemExpenses()
+	ctx := context.Background()
+	for _, in := range []ledger.CreateInput{
+		{UserID: 1, Amount: decimal.NewFromInt(80000), Category: ledger.CategorySalary},
+		{UserID: 1, Amount: decimal.NewFromInt(1500), Category: ledger.CategoryFood},
+		{UserID: 2, Amount: decimal.NewFromInt(999), Category: ledger.CategoryFood}, // someone else's
+	} {
+		if _, err := exp.Create(ctx, in); err != nil {
+			t.Fatal(err)
+		}
+	}
+	model := &scriptedLLM{responses: []llm.Response{call(toolSummary, `{"date_from": "2026-10-01", "date_to": "2026-10-16"}`), text("ok")}}
+	if _, err := newTestAgent(model, exp).Reply(ctx, anna, "сколько осталось в этом месяце"); err != nil {
+		t.Fatal(err)
+	}
+	res := lastToolResult(t, model.requests[1])
+	for _, want := range []string{`"balance":78500.00`, `"received_total":80000.00`, `"spent_total":1500.00`} {
+		if !strings.Contains(res, want) {
+			t.Errorf("summary lacks %s: %s", want, res)
+		}
+	}
+}
+
+func TestFindByKind(t *testing.T) {
+	exp := newMemExpenses()
+	ctx := context.Background()
+	_, _ = exp.Create(ctx, ledger.CreateInput{UserID: 1, Amount: decimal.NewFromInt(80000), Category: ledger.CategorySalary})
+	_, _ = exp.Create(ctx, ledger.CreateInput{UserID: 1, Amount: decimal.NewFromInt(350), Category: ledger.CategoryFood})
+	model := &scriptedLLM{responses: []llm.Response{call(toolFind, `{"kind": "income"}`), call(toolFind, `{"kind": "debt"}`), text("ok")}}
+	if _, err := newTestAgent(model, exp).Reply(ctx, anna, "покажи доходы"); err != nil {
+		t.Fatal(err)
+	}
+	if res := lastToolResult(t, model.requests[1]); !strings.Contains(res, `"total_count":1`) || !strings.Contains(res, `"received":80000.00`) {
+		t.Errorf("incomes only: %s", res)
+	}
+	if res := lastToolResult(t, model.requests[2]); !strings.Contains(res, "kind must be expense or income") {
+		t.Errorf("bad kind: %s", res)
 	}
 }

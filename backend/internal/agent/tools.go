@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -16,11 +17,12 @@ import (
 
 // Tool names exposed to the model.
 const (
-	toolAdd     = "add_expense"
-	toolFind    = "find_expenses"
-	toolSummary = "get_spending_summary"
-	toolUpdate  = "update_expense"
-	toolDelete  = "delete_expense"
+	toolAddExpense = "add_expense"
+	toolAddIncome  = "add_income"
+	toolFind       = "find_operations"
+	toolSummary    = "get_summary"
+	toolUpdate     = "update_operation"
+	toolDelete     = "delete_operation"
 )
 
 const (
@@ -28,9 +30,22 @@ const (
 	maxFindLimit     = 30
 )
 
-// categorySchema lists category codes; the prompt explains what goes where.
-const categorySchema = `{"type": "string", "enum": ["food", "transport", "housing", "entertainment", "health", "shopping", "other"],
-  "description": "food — еда, продукты, кафе, кофе; transport — такси, метро, бензин; housing — аренда, ЖКХ, ремонт; entertainment — кино, игры, подписки; health — аптека, врачи, спорт; shopping — одежда, техника, подарки; other — всё остальное"}`
+// Category schemas list category codes; the prompt explains what goes where.
+const (
+	expenseCategoryDesc = "food — еда, продукты, кафе, кофе; transport — такси, метро, бензин; housing — аренда, ЖКХ, ремонт; " +
+		"entertainment — кино, игры, подписки; health — аптека, врачи, спорт; shopping — одежда, техника, подарки другим; other — всё остальное"
+	incomeCategoryDesc = "salary — зарплата, аванс, премия; freelance — подработка, заказ, фриланс; gift — подарили деньги; " +
+		"interest — проценты по вкладу, кэшбэк; refund — вернули деньги за покупку или вернули долг; other_income — другой доход"
+
+	expenseCategorySchema = `{"type": "string", "enum": ["food", "transport", "housing", "entertainment", "health", "shopping", "other"],
+  "description": "` + expenseCategoryDesc + `"}`
+	incomeCategorySchema = `{"type": "string", "enum": ["salary", "freelance", "gift", "interest", "refund", "other_income"],
+  "description": "` + incomeCategoryDesc + `"}`
+	anyCategorySchema = `{"type": "string",
+  "enum": ["food", "transport", "housing", "entertainment", "health", "shopping", "other", "salary", "freelance", "gift", "interest", "refund", "other_income"],
+  "description": "Траты: ` + expenseCategoryDesc + `. Доходы: ` + incomeCategoryDesc + `"}`
+	kindSchema = `{"type": "string", "enum": ["expense", "income"], "description": "expense — только траты, income — только доходы; не указывай, если нужны и те и другие"}`
+)
 
 // toolDefs returns the functions the model may call. Note that none of them
 // has a user parameter: the owner always comes from the Telegram update.
@@ -46,13 +61,13 @@ func toolDefs(today time.Time) []llm.Tool {
 
 	return []llm.Tool{
 		{
-			Name:        toolAdd,
-			Description: "Добавить трату пользователя.",
+			Name:        toolAddExpense,
+			Description: "Добавить трату пользователя: деньги, которые он потратил.",
 			Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {
     "amount": {"type": "number", "description": "Сумма в рублях, больше нуля. «5к» = 5000"},
-    "category": ` + categorySchema + `,
+    "category": ` + expenseCategorySchema + `,
     "date": {"type": "string", "description": "Дата траты YYYY-MM-DD. Если пользователь не назвал день — сегодняшняя дата. «Вчера», «в понедельник», «3 числа» — возьми из календаря в инструкциях"},
     "comment": {"type": "string", "description": "На что потрачено, коротко, как сказал пользователь: «кофе», «такси до работы»"}
   },
@@ -64,72 +79,102 @@ func toolDefs(today time.Time) []llm.Tool {
 				{Request: "бензин 3000 в понедельник", Params: map[string]any{"amount": 3000, "category": "transport", "comment": "бензин", "date": d(lastMonday)}},
 				{Request: "продукты 2.5к в субботу", Params: map[string]any{"amount": 2500, "category": "food", "comment": "продукты", "date": d(lastSaturday)}},
 				{Request: "обед 450 3 числа", Params: map[string]any{"amount": 450, "category": "food", "comment": "обед", "date": d(time.Date(today.Year(), today.Month(), 3, 0, 0, 0, 0, time.UTC))}},
+				{Request: "перевёл маме 2000", Params: map[string]any{"amount": 2000, "category": "other", "comment": "перевёл маме", "date": d(today)}},
+			},
+		},
+		{
+			Name:        toolAddIncome,
+			Description: "Добавить доход пользователя: деньги, которые он получил.",
+			Parameters: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "amount": {"type": "number", "description": "Сумма в рублях, больше нуля. «80к» = 80000"},
+    "category": ` + incomeCategorySchema + `,
+    "date": {"type": "string", "description": "Дата получения YYYY-MM-DD. Если пользователь не назвал день — сегодняшняя дата"},
+    "comment": {"type": "string", "description": "Откуда деньги, коротко, как сказал пользователь: «зарплата», «заказ на логотип»"}
+  },
+  "required": ["amount", "category", "comment", "date"]
+}`),
+			Examples: []llm.ToolExample{
+				{Request: "зарплата 80000", Params: map[string]any{"amount": 80000, "category": "salary", "comment": "зарплата", "date": d(today)}},
+				{Request: "пришла зп 45к вчера", Params: map[string]any{"amount": 45000, "category": "salary", "comment": "зарплата", "date": d(today.AddDate(0, 0, -1))}},
+				{Request: "вернули долг 2000", Params: map[string]any{"amount": 2000, "category": "refund", "comment": "вернули долг", "date": d(today)}},
+				{Request: "кэшбэк 350", Params: map[string]any{"amount": 350, "category": "interest", "comment": "кэшбэк", "date": d(today)}},
 			},
 		},
 		{
 			Name: toolFind,
-			Description: "Найти траты пользователя: список с id и итогом. Используй, чтобы показать траты, " +
+			Description: "Найти траты и доходы пользователя: список с id и итогами. Используй, чтобы показать операции, " +
 				"и чтобы узнать id перед изменением или удалением.",
 			Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {
     "date_from": {"type": "string", "description": "Начало периода YYYY-MM-DD включительно"},
     "date_to": {"type": "string", "description": "Конец периода YYYY-MM-DD включительно"},
-    "category": ` + categorySchema + `,
-    "text": {"type": "string", "description": "Слово из комментария траты, например «такси»"},
-    "last_added": {"type": "boolean", "description": "true — сортировать по времени добавления, самые последние первыми («последняя трата»)"},
-    "limit": {"type": "integer", "description": "Сколько трат вернуть, по умолчанию 10, максимум 30"}
+    "kind": ` + kindSchema + `,
+    "category": ` + anyCategorySchema + `,
+    "text": {"type": "string", "description": "Одно слово из комментария, без суммы и даты, например «такси»"},
+    "last_added": {"type": "boolean", "description": "true — сортировать по времени добавления, самые последние первыми («последняя трата», «последнее»)"},
+    "limit": {"type": "integer", "description": "Сколько операций вернуть, по умолчанию 10, максимум 30"}
   }
 }`),
 			Examples: []llm.ToolExample{
-				{Request: "покажи траты за неделю", Params: map[string]any{"date_from": d(weekStart), "date_to": d(today)}},
+				{Request: "покажи траты за неделю", Params: map[string]any{"date_from": d(weekStart), "date_to": d(today), "kind": "expense"}},
+				{Request: "какие были доходы в этом месяце", Params: map[string]any{"date_from": d(monthStart), "date_to": d(today), "kind": "income"}},
 				{Request: "последнее было не 350, а 450", Params: map[string]any{"last_added": true, "limit": 1}},
 				{Request: "удали такси", Params: map[string]any{"text": "такси"}},
+				{Request: "долг 2000 — это не трата, мне вернули долг", Params: map[string]any{"text": "долг"}},
 			},
 		},
 		{
-			Name:        toolSummary,
-			Description: "Посчитать, сколько пользователь потратил за период: общая сумма и разбивка по категориям.",
+			Name: toolSummary,
+			Description: "Посчитать за период, сколько пользователь потратил и получил: суммы трат и доходов, разбивка по категориям " +
+				"и баланс (доходы минус траты — сколько осталось). category передавай, только если пользователь сам назвал " +
+				"категорию («на еду», «зарплаты»): «сколько получил» — это все доходы, без категории.",
 			Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {
     "date_from": {"type": "string", "description": "Начало периода YYYY-MM-DD включительно"},
     "date_to": {"type": "string", "description": "Конец периода YYYY-MM-DD включительно"},
-    "category": ` + categorySchema + `
+    "category": ` + anyCategorySchema + `
   }
 }`),
 			Examples: []llm.ToolExample{
 				{Request: "сколько потратил на еду в этом месяце", Params: map[string]any{"date_from": d(monthStart), "date_to": d(today), "category": "food"}},
+				{Request: "сколько осталось в этом месяце", Params: map[string]any{"date_from": d(monthStart), "date_to": d(today)}},
+				{Request: "сколько я получил в этом месяце", Params: map[string]any{"date_from": d(monthStart), "date_to": d(today)}},
 			},
 		},
 		{
-			Name:        toolUpdate,
-			Description: "Изменить трату по id. Передай только поля, которые нужно поменять. id бери из find_expenses.",
+			Name: toolUpdate,
+			Description: "Изменить трату или доход по id. Передай только поля, которые нужно поменять. id бери из find_operations. " +
+				"Если трата на самом деле доход (или наоборот), поменяй категорию на категорию другого вида.",
 			Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {
-    "id": {"type": "integer", "description": "id траты"},
+    "id": {"type": "integer", "description": "id операции"},
     "amount": {"type": "number", "description": "Новая сумма в рублях"},
-    "category": ` + categorySchema + `,
+    "category": ` + anyCategorySchema + `,
     "date": {"type": "string", "description": "Новая дата YYYY-MM-DD"},
     "comment": {"type": "string", "description": "Новый комментарий"}
   },
   "required": ["id"]
 }`),
 			Examples: []llm.ToolExample{
-				{Request: "последнее было не 350, а 450 (id последней траты 17)", Params: map[string]any{"id": 17, "amount": 450}},
+				{Request: "последнее было не 350, а 450 (id последней операции 17)", Params: map[string]any{"id": 17, "amount": 450}},
+				{Request: "это был не расход, а возврат долга (id 21)", Params: map[string]any{"id": 21, "category": "refund"}},
 			},
 		},
 		{
 			Name:        toolDelete,
-			Description: "Удалить трату по id. id бери из find_expenses.",
+			Description: "Удалить трату или доход по id. id бери из find_operations.",
 			Parameters: json.RawMessage(`{
   "type": "object",
-  "properties": {"id": {"type": "integer", "description": "id траты"}},
+  "properties": {"id": {"type": "integer", "description": "id операции"}},
   "required": ["id"]
 }`),
 			Examples: []llm.ToolExample{
-				{Request: "удали такси (find_expenses нашёл одну трату с id 23)", Params: map[string]any{"id": 23}},
+				{Request: "удали такси (find_operations нашёл одну трату с id 23)", Params: map[string]any{"id": 23}},
 			},
 		},
 	}
@@ -140,8 +185,8 @@ func lastWeekday(today time.Time, wd time.Weekday) time.Time {
 	return today.AddDate(0, 0, -((int(today.Weekday()) - int(wd) + 7) % 7))
 }
 
-// Expenses is the part of ledger.Service the agent needs.
-type Expenses interface {
+// Ledger is the part of ledger.Service the agent needs.
+type Ledger interface {
 	Create(ctx context.Context, in ledger.CreateInput) (ledger.Operation, error)
 	Get(ctx context.Context, s ledger.Scope, id int64) (ledger.Operation, error)
 	Update(ctx context.Context, s ledger.Scope, id int64, p ledger.Patch) (ledger.Operation, error)
@@ -157,7 +202,7 @@ func (e *toolError) Error() string { return e.msg }
 
 func badArgs(format string, args ...any) error { return &toolError{msg: fmt.Sprintf(format, args...)} }
 
-// turn is what the tools know about the request: whose expenses they work
+// turn is what the tools know about the request: whose operations they work
 // with and what date it is for that user.
 type turn struct {
 	userID int64 // from Telegram, never from the model
@@ -175,16 +220,18 @@ func (a *Agent) runTool(ctx context.Context, t turn, call *llm.ToolCall) (string
 		err    error
 	)
 	switch call.Name {
-	case toolAdd:
-		result, err = a.addExpense(ctx, t, call.Arguments)
+	case toolAddExpense:
+		result, err = a.add(ctx, t, ledger.KindExpense, call.Arguments)
+	case toolAddIncome:
+		result, err = a.add(ctx, t, ledger.KindIncome, call.Arguments)
 	case toolFind:
-		result, err = a.findExpenses(ctx, t, call.Arguments)
+		result, err = a.find(ctx, t, call.Arguments)
 	case toolSummary:
 		result, err = a.summary(ctx, t, call.Arguments)
 	case toolUpdate:
-		result, err = a.updateExpense(ctx, t, call.Arguments)
+		result, err = a.update(ctx, t, call.Arguments)
 	case toolDelete:
-		result, err = a.deleteExpense(ctx, t, call.Arguments)
+		result, err = a.delete(ctx, t, call.Arguments)
 	default:
 		err = badArgs("unknown function %q", call.Name)
 	}
@@ -199,13 +246,13 @@ func (a *Agent) runTool(ctx context.Context, t turn, call *llm.ToolCall) (string
 		result = map[string]string{"error": terr.msg}
 	case errors.As(err, &verr):
 		msg := "invalid " + verr.Field + ": " + verr.Message
-		if verr.Field == "spent_at" {
+		if verr.Field == "date" {
 			msg += ". A weekday without details means the most recent past one: take its date from the list of the last 7 days. " +
-				"If the user really meant a future date, tell them only past expenses are recorded."
+				"If the user really meant a future date, tell them only past operations are recorded."
 		}
 		result = map[string]string{"error": msg}
 	case errors.Is(err, ledger.ErrNotFound):
-		result = map[string]string{"error": "expense not found; call find_expenses to get a valid id"}
+		result = map[string]string{"error": "operation not found; call find_operations to get a valid id"}
 	default:
 		return "", err
 	}
@@ -223,7 +270,9 @@ type addArgs struct {
 	Comment  string      `json:"comment"`
 }
 
-func (a *Agent) addExpense(ctx context.Context, t turn, raw json.RawMessage) (any, error) {
+// add records an expense or an income: the tool decides the kind, and a
+// category of the other kind is sent back to the model as a mistake.
+func (a *Agent) add(ctx context.Context, t turn, kind ledger.Kind, raw json.RawMessage) (any, error) {
 	var args addArgs
 	if err := decodeArgs(raw, &args); err != nil {
 		return nil, err
@@ -236,11 +285,19 @@ func (a *Agent) addExpense(ctx context.Context, t turn, raw json.RawMessage) (an
 	if err != nil {
 		return nil, err
 	}
+	if category.Kind() != kind {
+		if kind == ledger.KindIncome {
+			return nil, badArgs("%s is an expense category: an income needs one of salary, freelance, gift, interest, refund, other_income, "+
+				"or call add_expense if the user spent money", *category)
+		}
+		return nil, badArgs("%s is an income category: an expense needs one of food, transport, housing, entertainment, health, shopping, other, "+
+			"or call add_income if the user received money", *category)
+	}
 	date, err := parseDate("date", args.Date)
 	if err != nil {
 		return nil, err
 	}
-	e, err := a.expenses.Create(ctx, ledger.CreateInput{
+	e, err := a.ledger.Create(ctx, ledger.CreateInput{
 		UserID:   t.userID,
 		Amount:   *amount,
 		Category: *category,
@@ -257,13 +314,14 @@ func (a *Agent) addExpense(ctx context.Context, t turn, raw json.RawMessage) (an
 type findArgs struct {
 	DateFrom  string `json:"date_from"`
 	DateTo    string `json:"date_to"`
+	Kind      string `json:"kind"`
 	Category  string `json:"category"`
 	Text      string `json:"text"`
 	LastAdded bool   `json:"last_added"`
 	Limit     int    `json:"limit"`
 }
 
-func (a *Agent) findExpenses(ctx context.Context, t turn, raw json.RawMessage) (any, error) {
+func (a *Agent) find(ctx context.Context, t turn, raw json.RawMessage) (any, error) {
 	scope := t.scope()
 	var args findArgs
 	if err := decodeArgs(raw, &args); err != nil {
@@ -271,6 +329,9 @@ func (a *Agent) findExpenses(ctx context.Context, t turn, raw json.RawMessage) (
 	}
 	f, err := periodFilter(args.DateFrom, args.DateTo, args.Category)
 	if err != nil {
+		return nil, err
+	}
+	if f.Kind, err = parseKind(args.Kind); err != nil {
 		return nil, err
 	}
 	f.Query = args.Text
@@ -281,7 +342,7 @@ func (a *Agent) findExpenses(ctx context.Context, t turn, raw json.RawMessage) (
 	if args.LastAdded {
 		f.Sort = ledger.SortByCreatedAt
 	}
-	page, err := a.expenses.List(ctx, scope, f)
+	page, err := a.ledger.List(ctx, scope, f)
 	if err != nil {
 		return nil, err
 	}
@@ -290,9 +351,10 @@ func (a *Agent) findExpenses(ctx context.Context, t turn, raw json.RawMessage) (
 		items[i] = t.item(e)
 	}
 	return map[string]any{
-		"expenses":    items,
+		"operations":  items,
 		"total_count": page.Total,
-		"total_sum":   money(page.Sum),
+		"spent":       money(page.ExpenseSum),
+		"received":    money(page.IncomeSum),
 	}, nil
 }
 
@@ -312,7 +374,7 @@ func (a *Agent) summary(ctx context.Context, t turn, raw json.RawMessage) (any, 
 	if err != nil {
 		return nil, err
 	}
-	s, err := a.expenses.Summary(ctx, scope, f)
+	s, err := a.ledger.Summary(ctx, scope, f)
 	if err != nil {
 		return nil, err
 	}
@@ -321,11 +383,27 @@ func (a *Agent) summary(ctx context.Context, t turn, raw json.RawMessage) (any, 
 		Sum      json.Number `json:"sum"`
 		Count    int         `json:"count"`
 	}
-	rows := make([]row, len(s.Items))
-	for i, t := range s.Items {
-		rows[i] = row{Category: t.Category.Label(), Sum: money(t.Sum), Count: t.Count}
+	byCategory := func(k ledger.Kind) []row {
+		items := s.Of(k)
+		rows := make([]row, len(items))
+		for i, c := range items {
+			rows[i] = row{Category: c.Category.Label(), Sum: money(c.Sum), Count: c.Count}
+		}
+		return rows
 	}
-	return map[string]any{"total_sum": money(s.Sum), "count": s.Count, "by_category": rows}, nil
+	// Totals come first and flat (a struct keeps the order, a map would sort
+	// the keys): with nested objects the model tends to quote one category
+	// instead of the total.
+	return struct {
+		SpentTotal         json.Number `json:"spent_total"`
+		ReceivedTotal      json.Number `json:"received_total"`
+		Balance            json.Number `json:"balance"`
+		SpentByCategory    []row       `json:"spent_by_category"`
+		ReceivedByCategory []row       `json:"received_by_category"`
+	}{
+		money(s.Expense.Sum), money(s.Income.Sum), money(s.Balance()),
+		byCategory(ledger.KindExpense), byCategory(ledger.KindIncome),
+	}, nil
 }
 
 type updateArgs struct {
@@ -336,7 +414,7 @@ type updateArgs struct {
 	Comment  *string     `json:"comment"`
 }
 
-func (a *Agent) updateExpense(ctx context.Context, t turn, raw json.RawMessage) (any, error) {
+func (a *Agent) update(ctx context.Context, t turn, raw json.RawMessage) (any, error) {
 	scope := t.scope()
 	var args updateArgs
 	if err := decodeArgs(raw, &args); err != nil {
@@ -362,11 +440,11 @@ func (a *Agent) updateExpense(ctx context.Context, t turn, raw json.RawMessage) 
 		return nil, badArgs("nothing to update: pass at least one of amount, category, date, comment")
 	}
 
-	before, err := a.expenses.Get(ctx, scope, id)
+	before, err := a.ledger.Get(ctx, scope, id)
 	if err != nil {
 		return nil, err
 	}
-	after, err := a.expenses.Update(ctx, scope, id, p)
+	after, err := a.ledger.Update(ctx, scope, id, p)
 	if err != nil {
 		return nil, err
 	}
@@ -377,7 +455,7 @@ type deleteArgs struct {
 	ID json.Number `json:"id"`
 }
 
-func (a *Agent) deleteExpense(ctx context.Context, t turn, raw json.RawMessage) (any, error) {
+func (a *Agent) delete(ctx context.Context, t turn, raw json.RawMessage) (any, error) {
 	scope := t.scope()
 	var args deleteArgs
 	if err := decodeArgs(raw, &args); err != nil {
@@ -387,19 +465,20 @@ func (a *Agent) deleteExpense(ctx context.Context, t turn, raw json.RawMessage) 
 	if err != nil {
 		return nil, err
 	}
-	e, err := a.expenses.Get(ctx, scope, id)
+	e, err := a.ledger.Get(ctx, scope, id)
 	if err != nil {
 		return nil, err
 	}
-	if err := a.expenses.Delete(ctx, scope, id); err != nil {
+	if err := a.ledger.Delete(ctx, scope, id); err != nil {
 		return nil, err
 	}
 	return map[string]any{"deleted": t.item(e)}, nil
 }
 
-// item is the compact representation of an expense shown to the model.
+// item is the compact representation of an operation shown to the model.
 type item struct {
 	ID       int64       `json:"id"`
+	Kind     string      `json:"kind"` // "расход" or "доход"
 	Amount   json.Number `json:"amount"`
 	Category string      `json:"category"`
 	Date     string      `json:"date"`
@@ -410,8 +489,13 @@ type item struct {
 }
 
 func (t turn) item(e ledger.Operation) item {
+	kind := "расход"
+	if e.Kind() == ledger.KindIncome {
+		kind = "доход"
+	}
 	return item{
 		ID:       e.ID,
+		Kind:     kind,
 		Amount:   money(e.Amount),
 		Category: e.Category.Label(),
 		Date:     e.Date.Format(time.DateOnly),
@@ -451,7 +535,7 @@ func decodeArgs(raw json.RawMessage, v any) error {
 func parseID(n json.Number) (int64, error) {
 	id, err := n.Int64()
 	if err != nil || id <= 0 {
-		return 0, badArgs("id must be a positive integer from find_expenses")
+		return 0, badArgs("id must be a positive integer from find_operations")
 	}
 	return id, nil
 }
@@ -473,7 +557,7 @@ func parseAmount(n json.Number, required bool) (*decimal.Decimal, error) {
 // categoryAliases accept Russian names too: models sometimes ignore the enum.
 var categoryAliases = func() map[string]ledger.Category {
 	m := map[string]ledger.Category{}
-	for _, c := range ledger.Categories {
+	for _, c := range append(slices.Clone(ledger.ExpenseCategories), ledger.IncomeCategories...) {
 		m[string(c)] = c
 		m[c.Label()] = c
 		m[strings.ReplaceAll(c.Label(), "ё", "е")] = c
@@ -491,9 +575,21 @@ func parseCategory(s string, required bool) (*ledger.Category, error) {
 	}
 	c, ok := categoryAliases[s]
 	if !ok {
-		return nil, badArgs("unknown category %q; use one of: food, transport, housing, entertainment, health, shopping, other", s)
+		return nil, badArgs("unknown category %q; expenses: food, transport, housing, entertainment, health, shopping, other; "+
+			"incomes: salary, freelance, gift, interest, refund, other_income", s)
 	}
 	return &c, nil
+}
+
+func parseKind(s string) (*ledger.Kind, error) {
+	k := ledger.Kind(strings.ToLower(strings.TrimSpace(s)))
+	if k == "" {
+		return nil, nil
+	}
+	if !k.Valid() {
+		return nil, badArgs("kind must be expense or income, got %q", s)
+	}
+	return &k, nil
 }
 
 func parseDate(field, s string) (*time.Time, error) {

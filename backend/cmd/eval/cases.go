@@ -15,18 +15,18 @@ import (
 
 // Case is one eval scenario: a dialog with the agent and what must be true after it.
 type Case struct {
-	Name   string        `yaml:"name"`
-	Tags   []string      `yaml:"tags"`
-	Seed   []ExpenseSpec `yaml:"seed"`  // the user's expenses before the dialog, in creation order
-	Turns  []string      `yaml:"turns"` // user messages, sent one by one in one conversation
-	Expect Expect        `yaml:"expect"`
+	Name   string          `yaml:"name"`
+	Tags   []string        `yaml:"tags"`
+	Seed   []OperationSpec `yaml:"seed"`  // the user's operations before the dialog, in creation order
+	Turns  []string        `yaml:"turns"` // user messages, sent one by one in one conversation
+	Expect Expect          `yaml:"expect"`
 }
 
 // Expect lists the checks of a case. Empty fields are not checked.
 type Expect struct {
-	// Expenses is the exact final state of the user's expenses (order does not matter).
-	Expenses *[]ExpenseSpec `yaml:"expenses"`
-	// Unchanged means the user's expenses must equal the seed.
+	// Operations is the exact final state of the user's expenses and incomes (order does not matter).
+	Operations *[]OperationSpec `yaml:"operations"`
+	// Unchanged means the user's operations must equal the seed.
 	Unchanged bool `yaml:"unchanged"`
 	// Tools must each be called at least once.
 	Tools []string `yaml:"tools"`
@@ -34,14 +34,18 @@ type Expect struct {
 	NoTools bool `yaml:"no_tools"`
 	// ReplyContains / ReplyNotContains are checked against the last reply,
 	// case-insensitively and ignoring whitespace ("1200" matches "1 200 ₽").
+	// "сумм|стоимост" in ReplyContains accepts either word.
 	ReplyContains    []string `yaml:"reply_contains"`
 	ReplyNotContains []string `yaml:"reply_not_contains"`
 }
 
-// ExpenseSpec describes an expense in a case file.
-type ExpenseSpec struct {
+// OperationSpec describes an expense or an income in a case file.
+type OperationSpec struct {
 	Amount   string `yaml:"amount"`
 	Category string `yaml:"category"`
+	// Kind (expense or income) lets an expectation accept any category of that
+	// kind when the right category is a matter of taste; seeds need a category.
+	Kind string `yaml:"kind"`
 	// Date is relative to the day the eval runs: today, yesterday, -N (days ago),
 	// a weekday name (the most recent one, today included) or day:N (N-th of this month).
 	Date string `yaml:"date"`
@@ -66,28 +70,36 @@ func loadCases(path string) ([]Case, error) {
 	return cases, nil
 }
 
-// resolved is an ExpenseSpec with concrete values.
+// resolved is an OperationSpec with concrete values.
 type resolved struct {
 	Amount   decimal.Decimal
-	Category ledger.Category
+	Category ledger.Category // empty: any category of Kind
+	Kind     ledger.Kind
 	Date     time.Time
 	Comment  string
 }
 
-func (s ExpenseSpec) resolve(today time.Time) (resolved, error) {
+func (s OperationSpec) resolve(today time.Time) (resolved, error) {
 	amount, err := decimal.NewFromString(s.Amount)
 	if err != nil {
 		return resolved{}, fmt.Errorf("amount %q: %w", s.Amount, err)
 	}
-	c := ledger.Category(s.Category)
-	if !c.Valid() {
+	c, k := ledger.Category(s.Category), ledger.Kind(s.Kind)
+	switch {
+	case c == "" && !k.Valid():
+		return resolved{}, fmt.Errorf("a category or a kind is required, got kind %q", s.Kind)
+	case c != "" && !c.Valid():
 		return resolved{}, fmt.Errorf("unknown category %q", s.Category)
+	case c != "" && k != "" && c.Kind() != k:
+		return resolved{}, fmt.Errorf("category %s is not of kind %s", c, k)
+	case c != "":
+		k = c.Kind()
 	}
 	date, err := resolveDate(s.Date, today)
 	if err != nil {
 		return resolved{}, err
 	}
-	return resolved{Amount: amount, Category: c, Date: date, Comment: s.Comment}, nil
+	return resolved{Amount: amount, Category: c, Kind: k, Date: date, Comment: s.Comment}, nil
 }
 
 var weekdayNames = map[string]time.Weekday{
@@ -123,7 +135,11 @@ func resolveDate(spec string, today time.Time) (time.Time, error) {
 }
 
 func (r resolved) String() string {
-	s := fmt.Sprintf("%s %s %s", r.Amount, r.Category, r.Date.Format(time.DateOnly))
+	what := string(r.Category)
+	if what == "" {
+		what = "any " + string(r.Kind)
+	}
+	s := fmt.Sprintf("%s %s %s", r.Amount, what, r.Date.Format(time.DateOnly))
 	if r.Comment != "" {
 		s += " «" + r.Comment + "»"
 	}

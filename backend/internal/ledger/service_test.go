@@ -117,7 +117,7 @@ func TestFutureIsJudgedByTheCallersToday(t *testing.T) {
 	in.Date = new(date(2026, 10, 15))
 	in.Today = date(2026, 10, 14) // a user to the west of Moscow
 	var verr *ValidationError
-	if _, err := svc.Create(context.Background(), in); !errors.As(err, &verr) || verr.Field != "spent_at" {
+	if _, err := svc.Create(context.Background(), in); !errors.As(err, &verr) || verr.Field != "date" {
 		t.Errorf("err = %v, want spent_at in the future for this user", err)
 	}
 	in.Today = date(2026, 10, 15)
@@ -140,8 +140,8 @@ func TestCreateValidation(t *testing.T) {
 		{"three decimals", func(in *CreateInput) { in.Amount = decimal.RequireFromString("1.005") }, "amount"},
 		{"too large", func(in *CreateInput) { in.Amount = decimal.New(1, 10) }, "amount"},
 		{"unknown category", func(in *CreateInput) { in.Category = "coffee" }, "category"},
-		{"future date", func(in *CreateInput) { in.Date = new(date(2026, 10, 16)) }, "spent_at"},
-		{"ancient date", func(in *CreateInput) { in.Date = new(date(1999, 12, 31)) }, "spent_at"},
+		{"future date", func(in *CreateInput) { in.Date = new(date(2026, 10, 16)) }, "date"},
+		{"ancient date", func(in *CreateInput) { in.Date = new(date(1999, 12, 31)) }, "date"},
 		{"long comment", func(in *CreateInput) { in.Comment = strings.Repeat("я", MaxCommentLength+1) }, "comment"},
 		{"no user", func(in *CreateInput) { in.UserID = 0 }, "user_id"},
 	}

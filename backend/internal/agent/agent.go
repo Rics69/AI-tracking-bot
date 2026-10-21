@@ -1,5 +1,6 @@
-// Package agent turns free-form messages into expense operations: the LLM
-// decides which tool to call, the agent executes it for the current user.
+// Package agent turns free-form messages into operations on the user's
+// expenses and incomes: the LLM decides which tool to call, the agent
+// executes it for the current user.
 package agent
 
 import (
@@ -49,7 +50,7 @@ type Config struct {
 // Agent is the expense assistant.
 type Agent struct {
 	llm      llm.Client
-	expenses Expenses
+	ledger   Ledger
 	clock    Clock
 	history  HistoryStore
 	loc      *time.Location
@@ -59,12 +60,12 @@ type Agent struct {
 }
 
 // New creates an agent.
-func New(client llm.Client, expenses Expenses, clock Clock, history HistoryStore, cfg Config, log *slog.Logger) *Agent {
+func New(client llm.Client, ledger Ledger, clock Clock, history HistoryStore, cfg Config, log *slog.Logger) *Agent {
 	if cfg.MaxSteps <= 0 {
 		cfg.MaxSteps = DefaultMaxSteps
 	}
 	return &Agent{
-		llm: client, expenses: expenses, clock: clock, history: history,
+		llm: client, ledger: ledger, clock: clock, history: history,
 		loc: cfg.Location, maxSteps: cfg.MaxSteps, usage: cfg.Usage, log: log,
 	}
 }

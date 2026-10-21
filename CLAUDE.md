@@ -10,9 +10,9 @@
   - `cmd/bot` — Telegram-бот с агентом (long polling).
   - `cmd/chat` — консольный чат с агентом без Telegram, для отладки промпта.
   - `cmd/eval` — eval агента на настоящем LLM: сценарии в `backend/eval/cases.yaml`, каждый на чистом in-memory хранилище.
-- `backend/internal/ledger` — домен денег: операции (пока траты), валидация, `Service`. Без SQL и HTTP.
+- `backend/internal/ledger` — домен денег: операции — траты и доходы (вид определяется категорией, `Category.Kind()`), валидация, `Service`. Без SQL и HTTP. В БД — таблица `operations`.
 - `backend/internal/llm` — интерфейс модели, не зависящий от провайдера; `llm/gigachat` — клиент GigaChat (OAuth, сертификат Минцифры, function calling); `llm/provider` — выбор провайдера по `LLM_PROVIDER`.
-- `backend/internal/agent` — агент: тулы над `ledger.Service`, системный промпт, цикл tool calling. История диалога — интерфейс `HistoryStore`: в боте PostgreSQL (`postgres.ChatHistoryRepository`, ход целиком в JSONB), в eval и `cmd/chat` — память.
+- `backend/internal/agent` — агент: тулы над `ledger.Service` (`add_expense`, `add_income`, `find_operations`, `get_summary`, `update_operation`, `delete_operation`), системный промпт, цикл tool calling. История диалога — интерфейс `HistoryStore`: в боте PostgreSQL (`postgres.ChatHistoryRepository`, ход целиком в JSONB), в eval и `cmd/chat` — память.
 - `backend/internal/telegram` — обработчик апдейтов и кнопок: согласие на обработку данных, команды (`/family`, `/settings`, `/privacy`, `/feedback`, `/delete_me`), дневной лимит, очередь по пользователю, «печатает…».
 - `backend/internal/texts` — все тексты бота в `texts.yaml` (вшит в бинарь, проверяется при старте). Тексты меняются там, не в коде.
 - `backend/internal/user` — пользователи: `family_id`, роль главы, часовой пояс, согласие, блокировка.
@@ -51,7 +51,7 @@ npm run typecheck && npm run lint
 - **user_id для бота берётся только из Telegram-апдейта**, никогда из аргументов LLM.
 - **Деньги — `decimal.Decimal` / `NUMERIC(12,2)`**, никаких float.
 - **Даты трат — календарные** (`time.Time` в полночь UTC), «сегодня» считается в часовом поясе пользователя (`user.Location`, по умолчанию `APP_TIMEZONE`).
-- **Панель до mini app** показывает семью `ADMIN_TELEGRAM_ID` (`httpapi.Viewer`); в этапе 3 его заменит пользователь из `initData`.
+- **Панель до mini app** показывает семью `ADMIN_TELEGRAM_ID` (`httpapi.Viewer`) и только траты (`filterFrom` ставит `Kind=expense`, доход по `/expenses/{id}` — 404); в этапе 3 появятся операции и пользователь из `initData`.
 - Доменные ошибки (`ValidationError`, `ErrNotFound`, `ErrUnknownUser`) превращаются в HTTP-ответы только в `httpapi/errors.go`.
 - Комментарии и сообщения в коде — на английском, документация для людей — на русском.
 - После изменений: `make lint && make test`. После правок промпта, тулов или модели — `make eval` и сравнить с прошлым `report.md`.

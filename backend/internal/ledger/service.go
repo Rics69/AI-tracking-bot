@@ -19,11 +19,11 @@ var (
 	// NUMERIC(12,2) holds values below 10^10.
 	maxAmount = decimal.New(1, 10)
 	// Dates before this are almost certainly a parsing mistake.
-	minSpentAt = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	minDate = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 )
 
-// Repository persists expenses. Every method honours the scope:
-// expenses outside it behave as if they did not exist.
+// Repository persists operations. Every method honours the scope:
+// operations outside it behave as if they did not exist.
 type Repository interface {
 	Create(ctx context.Context, e Operation) (Operation, error)
 	Get(ctx context.Context, s Scope, id int64) (Operation, error)
@@ -31,11 +31,11 @@ type Repository interface {
 	Delete(ctx context.Context, s Scope, id int64) error
 	List(ctx context.Context, s Scope, f Filter) (Page, error)
 	Summary(ctx context.Context, s Scope, f Filter) (Summary, error)
-	// Aggregate sums expenses per bucket start and category; empty buckets are omitted.
+	// Aggregate sums operations per bucket start and category; empty buckets are omitted.
 	Aggregate(ctx context.Context, s Scope, f Filter, b Bucket) ([]BucketTotal, error)
 }
 
-// Service implements the expense use cases on top of a Repository.
+// Service implements the ledger use cases on top of a Repository.
 type Service struct {
 	repo Repository
 	loc  *time.Location
@@ -65,7 +65,7 @@ func (s *Service) today(t time.Time) time.Time {
 	return dateOf(t)
 }
 
-// Create validates and stores a new expense.
+// Create validates and stores a new operation.
 func (s *Service) Create(ctx context.Context, in CreateInput) (Operation, error) {
 	e := Operation{
 		UserID:   in.UserID,
@@ -83,15 +83,15 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Operation, error)
 	return s.repo.Create(ctx, e)
 }
 
-// Get returns one expense visible in the scope.
+// Get returns one operation visible in the scope.
 func (s *Service) Get(ctx context.Context, sc Scope, id int64) (Operation, error) {
 	return s.repo.Get(ctx, sc, id)
 }
 
-// Update applies a patch to an expense visible in the scope.
+// Update applies a patch to an operation visible in the scope.
 func (s *Service) Update(ctx context.Context, sc Scope, id int64, p Patch) (Operation, error) {
 	if p.UserID != nil && sc.FamilyID() == 0 {
-		// Only the head moves an expense between members of the family.
+		// Only the head moves an operation between members of the family.
 		return Operation{}, invalid("user_id", "cannot reassign an expense to another user")
 	}
 	e, err := s.repo.Get(ctx, sc, id)
@@ -119,12 +119,12 @@ func (s *Service) Update(ctx context.Context, sc Scope, id int64, p Patch) (Oper
 	return s.repo.Update(ctx, sc, e)
 }
 
-// Delete removes an expense visible in the scope.
+// Delete removes an operation visible in the scope.
 func (s *Service) Delete(ctx context.Context, sc Scope, id int64) error {
 	return s.repo.Delete(ctx, sc, id)
 }
 
-// List returns a page of expenses matching the filter.
+// List returns a page of operations matching the filter.
 func (s *Service) List(ctx context.Context, sc Scope, f Filter) (Page, error) {
 	if err := normalizeFilter(&f); err != nil {
 		return Page{}, err
@@ -158,11 +158,11 @@ func (s *Service) normalize(e *Operation, today time.Time) error {
 	if !e.Category.Valid() {
 		return invalid("category", "unknown category %q", e.Category)
 	}
-	if e.Date.Before(minSpentAt) {
-		return invalid("spent_at", "must not be earlier than %s", minSpentAt.Format(time.DateOnly))
+	if e.Date.Before(minDate) {
+		return invalid("date", "must not be earlier than %s", minDate.Format(time.DateOnly))
 	}
 	if e.Date.After(today) {
-		return invalid("spent_at", "must not be in the future")
+		return invalid("date", "must not be in the future")
 	}
 	e.Comment = strings.TrimSpace(e.Comment)
 	if utf8.RuneCountInString(e.Comment) > MaxCommentLength {

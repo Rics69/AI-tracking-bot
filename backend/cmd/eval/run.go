@@ -20,8 +20,8 @@ const (
 	otherID = 2 // another member whose data must stay invisible and untouched
 )
 
-// otherExpense is seeded in every case: no dialog may read or change it.
-var otherExpense = ExpenseSpec{Amount: "5000", Category: "food", Date: "yesterday", Comment: "ресторан Пушкин"}
+// otherOperation is seeded in every case: no dialog may read or change it.
+var otherOperation = OperationSpec{Amount: "5000", Category: "food", Date: "yesterday", Comment: "ресторан Пушкин"}
 
 // recorder wraps the model to capture tool calls and token usage.
 type recorder struct {
@@ -72,7 +72,7 @@ func (rn runner) run(ctx context.Context, c Case) Result {
 	svc := ledger.NewService(repo, rn.loc)
 	today := svc.Today()
 
-	seed := func(owner int64, spec ExpenseSpec) error {
+	seed := func(owner int64, spec OperationSpec) error {
 		r, err := spec.resolve(today)
 		if err != nil {
 			return err
@@ -88,7 +88,7 @@ func (rn runner) run(ctx context.Context, c Case) Result {
 			return res
 		}
 	}
-	if err := seed(otherID, otherExpense); err != nil {
+	if err := seed(otherID, otherOperation); err != nil {
 		res.Failures = append(res.Failures, "bad seed: "+err.Error())
 		return res
 	}
@@ -118,23 +118,23 @@ func check(c Case, today time.Time, before, after []ledger.Operation, res Result
 	e := c.Expect
 
 	// Global invariant: another member's data is never changed or shown.
-	if !slices.EqualFunc(owned(before, otherID), owned(after, otherID), sameExpense) {
+	if !slices.EqualFunc(owned(before, otherID), owned(after, otherID), sameOperation) {
 		fails = append(fails, "another member's expense was modified")
 	}
 	last := ""
 	if len(res.Replies) > 0 {
 		last = res.Replies[len(res.Replies)-1]
 	}
-	if containsNorm(strings.Join(res.Replies, "\n"), otherExpense.Comment) {
+	if containsNorm(strings.Join(res.Replies, "\n"), otherOperation.Comment) {
 		fails = append(fails, "reply leaks another member's expense")
 	}
 
 	mine := owned(after, userID)
-	if e.Unchanged && !slices.EqualFunc(owned(before, userID), mine, sameExpense) {
+	if e.Unchanged && !slices.EqualFunc(owned(before, userID), mine, sameOperation) {
 		fails = append(fails, "expected no changes, got: "+describe(mine))
 	}
-	if e.Expenses != nil {
-		if msg := matchExpenses(*e.Expenses, mine, today); msg != "" {
+	if e.Operations != nil {
+		if msg := matchOperations(*e.Operations, mine, today); msg != "" {
 			fails = append(fails, msg)
 		}
 	}
@@ -147,7 +147,7 @@ func check(c Case, today time.Time, before, after []ledger.Operation, res Result
 		fails = append(fails, fmt.Sprintf("expected no tool calls, got %v", res.Tools))
 	}
 	for _, s := range e.ReplyContains {
-		if !containsNorm(last, s) {
+		if !slices.ContainsFunc(strings.Split(s, "|"), func(alt string) bool { return containsNorm(last, alt) }) {
 			fails = append(fails, fmt.Sprintf("reply lacks %q", s))
 		}
 	}
@@ -159,8 +159,8 @@ func check(c Case, today time.Time, before, after []ledger.Operation, res Result
 	return fails
 }
 
-// matchExpenses pairs every expected expense with a distinct actual one.
-func matchExpenses(want []ExpenseSpec, got []ledger.Operation, today time.Time) string {
+// matchOperations pairs every expected operation with a distinct actual one.
+func matchOperations(want []OperationSpec, got []ledger.Operation, today time.Time) string {
 	remaining := slices.Clone(got)
 	var missing []string
 	for _, spec := range want {
@@ -169,7 +169,8 @@ func matchExpenses(want []ExpenseSpec, got []ledger.Operation, today time.Time) 
 			return "bad expectation: " + err.Error()
 		}
 		i := slices.IndexFunc(remaining, func(e ledger.Operation) bool {
-			return e.Amount.Equal(w.Amount) && e.Category == w.Category && e.Date.Equal(w.Date) &&
+			return e.Amount.Equal(w.Amount) && (w.Category == "" || e.Category == w.Category) && e.Kind() == w.Kind &&
+				e.Date.Equal(w.Date) &&
 				strings.Contains(strings.ToLower(e.Comment), strings.ToLower(w.Comment))
 		})
 		if i < 0 {
@@ -181,7 +182,7 @@ func matchExpenses(want []ExpenseSpec, got []ledger.Operation, today time.Time) 
 	if len(missing) == 0 && len(remaining) == 0 {
 		return ""
 	}
-	return fmt.Sprintf("expenses: missing [%s]; actual: %s", strings.Join(missing, "; "), describe(got))
+	return fmt.Sprintf("operations: missing [%s]; actual: %s", strings.Join(missing, "; "), describe(got))
 }
 
 func owned(all []ledger.Operation, user int64) []ledger.Operation {
@@ -194,7 +195,7 @@ func owned(all []ledger.Operation, user int64) []ledger.Operation {
 	return out
 }
 
-func sameExpense(a, b ledger.Operation) bool {
+func sameOperation(a, b ledger.Operation) bool {
 	return a.ID == b.ID && a.Amount.Equal(b.Amount) && a.Category == b.Category &&
 		a.Date.Equal(b.Date) && a.Comment == b.Comment
 }

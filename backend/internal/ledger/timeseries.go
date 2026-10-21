@@ -33,12 +33,12 @@ type Point struct {
 	Start      time.Time
 	Sum        decimal.Decimal
 	Count      int
-	Categories []CategoryTotal // largest first; empty for a bucket without expenses
+	Categories []CategoryTotal // largest first; empty for a bucket without operations
 }
 
 // TimeSeries returns spending per bucket for the filter. Buckets without
-// expenses are present with zero sums, so a chart shows gaps as gaps.
-// Without From the series starts at the earliest matching expense, without To it ends today.
+// operations are present with zero sums, so a chart shows gaps as gaps.
+// Without From the series starts at the earliest matching operation, without To it ends today.
 func (s *Service) TimeSeries(ctx context.Context, sc Scope, f Filter, b Bucket) ([]Point, error) {
 	if b != BucketDay && b != BucketWeek && b != BucketMonth {
 		return nil, invalid("bucket", "must be day, week or month")
@@ -58,7 +58,7 @@ func (s *Service) TimeSeries(ctx context.Context, sc Scope, f Filter, b Bucket) 
 	case len(rows) > 0:
 		from = slices.MinFunc(rows, func(a, b BucketTotal) int { return a.Start.Compare(b.Start) }).Start
 	default:
-		return []Point{}, nil // no period and no expenses: nothing to draw
+		return []Point{}, nil // no period and no operations: nothing to draw
 	}
 	to = s.Today()
 	if f.To != nil {

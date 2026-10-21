@@ -10,12 +10,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/shopspring/decimal"
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 )
 
-const expenseColumns = `id, user_id, amount, category, spent_at, COALESCE(comment, ''), created_at, updated_at`
+const operationColumns = `id, user_id, amount, category, occurred_on, COALESCE(comment, ''), created_at, updated_at`
 
 // pgForeignKeyViolation is the SQLSTATE of a foreign key violation.
 const pgForeignKeyViolation = "23503"
@@ -33,13 +32,13 @@ func NewOperationRepository(pool *pgxpool.Pool) *OperationRepository {
 
 func (r *OperationRepository) Create(ctx context.Context, e ledger.Operation) (ledger.Operation, error) {
 	row := r.pool.QueryRow(ctx, `
-		INSERT INTO expenses (user_id, amount, category, spent_at, comment)
-		VALUES ($1, $2, $3, $4, NULLIF($5, ''))
-		RETURNING `+expenseColumns,
-		e.UserID, e.Amount, e.Category, e.Date, e.Comment)
-	created, err := scanExpense(row)
+		INSERT INTO operations (user_id, kind, amount, category, occurred_on, comment)
+		VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''))
+		RETURNING `+operationColumns,
+		e.UserID, e.Kind(), e.Amount, e.Category, e.Date, e.Comment)
+	created, err := scanOperation(row)
 	if err != nil {
-		return ledger.Operation{}, mapWriteError("create expense", err)
+		return ledger.Operation{}, mapWriteError("create operation", err)
 	}
 	return created, nil
 }
@@ -47,12 +46,12 @@ func (r *OperationRepository) Create(ctx context.Context, e ledger.Operation) (l
 func (r *OperationRepository) Get(ctx context.Context, s ledger.Scope, id int64) (ledger.Operation, error) {
 	w := scopeWhere(s)
 	w.add("id = ?", id)
-	e, err := scanExpense(r.pool.QueryRow(ctx, `SELECT `+expenseColumns+` FROM expenses`+w.sql(), w.args...))
+	e, err := scanOperation(r.pool.QueryRow(ctx, `SELECT `+operationColumns+` FROM operations`+w.sql(), w.args...))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ledger.Operation{}, ledger.ErrNotFound
 	}
 	if err != nil {
-		return ledger.Operation{}, fmt.Errorf("get expense: %w", err)
+		return ledger.Operation{}, fmt.Errorf("get operation: %w", err)
 	}
 	return e, nil
 }
@@ -65,17 +64,17 @@ func (r *OperationRepository) Update(ctx context.Context, s ledger.Scope, e ledg
 		// expense to a stranger. $1 is the family ID added by scopeWhere.
 		w.add("EXISTS (SELECT 1 FROM users WHERE family_id = $1 AND telegram_id = ?)", e.UserID)
 	}
-	w.args = append(w.args, e.UserID, e.Amount, e.Category, e.Date, e.Comment)
+	w.args = append(w.args, e.UserID, e.Kind(), e.Amount, e.Category, e.Date, e.Comment)
 	n := len(w.args)
 	query := fmt.Sprintf(`
-		UPDATE expenses
-		SET user_id = $%d, amount = $%d, category = $%d, spent_at = $%d,
+		UPDATE operations
+		SET user_id = $%d, kind = $%d, amount = $%d, category = $%d, occurred_on = $%d,
 		    comment = NULLIF($%d, ''), updated_at = now()`+w.sql()+`
-		RETURNING `+expenseColumns,
-		n-4, n-3, n-2, n-1, n)
-	updated, err := scanExpense(r.pool.QueryRow(ctx, query, w.args...))
+		RETURNING `+operationColumns,
+		n-5, n-4, n-3, n-2, n-1, n)
+	updated, err := scanOperation(r.pool.QueryRow(ctx, query, w.args...))
 	if err != nil {
-		return ledger.Operation{}, mapWriteError("update expense", err)
+		return ledger.Operation{}, mapWriteError("update operation", err)
 	}
 	return updated, nil
 }
@@ -83,9 +82,9 @@ func (r *OperationRepository) Update(ctx context.Context, s ledger.Scope, e ledg
 func (r *OperationRepository) Delete(ctx context.Context, s ledger.Scope, id int64) error {
 	w := scopeWhere(s)
 	w.add("id = ?", id)
-	tag, err := r.pool.Exec(ctx, `DELETE FROM expenses`+w.sql(), w.args...)
+	tag, err := r.pool.Exec(ctx, `DELETE FROM operations`+w.sql(), w.args...)
 	if err != nil {
-		return fmt.Errorf("delete expense: %w", err)
+		return fmt.Errorf("delete operation: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ledger.ErrNotFound
@@ -97,16 +96,20 @@ func (r *OperationRepository) List(ctx context.Context, s ledger.Scope, f ledger
 	w := filterWhere(s, f)
 
 	page := ledger.Page{Items: []ledger.Operation{}}
-	err := r.pool.QueryRow(ctx, `SELECT count(*), COALESCE(sum(amount), 0) FROM expenses`+w.sql(), w.args...).
-		Scan(&page.Total, &page.Sum)
+	err := r.pool.QueryRow(ctx, `
+		SELECT count(*),
+		       COALESCE(sum(amount) FILTER (WHERE kind = 'expense'), 0),
+		       COALESCE(sum(amount) FILTER (WHERE kind = 'income'), 0)
+		FROM operations`+w.sql(), w.args...).
+		Scan(&page.Total, &page.ExpenseSum, &page.IncomeSum)
 	if err != nil {
-		return ledger.Page{}, fmt.Errorf("count expenses: %w", err)
+		return ledger.Page{}, fmt.Errorf("count operations: %w", err)
 	}
 	if page.Total == 0 {
 		return page, nil
 	}
 
-	order := "spent_at DESC, id DESC"
+	order := "occurred_on DESC, id DESC"
 	switch f.Sort {
 	case ledger.SortByCreatedAt:
 		order = "created_at DESC, id DESC"
@@ -114,17 +117,17 @@ func (r *OperationRepository) List(ctx context.Context, s ledger.Scope, f ledger
 		order = "amount DESC, id DESC"
 	}
 	args := append(w.args, f.Limit, f.Offset)
-	query := fmt.Sprintf(`SELECT %s FROM expenses%s ORDER BY %s LIMIT $%d OFFSET $%d`,
-		expenseColumns, w.sql(), order, len(args)-1, len(args))
+	query := fmt.Sprintf(`SELECT %s FROM operations%s ORDER BY %s LIMIT $%d OFFSET $%d`,
+		operationColumns, w.sql(), order, len(args)-1, len(args))
 	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
-		return ledger.Page{}, fmt.Errorf("list expenses: %w", err)
+		return ledger.Page{}, fmt.Errorf("list operations: %w", err)
 	}
 	page.Items, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (ledger.Operation, error) {
-		return scanExpense(row)
+		return scanOperation(row)
 	})
 	if err != nil {
-		return ledger.Page{}, fmt.Errorf("scan expenses: %w", err)
+		return ledger.Page{}, fmt.Errorf("scan operations: %w", err)
 	}
 	return page, nil
 }
@@ -133,11 +136,11 @@ func (r *OperationRepository) Summary(ctx context.Context, s ledger.Scope, f led
 	w := filterWhere(s, f)
 	rows, err := r.pool.Query(ctx, `
 		SELECT category, sum(amount), count(*)
-		FROM expenses`+w.sql()+`
+		FROM operations`+w.sql()+`
 		GROUP BY category
 		ORDER BY sum(amount) DESC, category`, w.args...)
 	if err != nil {
-		return ledger.Summary{}, fmt.Errorf("summarize expenses: %w", err)
+		return ledger.Summary{}, fmt.Errorf("summarize operations: %w", err)
 	}
 	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (ledger.CategoryTotal, error) {
 		var t ledger.CategoryTotal
@@ -147,12 +150,7 @@ func (r *OperationRepository) Summary(ctx context.Context, s ledger.Scope, f led
 	if err != nil {
 		return ledger.Summary{}, fmt.Errorf("scan summary: %w", err)
 	}
-	sum := ledger.Summary{Items: items, Sum: decimal.Zero}
-	for _, t := range items {
-		sum.Sum = sum.Sum.Add(t.Sum)
-		sum.Count += t.Count
-	}
-	return sum, nil
+	return ledger.NewSummary(items), nil
 }
 
 func (r *OperationRepository) Aggregate(ctx context.Context, s ledger.Scope, f ledger.Filter, b ledger.Bucket) ([]ledger.BucketTotal, error) {
@@ -160,11 +158,11 @@ func (r *OperationRepository) Aggregate(ctx context.Context, s ledger.Scope, f l
 	// The bucket is passed as data, never concatenated into SQL.
 	args := append(w.args, string(b))
 	rows, err := r.pool.Query(ctx, fmt.Sprintf(`
-		SELECT date_trunc($%d, spent_at)::date AS start, category, sum(amount), count(*)
-		FROM expenses%s
+		SELECT date_trunc($%d, occurred_on)::date AS start, category, sum(amount), count(*)
+		FROM operations%s
 		GROUP BY 1, 2`, len(args), w.sql()), args...)
 	if err != nil {
-		return nil, fmt.Errorf("aggregate expenses: %w", err)
+		return nil, fmt.Errorf("aggregate operations: %w", err)
 	}
 	totals, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (ledger.BucketTotal, error) {
 		var t ledger.BucketTotal
@@ -177,7 +175,7 @@ func (r *OperationRepository) Aggregate(ctx context.Context, s ledger.Scope, f l
 	return totals, nil
 }
 
-func scanExpense(row pgx.Row) (ledger.Operation, error) {
+func scanOperation(row pgx.Row) (ledger.Operation, error) {
 	var e ledger.Operation
 	err := row.Scan(&e.ID, &e.UserID, &e.Amount, &e.Category, &e.Date, &e.Comment, &e.CreatedAt, &e.UpdatedAt)
 	return e, err
@@ -230,14 +228,17 @@ func filterWhere(s ledger.Scope, f ledger.Filter) *where {
 	if f.UserID != nil {
 		w.add("user_id = ?", *f.UserID)
 	}
+	if f.Kind != nil {
+		w.add("kind = ?", *f.Kind)
+	}
 	if f.Category != nil {
 		w.add("category = ?", *f.Category)
 	}
 	if f.From != nil {
-		w.add("spent_at >= ?", *f.From)
+		w.add("occurred_on >= ?", *f.From)
 	}
 	if f.To != nil {
-		w.add("spent_at <= ?", *f.To)
+		w.add("occurred_on <= ?", *f.To)
 	}
 	if f.Query != "" {
 		w.add("comment ILIKE ?", "%"+escapeLike(f.Query)+"%")

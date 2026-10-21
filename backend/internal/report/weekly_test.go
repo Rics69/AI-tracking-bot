@@ -95,6 +95,8 @@ func setup(t *testing.T) (*Weekly, *[]sent, *bool) {
 	add(1, "1200", ledger.CategoryTransport, day(10, 13), "такси")
 	add(1, "10000", ledger.CategoryFood, day(10, 7), "прошлая неделя")
 	add(1, "999", ledger.CategoryOther, day(10, 19), "уже эта неделя")
+	add(1, "80000", ledger.CategorySalary, day(10, 15), "зарплата") // not among the largest expenses
+	add(2, "5000", ledger.CategoryFreelance, day(10, 13), "заказ")  // Boris only earned this week
 	add(4, "100", ledger.CategoryFood, day(10, 14), "заблокирован")
 	add(5, "100", ledger.CategoryFood, day(10, 14), "без согласия")
 
@@ -125,8 +127,8 @@ func TestWeeklyReportContent(t *testing.T) {
 	w, out, _ := setup(t)
 	w.Tick(context.Background())
 
-	if len(*out) != 1 || (*out)[0].chat != 1 {
-		t.Fatalf("sent = %+v, want one report to Anna", *out)
+	if len(*out) != 2 || (*out)[0].chat != 1 || (*out)[1].chat != 2 {
+		t.Fatalf("sent = %+v, want reports to Anna and Boris", *out)
 	}
 	text := strings.ReplaceAll((*out)[0].text, "\u00a0", " ")
 	for _, want := range []string{
@@ -136,6 +138,7 @@ func TestWeeklyReportContent(t *testing.T) {
 		"• жильё — 45 000 ₽",
 		"• еда — 2 830,50 ₽",
 		"Самые крупные:\n• аренда — 45 000 ₽, 14 октября\n• продукты — 2 480,50 ₽, 12 октября\n• такси — 1 200 ₽, 13 октября",
+		"Получено 80 000 ₽ · баланс недели +30 969,50 ₽",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("report lacks %q:\n%s", want, text)
@@ -143,6 +146,11 @@ func TestWeeklyReportContent(t *testing.T) {
 	}
 	if strings.Contains(text, "уже эта неделя") {
 		t.Error("report includes an expense from the current week")
+	}
+	boris := strings.ReplaceAll((*out)[1].text, "\u00a0", " ")
+	if !strings.Contains(boris, "Трат за неделю нет.") || !strings.Contains(boris, "Получено 5 000 ₽ · баланс недели +5 000 ₽") ||
+		strings.Contains(boris, "По категориям") {
+		t.Errorf("Boris's report:\n%s", boris)
 	}
 }
 
@@ -158,8 +166,8 @@ func TestWeeklyReportIsSentOnceAndRetriedOnFailure(t *testing.T) {
 	*fail = false
 	w.Tick(ctx) // the failed claim was released: retried now
 	w.Tick(ctx) // already sent: nothing new
-	if len(*out) != 1 {
-		t.Errorf("sent %d reports, want exactly 1", len(*out))
+	if len(*out) != 2 {
+		t.Errorf("sent %d reports, want exactly one each to Anna and Boris", len(*out))
 	}
 }
 
@@ -188,8 +196,8 @@ func TestUndeliverableReportIsNotRetried(t *testing.T) {
 	}
 	w.Tick(context.Background())
 	w.Tick(context.Background())
-	if attempts != 1 {
-		t.Errorf("send attempted %d times, want 1", attempts)
+	if attempts != 2 {
+		t.Errorf("send attempted %d times, want once per user", attempts)
 	}
 }
 

@@ -93,9 +93,13 @@ func (r *OperationRepository) List(_ context.Context, s ledger.Scope, f ledger.F
 			return cmp.Or(b.Date.Compare(a.Date), cmp.Compare(b.ID, a.ID))
 		})
 	}
-	page := ledger.Page{Items: []ledger.Operation{}, Total: len(matched), Sum: decimal.Zero}
+	page := ledger.Page{Items: []ledger.Operation{}, Total: len(matched), ExpenseSum: decimal.Zero, IncomeSum: decimal.Zero}
 	for _, e := range matched {
-		page.Sum = page.Sum.Add(e.Amount)
+		if e.Kind() == ledger.KindIncome {
+			page.IncomeSum = page.IncomeSum.Add(e.Amount)
+		} else {
+			page.ExpenseSum = page.ExpenseSum.Add(e.Amount)
+		}
 	}
 	if f.Offset < len(matched) {
 		page.Items = matched[f.Offset:min(f.Offset+f.Limit, len(matched))]
@@ -105,7 +109,6 @@ func (r *OperationRepository) List(_ context.Context, s ledger.Scope, f ledger.F
 
 func (r *OperationRepository) Summary(_ context.Context, s ledger.Scope, f ledger.Filter) (ledger.Summary, error) {
 	byCategory := map[ledger.Category]*ledger.CategoryTotal{}
-	sum := ledger.Summary{Sum: decimal.Zero}
 	for _, e := range r.match(s, f) {
 		t, ok := byCategory[e.Category]
 		if !ok {
@@ -114,16 +117,15 @@ func (r *OperationRepository) Summary(_ context.Context, s ledger.Scope, f ledge
 		}
 		t.Sum = t.Sum.Add(e.Amount)
 		t.Count++
-		sum.Sum = sum.Sum.Add(e.Amount)
-		sum.Count++
 	}
+	items := []ledger.CategoryTotal{}
 	for _, t := range byCategory {
-		sum.Items = append(sum.Items, *t)
+		items = append(items, *t)
 	}
-	slices.SortFunc(sum.Items, func(a, b ledger.CategoryTotal) int {
+	slices.SortFunc(items, func(a, b ledger.CategoryTotal) int {
 		return cmp.Or(b.Sum.Cmp(a.Sum), cmp.Compare(a.Category, b.Category))
 	})
-	return sum, nil
+	return ledger.NewSummary(items), nil
 }
 
 func (r *OperationRepository) Aggregate(_ context.Context, s ledger.Scope, f ledger.Filter, b ledger.Bucket) ([]ledger.BucketTotal, error) {
@@ -151,7 +153,7 @@ func (r *OperationRepository) Aggregate(_ context.Context, s ledger.Scope, f led
 	return out, nil
 }
 
-// All returns every stored expense ordered by ID, regardless of scope.
+// All returns every stored operation ordered by ID, regardless of scope.
 func (r *OperationRepository) All() []ledger.Operation {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -172,6 +174,7 @@ func (r *OperationRepository) match(s ledger.Scope, f ledger.Filter) []ledger.Op
 		switch {
 		case !r.visible(s, e),
 			f.UserID != nil && e.UserID != *f.UserID,
+			f.Kind != nil && e.Kind() != *f.Kind,
 			f.Category != nil && e.Category != *f.Category,
 			f.From != nil && e.Date.Before(*f.From),
 			f.To != nil && e.Date.After(*f.To),
@@ -191,7 +194,7 @@ func (r *OperationRepository) visible(s ledger.Scope, e ledger.Operation) bool {
 	return e.UserID == s.UserID()
 }
 
-// deleteOwner drops a deleted user's expenses, like ON DELETE CASCADE.
+// deleteOwner drops a deleted user's operations, like ON DELETE CASCADE.
 func (r *OperationRepository) deleteOwner(userID int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

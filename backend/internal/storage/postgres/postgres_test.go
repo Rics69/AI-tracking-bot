@@ -76,7 +76,7 @@ func setup(t *testing.T) (*OperationRepository, *UserRepository) {
 func truncate(t *testing.T) {
 	t.Helper()
 	if _, err := testPool.Exec(context.Background(), `
-		TRUNCATE expenses, invites, settings, chat_turns, report_runs, llm_usage, users, families RESTART IDENTITY`); err != nil {
+		TRUNCATE operations, invites, settings, chat_turns, report_runs, llm_usage, users, families RESTART IDENTITY`); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -210,7 +210,7 @@ func TestFamilyScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if page.Total != 2 || !page.Sum.Equal(amount("300")) {
+	if page.Total != 2 || !page.ExpenseSum.Equal(amount("300")) {
 		t.Errorf("the head sees %+v, want Anna's and Boris's expenses", page.Items)
 	}
 	if _, err := repo.Get(ctx, family, veras.ID); !errors.Is(err, ledger.ErrNotFound) {
@@ -266,8 +266,8 @@ func TestListFiltersAndTotals(t *testing.T) {
 			if got := ids(page.Items); !equalIDs(got, tt.want) {
 				t.Errorf("ids = %v, want %v", got, tt.want)
 			}
-			if page.Total != len(tt.want) || !page.Sum.Equal(amount(tt.sum)) {
-				t.Errorf("total = %d sum = %s, want %d and %s", page.Total, page.Sum, len(tt.want), tt.sum)
+			if page.Total != len(tt.want) || !page.ExpenseSum.Equal(amount(tt.sum)) {
+				t.Errorf("total = %d sum = %s, want %d and %s", page.Total, page.ExpenseSum, len(tt.want), tt.sum)
 			}
 		})
 	}
@@ -333,8 +333,8 @@ func TestSummary(t *testing.T) {
 		sum.Items[1].Category != ledger.CategoryFood || !sum.Items[1].Sum.Equal(amount("500.50")) || sum.Items[1].Count != 2 {
 		t.Errorf("items = %+v", sum.Items)
 	}
-	if !sum.Sum.Equal(amount("1700.50")) || sum.Count != 3 {
-		t.Errorf("sum = %s count = %d", sum.Sum, sum.Count)
+	if !sum.Expense.Sum.Equal(amount("1700.50")) || sum.Expense.Count != 3 || sum.Income.Count != 0 {
+		t.Errorf("summary = %+v", sum)
 	}
 }
 
@@ -433,7 +433,7 @@ func TestDeleteUser(t *testing.T) {
 	}
 	var left int
 	if err := testPool.QueryRow(ctx, `
-		SELECT (SELECT count(*) FROM expenses WHERE user_id = 2) + (SELECT count(*) FROM llm_usage WHERE user_id = 2)
+		SELECT (SELECT count(*) FROM operations WHERE user_id = 2) + (SELECT count(*) FROM llm_usage WHERE user_id = 2)
 		     + (SELECT count(*) FROM families WHERE id = $1)`, boris.FamilyID).Scan(&left); err != nil {
 		t.Fatal(err)
 	}
@@ -675,8 +675,8 @@ func TestAggregateMatchesGoBuckets(t *testing.T) {
 	}
 }
 
-// TestFamiliesMigrationKeepsExistingData replays migration 5 on data of the
-// single-family version: the users of a live database must land correctly.
+// TestFamiliesMigrationKeepsExistingData replays migrations 5 and 6 on data of
+// the single-family version: the users of a live database must land correctly.
 func TestFamiliesMigrationKeepsExistingData(t *testing.T) {
 	truncate(t)
 	ctx := context.Background()
@@ -693,7 +693,7 @@ func TestFamiliesMigrationKeepsExistingData(t *testing.T) {
 	// Back to the latest schema whatever happens: other tests share the database.
 	defer func() {
 		if _, err := provider.Up(ctx); err != nil {
-			t.Fatal(err)
+			t.Error(err)
 		}
 	}()
 
@@ -708,7 +708,7 @@ func TestFamiliesMigrationKeepsExistingData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := provider.UpTo(ctx, 5); err != nil {
+	if _, err := provider.Up(ctx); err != nil {
 		t.Fatal(err)
 	}
 
@@ -730,5 +730,45 @@ func TestFamiliesMigrationKeepsExistingData(t *testing.T) {
 	}
 	if inv, err := NewInviteRepository(testPool).Find(ctx, []byte("legacy")); err != nil || inv.FamilyID != anna.FamilyID {
 		t.Errorf("legacy invite = %+v, %v", inv, err)
+	}
+}
+
+func TestIncomes(t *testing.T) {
+	repo, _ := setup(t)
+	ctx := context.Background()
+	mustCreate(t, repo, 1, "350", ledger.CategoryFood, 10, "кофе")
+	salary := mustCreate(t, repo, 1, "80000", ledger.CategorySalary, 5, "зарплата")
+	mustCreate(t, repo, 1, "500", ledger.CategoryRefund, 12, "вернули долг")
+
+	page, err := repo.List(ctx, ledger.OwnedBy(1), ledger.Filter{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 3 || !page.ExpenseSum.Equal(amount("350")) || !page.IncomeSum.Equal(amount("80500")) {
+		t.Errorf("page = %+v", page)
+	}
+	income := ledger.KindIncome
+	page, _ = repo.List(ctx, ledger.OwnedBy(1), ledger.Filter{Kind: &income, Limit: 10})
+	if page.Total != 2 || !page.ExpenseSum.IsZero() {
+		t.Errorf("incomes only: %+v", page)
+	}
+	sum, _ := repo.Summary(ctx, ledger.OwnedBy(1), ledger.Filter{})
+	if sum.Income.Count != 2 || sum.Expense.Count != 1 || !sum.Balance().Equal(amount("80150")) {
+		t.Errorf("summary = %+v", sum)
+	}
+
+	// Changing the category changes the kind: the stored kind follows.
+	salary.Category = ledger.CategoryOther
+	if _, err := repo.Update(ctx, ledger.OwnedBy(1), salary); err != nil {
+		t.Fatal(err)
+	}
+	var kind string
+	_ = testPool.QueryRow(ctx, `SELECT kind FROM operations WHERE id = $1`, salary.ID).Scan(&kind)
+	if kind != "expense" {
+		t.Errorf("kind after the category change = %s", kind)
+	}
+	// The database refuses a kind that does not match the category.
+	if _, err := testPool.Exec(ctx, `UPDATE operations SET kind = 'income' WHERE id = $1`, salary.ID); err == nil {
+		t.Error("an expense category was stored as an income")
 	}
 }

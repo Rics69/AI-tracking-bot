@@ -139,8 +139,8 @@ func reportWeek(now time.Time) (weekStart time.Time, due bool) {
 	return monday.AddDate(0, 0, -7), due
 }
 
-// Build renders the report of the week starting at weekStart for a member.
-// empty is true when there were no expenses that week.
+// Build renders the report of the week starting at weekStart for a user.
+// empty is true when there were no operations that week.
 func (w *Weekly) Build(ctx context.Context, userID int64, weekStart time.Time) (text string, empty bool, err error) {
 	scope := ledger.OwnedBy(userID)
 	weekEnd := weekStart.AddDate(0, 0, 6)
@@ -150,15 +150,16 @@ func (w *Weekly) Build(ctx context.Context, userID int64, weekStart time.Time) (
 	if err != nil {
 		return "", false, err
 	}
-	if cur.Count == 0 {
+	if cur.Expense.Count == 0 && cur.Income.Count == 0 {
 		return "", true, nil
 	}
 	prev, err := w.expenses.Summary(ctx, scope, ledger.Filter{From: &prevStart, To: &prevEnd})
 	if err != nil {
 		return "", false, err
 	}
+	expense := ledger.KindExpense
 	top, err := w.expenses.List(ctx, scope, ledger.Filter{
-		From: &weekStart, To: &weekEnd, Sort: ledger.SortByAmount, Limit: topExpenses,
+		Kind: &expense, From: &weekStart, To: &weekEnd, Sort: ledger.SortByAmount, Limit: topExpenses,
 	})
 	if err != nil {
 		return "", false, err
@@ -169,13 +170,18 @@ func (w *Weekly) Build(ctx context.Context, userID int64, weekStart time.Time) (
 func render(weekStart time.Time, cur, prev ledger.Summary, top []ledger.Operation) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Итоги недели · %s\n\n", weekRange(weekStart))
-	fmt.Fprintf(&b, "Потрачено %s — %d %s", Money(cur.Sum), cur.Count, plural(cur.Count, "трата", "траты", "трат"))
-	if prev.Count > 0 {
-		fmt.Fprintf(&b, "\n%s", comparison(cur.Sum, prev.Sum))
-	}
-	b.WriteString("\n\nПо категориям:")
-	for _, c := range cur.Items {
-		fmt.Fprintf(&b, "\n• %s — %s", c.Category.Label(), Money(c.Sum))
+	spent := cur.Expense
+	if spent.Count == 0 {
+		b.WriteString("Трат за неделю нет.")
+	} else {
+		fmt.Fprintf(&b, "Потрачено %s — %d %s", Money(spent.Sum), spent.Count, plural(spent.Count, "трата", "траты", "трат"))
+		if prev.Expense.Count > 0 {
+			fmt.Fprintf(&b, "\n%s", comparison(spent.Sum, prev.Expense.Sum))
+		}
+		b.WriteString("\n\nПо категориям:")
+		for _, c := range cur.Of(ledger.KindExpense) {
+			fmt.Fprintf(&b, "\n• %s — %s", c.Category.Label(), Money(c.Sum))
+		}
 	}
 	if len(top) > 1 {
 		b.WriteString("\n\nСамые крупные:")
@@ -186,6 +192,9 @@ func render(weekStart time.Time, cur, prev ledger.Summary, top []ledger.Operatio
 			}
 			fmt.Fprintf(&b, "\n• %s — %s, %s", what, Money(e.Amount), dayMonth(e.Date))
 		}
+	}
+	if cur.Income.Count > 0 {
+		fmt.Fprintf(&b, "\n\nПолучено %s · баланс недели %s", Money(cur.Income.Sum), signed(cur.Balance()))
 	}
 	b.WriteString("\n\nОтключить итоги — /settings")
 	return b.String()
@@ -228,6 +237,18 @@ func weekRange(start time.Time) string {
 		return fmt.Sprintf("%d–%d %s", start.Day(), end.Day(), monthsGenitive[end.Month()])
 	}
 	return dayMonth(start) + " – " + dayMonth(end)
+}
+
+// signed is Money with an explicit plus: "+30 970 ₽", "−1 200 ₽".
+func signed(d decimal.Decimal) string {
+	switch {
+	case d.IsPositive():
+		return "+" + Money(d)
+	case d.IsNegative():
+		return "−" + Money(d.Abs())
+	default:
+		return Money(d)
+	}
 }
 
 // Money formats an amount the Russian way: "12 450 ₽", "99,90 ₽".

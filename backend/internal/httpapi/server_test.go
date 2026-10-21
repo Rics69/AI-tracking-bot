@@ -22,6 +22,7 @@ import (
 // fakeExpenses records calls and returns canned results.
 type fakeExpenses struct {
 	err        error
+	op         *ledger.Operation // returned by Get instead of sample
 	lastScope  ledger.Scope
 	lastFilter ledger.Filter
 	lastCreate ledger.CreateInput
@@ -40,6 +41,9 @@ func (f *fakeExpenses) Create(_ context.Context, in ledger.CreateInput) (ledger.
 
 func (f *fakeExpenses) Get(_ context.Context, s ledger.Scope, _ int64) (ledger.Operation, error) {
 	f.lastScope = s
+	if f.op != nil {
+		return *f.op, f.err
+	}
 	return sample, f.err
 }
 
@@ -55,7 +59,7 @@ func (f *fakeExpenses) Delete(_ context.Context, s ledger.Scope, _ int64) error 
 
 func (f *fakeExpenses) List(_ context.Context, s ledger.Scope, flt ledger.Filter) (ledger.Page, error) {
 	f.lastScope, f.lastFilter = s, flt
-	return ledger.Page{Items: []ledger.Operation{sample}, Total: 1, Sum: sample.Amount}, f.err
+	return ledger.Page{Items: []ledger.Operation{sample}, Total: 1, ExpenseSum: sample.Amount}, f.err
 }
 
 func (f *fakeExpenses) TimeSeries(_ context.Context, s ledger.Scope, flt ledger.Filter, b ledger.Bucket) ([]ledger.Point, error) {
@@ -367,5 +371,35 @@ func TestTimeSeries(t *testing.T) {
 	}
 	if status, _ := do(t, newTestHandler(f, nil), http.MethodGet, "/api/v1/expenses/timeseries", ""); status != 400 {
 		t.Errorf("missing bucket: status = %d", status)
+	}
+}
+
+func TestExpensesAPIHidesIncomes(t *testing.T) {
+	salary := sample
+	salary.Category = ledger.CategorySalary
+	f := &fakeExpenses{op: &salary}
+	h := newTestHandler(f, nil)
+	for _, req := range []struct{ method, body string }{
+		{http.MethodGet, ""}, {http.MethodPatch, `{"amount":1}`}, {http.MethodDelete, ""},
+	} {
+		if status, _ := do(t, h, req.method, "/api/v1/expenses/7", req.body); status != 404 {
+			t.Errorf("%s an income: status = %d, want 404", req.method, status)
+		}
+	}
+	if f.lastPatch.Amount != nil {
+		t.Error("an income was updated through the expenses API")
+	}
+	status, body := do(t, h, http.MethodPost, "/api/v1/expenses", `{"user_id":1,"amount":1,"category":"salary"}`)
+	if status != 400 || body["error"].(map[string]any)["field"] != "category" {
+		t.Errorf("create with an income category: %d %v", status, body)
+	}
+	do(t, h, http.MethodGet, "/api/v1/expenses", "")
+	if f.lastFilter.Kind == nil || *f.lastFilter.Kind != ledger.KindExpense {
+		t.Errorf("list filter = %+v, want expenses only", f.lastFilter)
+	}
+	if status, body := do(t, newTestHandler(&fakeExpenses{err: &ledger.ValidationError{Field: "date", Message: "must not be in the future"}}, nil),
+		http.MethodPost, "/api/v1/expenses", `{"user_id":1,"amount":1,"category":"food"}`); status != 400 ||
+		body["error"].(map[string]any)["field"] != "spent_at" {
+		t.Errorf("the date field keeps its API name: %d %v", status, body)
 	}
 }

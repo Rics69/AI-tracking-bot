@@ -31,16 +31,21 @@ func TestListMatchesPostgresSemantics(t *testing.T) {
 	coffee := add(t, r, 1, 350, ledger.CategoryFood, 16, "кофе")
 	old := add(t, r, 1, 100, ledger.CategoryFood, 1, "обед")
 	add(t, r, 2, 999, ledger.CategoryFood, 16, "чужое")
+	salary := add(t, r, 1, 80000, ledger.CategorySalary, 5, "зарплата")
 
 	page, _ := r.List(ctx, ledger.OwnedBy(1), ledger.Filter{Limit: 10})
-	if page.Total != 3 || page.Items[0].ID != coffee.ID || page.Items[2].ID != old.ID ||
-		!page.Sum.Equal(decimal.NewFromInt(1650)) {
-		t.Errorf("by spent date: %+v", page)
+	if page.Total != 4 || page.Items[0].ID != coffee.ID || page.Items[3].ID != old.ID ||
+		!page.ExpenseSum.Equal(decimal.NewFromInt(1650)) || !page.IncomeSum.Equal(decimal.NewFromInt(80000)) {
+		t.Errorf("by date: %+v", page)
+	}
+	page, _ = r.List(ctx, ledger.OwnedBy(1), ledger.Filter{Kind: new(ledger.KindIncome), Limit: 10})
+	if page.Total != 1 || page.Items[0].ID != salary.ID || !page.ExpenseSum.IsZero() {
+		t.Errorf("incomes only: %+v", page)
 	}
 
 	page, _ = r.List(ctx, ledger.OwnedBy(1), ledger.Filter{Sort: ledger.SortByCreatedAt, Limit: 1})
-	if page.Items[0].ID != old.ID {
-		t.Errorf("last added = %d, want %d", page.Items[0].ID, old.ID)
+	if page.Items[0].ID != salary.ID {
+		t.Errorf("last added = %d, want %d", page.Items[0].ID, salary.ID)
 	}
 
 	page, _ = r.List(ctx, ledger.OwnedBy(1), ledger.Filter{Query: "такси", From: new(day(10)), Limit: 10})
@@ -49,8 +54,12 @@ func TestListMatchesPostgresSemantics(t *testing.T) {
 	}
 
 	sum, _ := r.Summary(ctx, ledger.OwnedBy(1), ledger.Filter{})
-	if len(sum.Items) != 2 || sum.Items[0].Category != ledger.CategoryTransport || sum.Count != 3 {
+	if len(sum.Items) != 3 || sum.Expense.Count != 3 || sum.Income.Count != 1 ||
+		!sum.Balance().Equal(decimal.NewFromInt(78350)) {
 		t.Errorf("summary: %+v", sum)
+	}
+	if spent := sum.Of(ledger.KindExpense); len(spent) != 2 || spent[0].Category != ledger.CategoryTransport {
+		t.Errorf("expense categories: %+v", spent)
 	}
 
 	if err := r.Delete(ctx, ledger.OwnedBy(2), coffee.ID); !errors.Is(err, ledger.ErrNotFound) {
