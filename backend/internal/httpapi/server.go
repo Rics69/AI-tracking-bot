@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -30,29 +31,67 @@ type ExpenseService interface {
 
 // FamilyService manages members and invites; *family.Service implements it.
 type FamilyService interface {
-	Members(ctx context.Context) ([]user.User, error)
-	Remove(ctx context.Context, telegramID int64) error
-	SetWeeklyReport(ctx context.Context, telegramID int64, on bool) (user.User, error)
-	CreateInvite(ctx context.Context) (family.CreatedInvite, error)
-	ListInvites(ctx context.Context) ([]family.Invite, error)
-	RevokeInvite(ctx context.Context, id int64) error
+	Member(ctx context.Context, familyID, telegramID int64) (user.User, error)
+	Members(ctx context.Context, familyID int64) ([]user.User, error)
+	Remove(ctx context.Context, head user.User, telegramID int64) error
+	SetWeeklyReport(ctx context.Context, by user.User, telegramID int64, on bool) (user.User, error)
+	CreateInvite(ctx context.Context, head user.User) (family.CreatedInvite, error)
+	ListInvites(ctx context.Context, familyID int64) ([]family.Invite, error)
+	RevokeInvite(ctx context.Context, familyID, id int64) error
 	Now() time.Time
 }
 
-// Server implements StrictServerInterface. The panel belongs to the family head,
-// so every operation works in the AllUsers scope.
+// Viewer returns the user the panel works for.
+type Viewer func(ctx context.Context) (user.User, error)
+
+// ErrNoViewer means the panel does not know whose family to show.
+var ErrNoViewer = errors.New("the panel has no user: set ADMIN_TELEGRAM_ID and write to the bot first")
+
+// Server implements StrictServerInterface. The panel belongs to a family head,
+// so every operation works in the scope of the head's family.
 //
 // Domain errors are returned as plain errors and turned into HTTP responses
 // in one place (writeError), instead of building 400/404 objects in each handler.
 type Server struct {
 	expenses ExpenseService
 	family   FamilyService
+	viewer   Viewer
 }
 
 var _ StrictServerInterface = (*Server)(nil)
 
-func NewServer(expenses ExpenseService, family FamilyService) *Server {
-	return &Server{expenses: expenses, family: family}
+func NewServer(expenses ExpenseService, family FamilyService, viewer Viewer) *Server {
+	return &Server{expenses: expenses, family: family, viewer: viewer}
+}
+
+// head returns the viewer, who must be the head of their family.
+func (s *Server) head(ctx context.Context) (user.User, error) {
+	u, err := s.viewer(ctx)
+	if err != nil {
+		return user.User{}, err
+	}
+	if !u.IsHead {
+		return user.User{}, family.ErrNotHead
+	}
+	return u, nil
+}
+
+// scope is the head's family: what the panel may see and change.
+func (s *Server) scope(ctx context.Context) (expense.Scope, user.User, error) {
+	u, err := s.head(ctx)
+	if err != nil {
+		return expense.Scope{}, user.User{}, err
+	}
+	return expense.InFamily(u.FamilyID), u, nil
+}
+
+// member checks that an expense owner chosen in the panel is in the family.
+func (s *Server) member(ctx context.Context, head user.User, telegramID int64) error {
+	_, err := s.family.Member(ctx, head.FamilyID, telegramID)
+	if errors.Is(err, family.ErrNotMember) {
+		return expense.ErrUnknownUser
+	}
+	return err
 }
 
 func (s *Server) ListExpenses(ctx context.Context, req ListExpensesRequestObject) (ListExpensesResponseObject, error) {
@@ -62,7 +101,11 @@ func (s *Server) ListExpenses(ctx context.Context, req ListExpensesRequestObject
 	f.Limit = deref(p.Limit)
 	f.Offset = deref(p.Offset)
 
-	page, err := s.expenses.List(ctx, expense.AllUsers(), f)
+	scope, _, err := s.scope(ctx)
+	if err != nil {
+		return nil, err
+	}
+	page, err := s.expenses.List(ctx, scope, f)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +117,14 @@ func (s *Server) ListExpenses(ctx context.Context, req ListExpensesRequestObject
 }
 
 func (s *Server) CreateExpense(ctx context.Context, req CreateExpenseRequestObject) (CreateExpenseResponseObject, error) {
+	_, head, err := s.scope(ctx)
+	if err != nil {
+		return nil, err
+	}
 	b := req.Body
+	if err := s.member(ctx, head, b.UserId); err != nil {
+		return nil, err
+	}
 	in := expense.CreateInput{
 		UserID:   b.UserId,
 		Amount:   b.Amount,
@@ -91,7 +141,11 @@ func (s *Server) CreateExpense(ctx context.Context, req CreateExpenseRequestObje
 
 func (s *Server) GetExpenseSummary(ctx context.Context, req GetExpenseSummaryRequestObject) (GetExpenseSummaryResponseObject, error) {
 	p := req.Params
-	sum, err := s.expenses.Summary(ctx, expense.AllUsers(), filterFrom(p.UserId, p.Category, p.From, p.To))
+	scope, _, err := s.scope(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sum, err := s.expenses.Summary(ctx, scope, filterFrom(p.UserId, p.Category, p.From, p.To))
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +158,11 @@ func (s *Server) GetExpenseSummary(ctx context.Context, req GetExpenseSummaryReq
 
 func (s *Server) GetExpenseTimeSeries(ctx context.Context, req GetExpenseTimeSeriesRequestObject) (GetExpenseTimeSeriesResponseObject, error) {
 	p := req.Params
-	points, err := s.expenses.TimeSeries(ctx, expense.AllUsers(),
+	scope, _, err := s.scope(ctx)
+	if err != nil {
+		return nil, err
+	}
+	points, err := s.expenses.TimeSeries(ctx, scope,
 		filterFrom(p.UserId, p.Category, p.From, p.To), expense.Bucket(p.Bucket))
 	if err != nil {
 		return nil, err
@@ -121,7 +179,11 @@ func (s *Server) GetExpenseTimeSeries(ctx context.Context, req GetExpenseTimeSer
 }
 
 func (s *Server) GetExpense(ctx context.Context, req GetExpenseRequestObject) (GetExpenseResponseObject, error) {
-	e, err := s.expenses.Get(ctx, expense.AllUsers(), req.Id)
+	scope, _, err := s.scope(ctx)
+	if err != nil {
+		return nil, err
+	}
+	e, err := s.expenses.Get(ctx, scope, req.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +191,16 @@ func (s *Server) GetExpense(ctx context.Context, req GetExpenseRequestObject) (G
 }
 
 func (s *Server) UpdateExpense(ctx context.Context, req UpdateExpenseRequestObject) (UpdateExpenseResponseObject, error) {
+	scope, head, err := s.scope(ctx)
+	if err != nil {
+		return nil, err
+	}
 	b := req.Body
+	if b.UserId != nil {
+		if err := s.member(ctx, head, *b.UserId); err != nil {
+			return nil, err
+		}
+	}
 	p := expense.Patch{
 		UserID:  b.UserId,
 		Amount:  b.Amount,
@@ -140,7 +211,7 @@ func (s *Server) UpdateExpense(ctx context.Context, req UpdateExpenseRequestObje
 		c := expense.Category(*b.Category)
 		p.Category = &c
 	}
-	e, err := s.expenses.Update(ctx, expense.AllUsers(), req.Id, p)
+	e, err := s.expenses.Update(ctx, scope, req.Id, p)
 	if err != nil {
 		return nil, err
 	}
@@ -148,14 +219,22 @@ func (s *Server) UpdateExpense(ctx context.Context, req UpdateExpenseRequestObje
 }
 
 func (s *Server) DeleteExpense(ctx context.Context, req DeleteExpenseRequestObject) (DeleteExpenseResponseObject, error) {
-	if err := s.expenses.Delete(ctx, expense.AllUsers(), req.Id); err != nil {
+	scope, _, err := s.scope(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.expenses.Delete(ctx, scope, req.Id); err != nil {
 		return nil, err
 	}
 	return DeleteExpense204Response{}, nil
 }
 
 func (s *Server) ListUsers(ctx context.Context, _ ListUsersRequestObject) (ListUsersResponseObject, error) {
-	users, err := s.family.Members(ctx)
+	head, err := s.head(ctx)
+	if err != nil {
+		return nil, err
+	}
+	users, err := s.family.Members(ctx, head.FamilyID)
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +282,6 @@ func toAPIUser(u user.User) User {
 		Username:     optional(u.Username),
 		IsHead:       u.IsHead,
 		WeeklyReport: u.WeeklyReport,
-		RemovedAt:    u.RemovedAt,
 		CreatedAt:    u.CreatedAt,
 	}
 }

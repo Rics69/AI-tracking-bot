@@ -17,6 +17,9 @@ type Common struct {
 	Timezone    string     `env:"APP_TIMEZONE" envDefault:"Europe/Moscow"`
 	LogLevel    slog.Level `env:"LOG_LEVEL" envDefault:"info"`
 	LogFormat   string     `env:"LOG_FORMAT" envDefault:"text"`
+	// AdminID is the owner of the bot: receives /feedback and is not limited.
+	// Until the mini app has its own login, the panel shows the admin's family.
+	AdminID int64 `env:"ADMIN_TELEGRAM_ID"`
 
 	// Location is parsed from Timezone by Load.
 	Location *time.Location `env:"-"`
@@ -63,11 +66,13 @@ type Bot struct {
 	Common
 	LLM
 	Agent
-	TelegramToken string `env:"TELEGRAM_BOT_TOKEN,required"`
-	// AllowedUserIDs are the family heads, added on every start. Others join by
-	// invite link. Empty: an open family where anyone who writes joins.
-	AllowedUserIDs []int64       `env:"ALLOWED_TELEGRAM_IDS" envSeparator:","`
-	ReplyTimeout   time.Duration `env:"REPLY_TIMEOUT" envDefault:"90s"`
+	TelegramToken string        `env:"TELEGRAM_BOT_TOKEN,required"`
+	ReplyTimeout  time.Duration `env:"REPLY_TIMEOUT" envDefault:"90s"`
+	// PrivacyURL is the full data policy; empty: /privacy shows the summary only.
+	PrivacyURL string `env:"PRIVACY_URL"`
+	// Daily limits per user, so nobody spends the whole token budget; 0: unlimited.
+	UserDailyMessages int   `env:"USER_DAILY_MESSAGES" envDefault:"150"`
+	UserDailyTokens   int64 `env:"USER_DAILY_TOKENS" envDefault:"200000"`
 }
 
 // Chat is the configuration of the local agent REPL (cmd/chat).

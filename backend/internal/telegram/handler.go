@@ -1,5 +1,5 @@
 // Package telegram connects the agent to Telegram: it receives updates,
-// identifies the family member and sends the agent's replies back.
+// identifies the user, runs commands and sends the agent's replies back.
 package telegram
 
 import (
@@ -16,6 +16,7 @@ import (
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/agent"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
 
@@ -25,24 +26,6 @@ const (
 	typingInterval  = 4 * time.Second
 	sendAttempts    = 3
 	sendTimeout     = 20 * time.Second
-
-	replyHelp = "Я записываю расходы. Пишите обычным текстом:\n" +
-		"• кофе 350\n" +
-		"• такси 1200 вчера\n" +
-		"• сколько потратил на еду в этом месяце\n" +
-		"• покажи траты за неделю\n" +
-		"• последнее было не 350, а 450\n" +
-		"• удали такси"
-	replyNotText   = "Я понимаю только текстовые сообщения. Например: «кофе 350»."
-	replyTooLong   = "Слишком длинное сообщение. Напишите трату коротко, например: «кофе 350»."
-	replyPrivate   = "Я работаю только в личных сообщениях — напишите мне напрямую."
-	replyFailure   = "Что-то пошло не так, попробуйте ещё раз через минуту."
-	replyForbidden = "Этот бот ведёт расходы одной семьи. Чтобы присоединиться, " +
-		"попросите у главы семьи ссылку-приглашение. Ваш Telegram ID: %d."
-	replyJoined        = "%s, добро пожаловать в семью!\n\n" + replyHelp
-	replyAlreadyMember = "Вы уже в семье.\n\n" + replyHelp
-	replyInviteInvalid = "Это приглашение недействительно: оно истекло, отозвано или уже использовано. " +
-		"Попросите у главы семьи новую ссылку."
 )
 
 // ErrUndeliverable means retrying will not help: the chat does not exist,
@@ -61,34 +44,66 @@ type Replier interface {
 	Reset(ctx context.Context, userID int64)
 }
 
-// Family decides who may talk to the bot; *family.Service implements it.
+// Family manages users and families; *family.Service implements it.
 type Family interface {
 	Admit(ctx context.Context, tg user.User) (user.User, error)
-	Join(ctx context.Context, code string, tg user.User) (member user.User, joined bool, err error)
+	Get(ctx context.Context, telegramID int64) (user.User, error)
+	Consent(ctx context.Context, telegramID int64) (user.User, error)
+	Invitation(ctx context.Context, code string) (head user.User, err error)
+	Join(ctx context.Context, code string, telegramID int64) (user.User, error)
+	Leave(ctx context.Context, telegramID int64) (user.User, error)
+	Remove(ctx context.Context, head user.User, telegramID int64) error
+	Members(ctx context.Context, familyID int64) ([]user.User, error)
+	CreateInvite(ctx context.Context, head user.User) (family.CreatedInvite, error)
+	SetWeeklyReport(ctx context.Context, by user.User, telegramID int64, on bool) (user.User, error)
+	SetTimezone(ctx context.Context, telegramID int64, tz string) (user.User, error)
+	DeleteAccount(ctx context.Context, telegramID int64) error
+}
+
+// Meter enforces per-user daily limits; *usage.Meter implements it.
+type Meter interface {
+	Allow(ctx context.Context, userID int64, day time.Time) (bool, error)
 }
 
 // Sender is the part of the Telegram API the handler uses; *bot.Bot implements it.
 type Sender interface {
 	SendMessage(ctx context.Context, params *bot.SendMessageParams) (*models.Message, error)
 	SendChatAction(ctx context.Context, params *bot.SendChatActionParams) (bool, error)
+	EditMessageText(ctx context.Context, params *bot.EditMessageTextParams) (*models.Message, error)
+	AnswerCallbackQuery(ctx context.Context, params *bot.AnswerCallbackQueryParams) (bool, error)
+}
+
+// Config tunes the handler.
+type Config struct {
+	ReplyTimeout time.Duration
+	Location     *time.Location // timezone of users who have not chosen one
+	AdminID      int64          // receives /feedback; 0: feedback is only logged
+	PrivacyURL   string         // full data policy; empty: /privacy shows the summary only
+	Texts        texts.Bot
 }
 
 // Handler processes incoming Telegram updates.
 type Handler struct {
-	agent        Replier
-	family       Family
-	replyTimeout time.Duration
-	retryDelay   time.Duration // first pause between send attempts
-	log          *slog.Logger
+	agent      Replier
+	family     Family
+	meter      Meter
+	cfg        Config
+	t          texts.Bot
+	retryDelay time.Duration // first pause between send attempts
+	now        func() time.Time
+	log        *slog.Logger
 
-	// Messages of one user are handled one at a time, in order:
+	// Updates of one user are handled one at a time, in order:
 	// "кофе 350" followed by "нет, 450" must not race.
 	userLocks sync.Map // int64 -> *sync.Mutex
 }
 
 // NewHandler creates a handler.
-func NewHandler(a Replier, f Family, replyTimeout time.Duration, log *slog.Logger) *Handler {
-	return &Handler{agent: a, family: f, replyTimeout: replyTimeout, retryDelay: time.Second, log: log}
+func NewHandler(a Replier, f Family, m Meter, cfg Config, log *slog.Logger) *Handler {
+	return &Handler{
+		agent: a, family: f, meter: m, cfg: cfg, t: cfg.Texts,
+		retryDelay: time.Second, now: time.Now, log: log,
+	}
 }
 
 // Handle is a bot.HandlerFunc.
@@ -97,85 +112,125 @@ func (h *Handler) Handle(ctx context.Context, b *bot.Bot, update *models.Update)
 }
 
 func (h *Handler) handle(ctx context.Context, s Sender, update *models.Update) {
-	msg := update.Message
-	if msg == nil || msg.From == nil || msg.From.IsBot {
-		return // edits, channel posts, service messages
+	switch {
+	case update.CallbackQuery != nil:
+		h.handleCallback(ctx, s, update.CallbackQuery)
+	case update.Message != nil:
+		h.handleMessage(ctx, s, update.Message)
+	}
+	// Edits, channel posts and the like are ignored.
+}
+
+func (h *Handler) handleMessage(ctx context.Context, s Sender, msg *models.Message) {
+	if msg.From == nil || msg.From.IsBot {
+		return // service messages
 	}
 	from := msg.From
 	chatID := msg.Chat.ID
-	log := h.log.With("user_id", from.ID)
-
 	if msg.Chat.Type != models.ChatTypePrivate {
-		h.send(ctx, s, chatID, replyPrivate)
+		h.send(ctx, s, chatID, h.t.Private)
 		return
 	}
-	tg := user.User{TelegramID: from.ID, FirstName: from.FirstName, Username: from.Username}
 	text := strings.TrimSpace(msg.Text)
 
-	lock := h.userLock(from.ID)
-	lock.Lock()
-	defer lock.Unlock()
-
-	ctx, cancel := context.WithTimeout(ctx, h.replyTimeout)
+	unlock := h.lock(from.ID)
+	defer unlock()
+	ctx, cancel := context.WithTimeout(ctx, h.cfg.ReplyTimeout)
 	defer cancel()
 
-	// An invite link arrives as "/start <code>"; it is the only way in for strangers.
-	if code, ok := commandArg(text, "/start"); ok && code != "" {
-		h.join(ctx, s, chatID, code, tg)
+	u, ok := h.admit(ctx, s, chatID, from)
+	if !ok {
 		return
 	}
+	log := h.log.With("user_id", u.TelegramID)
 
-	// Membership is checked on every message: a member removed in the panel
-	// loses access immediately. Admit also refreshes the name the panel shows.
-	if _, err := h.family.Admit(ctx, tg); err != nil {
-		if errors.Is(err, family.ErrNotMember) {
-			log.WarnContext(ctx, "message from a user outside the family", "username", from.Username)
-			h.send(ctx, s, chatID, fmt.Sprintf(replyForbidden, from.ID))
-			return
-		}
-		log.ErrorContext(ctx, "check membership", "err", err)
-		h.send(ctx, s, chatID, replyFailure)
+	// The consent message points here, so the policy is readable before consent.
+	if isCommand(text, "/privacy") {
+		h.send(ctx, s, chatID, h.privacyText())
+		return
+	}
+	// An invite link arrives as "/start <code>".
+	code, _ := commandArg(text, "/start")
+	if !u.Consented() {
+		h.askConsent(ctx, s, chatID, code)
+		return
+	}
+	if code != "" {
+		h.offerInvitation(ctx, s, chatID, code)
 		return
 	}
 
 	switch {
 	case text == "":
-		h.send(ctx, s, chatID, replyNotText)
+		h.send(ctx, s, chatID, h.t.NotText)
 		return
-	case isCommand(text, "/start"), isCommand(text, "/help"):
-		h.agent.Reset(ctx, from.ID)
-		h.send(ctx, s, chatID, replyHelp)
+	case isCommand(text, "/start"):
+		h.agent.Reset(ctx, u.TelegramID)
+		h.send(ctx, s, chatID, h.t.Welcome)
+		return
+	case isCommand(text, "/help"):
+		h.agent.Reset(ctx, u.TelegramID)
+		h.send(ctx, s, chatID, h.t.Help)
+		return
+	case isCommand(text, "/family"):
+		h.showFamily(ctx, s, chatID, u)
+		return
+	case isCommand(text, "/settings"):
+		h.reply(ctx, s, chatID, 0, h.settingsView(u))
+		return
+	case isCommand(text, "/feedback"):
+		arg, _ := commandArg(text, "/feedback")
+		h.feedback(ctx, s, chatID, u, arg)
+		return
+	case isCommand(text, "/delete_me"):
+		h.confirmDelete(ctx, s, chatID, u)
+		return
+	case strings.HasPrefix(text, "/"):
+		h.send(ctx, s, chatID, h.t.Help) // an unknown command is not an expense
 		return
 	case len([]rune(text)) > maxInputRunes:
-		h.send(ctx, s, chatID, replyTooLong)
+		h.send(ctx, s, chatID, h.t.TooLong)
+		return
+	}
+
+	loc := u.Location(h.cfg.Location)
+	allowed, err := h.meter.Allow(ctx, u.TelegramID, today(h.now(), loc))
+	if err != nil {
+		log.ErrorContext(ctx, "check usage limit", "err", err)
+		h.send(ctx, s, chatID, h.t.Failure)
+		return
+	}
+	if !allowed {
+		log.WarnContext(ctx, "daily limit reached")
+		h.send(ctx, s, chatID, h.t.LimitReached)
 		return
 	}
 
 	stopTyping := h.keepTyping(ctx, s, chatID)
-	reply, err := h.agent.Reply(ctx, agent.Caller{UserID: from.ID, Name: from.FirstName}, text)
+	reply, err := h.agent.Reply(ctx, agent.Caller{UserID: u.TelegramID, Name: u.FirstName, Location: loc}, text)
 	stopTyping()
 	if err != nil {
 		log.ErrorContext(ctx, "agent failed", "err", err)
-		reply = replyFailure
+		reply = h.t.Failure
 	}
 	h.send(ctx, s, chatID, reply)
 }
 
-func (h *Handler) join(ctx context.Context, s Sender, chatID int64, code string, tg user.User) {
-	member, joined, err := h.family.Join(ctx, code, tg)
+// admit identifies the sender, creating them on the first message. It
+// answers the user itself when they cannot be served.
+func (h *Handler) admit(ctx context.Context, s Sender, chatID int64, from *models.User) (user.User, bool) {
+	u, err := h.family.Admit(ctx, user.User{TelegramID: from.ID, FirstName: from.FirstName, Username: from.Username})
 	switch {
-	case errors.Is(err, family.ErrInviteInvalid):
-		h.log.WarnContext(ctx, "invalid invite", "user_id", tg.TelegramID)
-		h.send(ctx, s, chatID, replyInviteInvalid)
+	case errors.Is(err, family.ErrBlocked):
+		h.log.WarnContext(ctx, "blocked user", "user_id", from.ID)
+		h.send(ctx, s, chatID, h.t.Blocked)
+		return user.User{}, false
 	case err != nil:
-		h.log.ErrorContext(ctx, "join family", "user_id", tg.TelegramID, "err", err)
-		h.send(ctx, s, chatID, replyFailure)
-	case !joined:
-		h.send(ctx, s, chatID, replyAlreadyMember)
-	default:
-		h.log.InfoContext(ctx, "joined the family", "user_id", tg.TelegramID, "username", tg.Username)
-		h.send(ctx, s, chatID, fmt.Sprintf(replyJoined, member.FirstName))
+		h.log.ErrorContext(ctx, "admit user", "user_id", from.ID, "err", err)
+		h.send(ctx, s, chatID, h.t.Failure)
+		return user.User{}, false
 	}
+	return u, true
 }
 
 // keepTyping shows "typing…" until the returned function is called:
@@ -209,11 +264,15 @@ func (h *Handler) send(ctx context.Context, s Sender, chatID int64, text string)
 // Send delivers a plain-text message, retrying network failures. It is used
 // for replies and for messages the bot starts itself (weekly reports).
 func (h *Handler) Send(ctx context.Context, s Sender, chatID int64, text string) error {
-	if r := []rune(text); len(r) > maxMessageRunes {
-		text = string(r[:maxMessageRunes-1]) + "…"
+	return h.sendMessage(ctx, s, &bot.SendMessageParams{ChatID: chatID, Text: text})
+}
+
+func (h *Handler) sendMessage(ctx context.Context, s Sender, params *bot.SendMessageParams) error {
+	if r := []rune(params.Text); len(r) > maxMessageRunes {
+		params.Text = string(r[:maxMessageRunes-1]) + "…"
 	}
-	// Plain text: the model's output is not trusted to be valid Telegram markup.
-	params := &bot.SendMessageParams{ChatID: chatID, Text: text}
+	// Plain text, no parse mode: the model's output is not trusted to be valid markup.
+	chatID := params.ChatID
 
 	// The reply must go out even if the request context has just expired
 	// (e.g. the LLM timed out and this is the error message).
@@ -246,9 +305,17 @@ func (h *Handler) Send(ctx context.Context, s Sender, chatID int64, text string)
 	}
 }
 
-func (h *Handler) userLock(userID int64) *sync.Mutex {
-	l, _ := h.userLocks.LoadOrStore(userID, &sync.Mutex{})
-	return l.(*sync.Mutex)
+func (h *Handler) lock(userID int64) (unlock func()) {
+	m, _ := h.userLocks.LoadOrStore(userID, &sync.Mutex{})
+	mu := m.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
+
+// today is the calendar date at now in loc, as midnight UTC like expense dates.
+func today(now time.Time, loc *time.Location) time.Time {
+	y, m, d := now.In(loc).Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 }
 
 // isCommand matches "/start" and "/start@MyBot".

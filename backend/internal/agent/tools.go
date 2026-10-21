@@ -157,26 +157,34 @@ func (e *toolError) Error() string { return e.msg }
 
 func badArgs(format string, args ...any) error { return &toolError{msg: fmt.Sprintf(format, args...)} }
 
-// runTool executes a tool call on behalf of userID and returns the JSON result
+// turn is what the tools know about the request: whose expenses they work
+// with and what date it is for that user.
+type turn struct {
+	userID int64 // from Telegram, never from the model
+	today  time.Time
+}
+
+func (t turn) scope() expense.Scope { return expense.OwnedBy(t.userID) }
+
+// runTool executes a tool call for the turn's user and returns the JSON result
 // for the model. Errors the model can react to are encoded into the result;
 // only infrastructure failures are returned as error.
-func (a *Agent) runTool(ctx context.Context, userID int64, call *llm.ToolCall) (string, error) {
-	scope := expense.OwnedBy(userID)
+func (a *Agent) runTool(ctx context.Context, t turn, call *llm.ToolCall) (string, error) {
 	var (
 		result any
 		err    error
 	)
 	switch call.Name {
 	case toolAdd:
-		result, err = a.addExpense(ctx, userID, call.Arguments)
+		result, err = a.addExpense(ctx, t, call.Arguments)
 	case toolFind:
-		result, err = a.findExpenses(ctx, scope, call.Arguments)
+		result, err = a.findExpenses(ctx, t, call.Arguments)
 	case toolSummary:
-		result, err = a.summary(ctx, scope, call.Arguments)
+		result, err = a.summary(ctx, t, call.Arguments)
 	case toolUpdate:
-		result, err = a.updateExpense(ctx, scope, call.Arguments)
+		result, err = a.updateExpense(ctx, t, call.Arguments)
 	case toolDelete:
-		result, err = a.deleteExpense(ctx, scope, call.Arguments)
+		result, err = a.deleteExpense(ctx, t, call.Arguments)
 	default:
 		err = badArgs("unknown function %q", call.Name)
 	}
@@ -215,7 +223,7 @@ type addArgs struct {
 	Comment  string      `json:"comment"`
 }
 
-func (a *Agent) addExpense(ctx context.Context, userID int64, raw json.RawMessage) (any, error) {
+func (a *Agent) addExpense(ctx context.Context, t turn, raw json.RawMessage) (any, error) {
 	var args addArgs
 	if err := decodeArgs(raw, &args); err != nil {
 		return nil, err
@@ -233,16 +241,17 @@ func (a *Agent) addExpense(ctx context.Context, userID int64, raw json.RawMessag
 		return nil, err
 	}
 	e, err := a.expenses.Create(ctx, expense.CreateInput{
-		UserID:   userID, // from Telegram, never from the model
+		UserID:   t.userID,
 		Amount:   *amount,
 		Category: *category,
 		SpentAt:  date,
 		Comment:  args.Comment,
+		Today:    t.today,
 	})
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"added": a.toItem(e)}, nil
+	return map[string]any{"added": t.item(e)}, nil
 }
 
 type findArgs struct {
@@ -254,7 +263,8 @@ type findArgs struct {
 	Limit     int    `json:"limit"`
 }
 
-func (a *Agent) findExpenses(ctx context.Context, scope expense.Scope, raw json.RawMessage) (any, error) {
+func (a *Agent) findExpenses(ctx context.Context, t turn, raw json.RawMessage) (any, error) {
+	scope := t.scope()
 	var args findArgs
 	if err := decodeArgs(raw, &args); err != nil {
 		return nil, err
@@ -277,7 +287,7 @@ func (a *Agent) findExpenses(ctx context.Context, scope expense.Scope, raw json.
 	}
 	items := make([]item, len(page.Items))
 	for i, e := range page.Items {
-		items[i] = a.toItem(e)
+		items[i] = t.item(e)
 	}
 	return map[string]any{
 		"expenses":    items,
@@ -292,7 +302,8 @@ type summaryArgs struct {
 	Category string `json:"category"`
 }
 
-func (a *Agent) summary(ctx context.Context, scope expense.Scope, raw json.RawMessage) (any, error) {
+func (a *Agent) summary(ctx context.Context, t turn, raw json.RawMessage) (any, error) {
+	scope := t.scope()
 	var args summaryArgs
 	if err := decodeArgs(raw, &args); err != nil {
 		return nil, err
@@ -325,7 +336,8 @@ type updateArgs struct {
 	Comment  *string     `json:"comment"`
 }
 
-func (a *Agent) updateExpense(ctx context.Context, scope expense.Scope, raw json.RawMessage) (any, error) {
+func (a *Agent) updateExpense(ctx context.Context, t turn, raw json.RawMessage) (any, error) {
+	scope := t.scope()
 	var args updateArgs
 	if err := decodeArgs(raw, &args); err != nil {
 		return nil, err
@@ -345,6 +357,7 @@ func (a *Agent) updateExpense(ctx context.Context, scope expense.Scope, raw json
 		return nil, err
 	}
 	p.Comment = args.Comment
+	p.Today = t.today
 	if p.Amount == nil && p.Category == nil && p.SpentAt == nil && p.Comment == nil {
 		return nil, badArgs("nothing to update: pass at least one of amount, category, date, comment")
 	}
@@ -357,14 +370,15 @@ func (a *Agent) updateExpense(ctx context.Context, scope expense.Scope, raw json
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"before": a.toItem(before), "after": a.toItem(after)}, nil
+	return map[string]any{"before": t.item(before), "after": t.item(after)}, nil
 }
 
 type deleteArgs struct {
 	ID json.Number `json:"id"`
 }
 
-func (a *Agent) deleteExpense(ctx context.Context, scope expense.Scope, raw json.RawMessage) (any, error) {
+func (a *Agent) deleteExpense(ctx context.Context, t turn, raw json.RawMessage) (any, error) {
+	scope := t.scope()
 	var args deleteArgs
 	if err := decodeArgs(raw, &args); err != nil {
 		return nil, err
@@ -380,7 +394,7 @@ func (a *Agent) deleteExpense(ctx context.Context, scope expense.Scope, raw json
 	if err := a.expenses.Delete(ctx, scope, id); err != nil {
 		return nil, err
 	}
-	return map[string]any{"deleted": a.toItem(e)}, nil
+	return map[string]any{"deleted": t.item(e)}, nil
 }
 
 // item is the compact representation of an expense shown to the model.
@@ -395,13 +409,13 @@ type item struct {
 	Comment  string `json:"comment,omitempty"`
 }
 
-func (a *Agent) toItem(e expense.Expense) item {
+func (t turn) item(e expense.Expense) item {
 	return item{
 		ID:       e.ID,
 		Amount:   money(e.Amount),
 		Category: e.Category.Label(),
 		Date:     e.SpentAt.Format(time.DateOnly),
-		DateText: humanDate(e.SpentAt, a.clock.Today()),
+		DateText: humanDate(e.SpentAt, t.today),
 		Comment:  e.Comment,
 	}
 }

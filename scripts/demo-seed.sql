@@ -1,7 +1,8 @@
 -- Demo data for the web panel: three family members and a month of expenses.
 -- Lets you look at the panel without talking to the bot first:
 --   make seed
--- Telegram IDs 1001–1003 are fake; real members appear when they message the bot.
+-- The panel shows the family of ADMIN_TELEGRAM_ID (passed as :admin), so the
+-- demo members join it. Telegram IDs 1001–1003 are fake.
 -- Dates are relative to today, so the data always looks fresh. Safe to re-run:
 -- previous demo data is replaced.
 
@@ -9,10 +10,20 @@ BEGIN;
 
 DELETE FROM users WHERE telegram_id IN (1001, 1002, 1003); -- cascades to their expenses
 
-INSERT INTO users (telegram_id, first_name, username) VALUES
+-- The admin may not have written to the bot yet: create them as a family head.
+SELECT NOT EXISTS (SELECT 1 FROM users WHERE telegram_id = :admin) AS admin_missing \gset
+\if :admin_missing
+WITH f AS (INSERT INTO families DEFAULT VALUES RETURNING id)
+INSERT INTO users (telegram_id, family_id, first_name, is_head) SELECT :admin, id, 'Глава семьи', true FROM f;
+\endif
+
+INSERT INTO users (telegram_id, family_id, first_name, username, consented_at)
+SELECT v.id, admin.family_id, v.first_name, v.username, now()
+FROM users admin, (VALUES
     (1001, 'Анна',  'anna_demo'),
     (1002, 'Борис', NULL),
-    (1003, 'Вера',  'vera_demo');
+    (1003, 'Вера',  'vera_demo')) AS v (id, first_name, username)
+WHERE admin.telegram_id = :admin;
 
 INSERT INTO expenses (user_id, amount, category, spent_at, comment) VALUES
     (1001,   350.00, 'food',          CURRENT_DATE,      'кофе'),

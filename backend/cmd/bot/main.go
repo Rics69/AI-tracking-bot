@@ -22,6 +22,8 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/report"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/postgres"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/telegram"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/usage"
 )
 
 func main() {
@@ -66,16 +68,24 @@ func run() error {
 			log.Info("history cleanup", "deleted_turns", n)
 		}
 	})
+	meter := usage.NewMeter(postgres.NewUsageRepository(pool),
+		usage.Limits{Messages: cfg.UserDailyMessages, Tokens: cfg.UserDailyTokens}, cfg.AdminID, log)
 	assistant := agent.New(client, expenses, expenses, history,
-		agent.Config{Location: cfg.Location, MaxSteps: cfg.MaxSteps},
+		agent.Config{Location: cfg.Location, MaxSteps: cfg.MaxSteps, Usage: meter},
 		log.With("component", "agent"))
-	members := family.NewService(postgres.NewUserRepository(pool), postgres.NewInviteRepository(pool),
-		postgres.NewSettingsRepository(pool), cfg.AllowedUserIDs)
-	// ALLOWED_TELEGRAM_IDS only seeds the family heads; later members join by invite.
-	if err := members.Bootstrap(ctx, cfg.AllowedUserIDs); err != nil {
+	users := postgres.NewUserRepository(pool)
+	members := family.NewService(users, postgres.NewInviteRepository(pool), postgres.NewSettingsRepository(pool))
+	botTexts, err := texts.Load()
+	if err != nil {
 		return err
 	}
-	handler := telegram.NewHandler(assistant, members, cfg.ReplyTimeout, log.With("component", "telegram"))
+	handler := telegram.NewHandler(assistant, members, meter, telegram.Config{
+		ReplyTimeout: cfg.ReplyTimeout,
+		Location:     cfg.Location,
+		AdminID:      cfg.AdminID,
+		PrivacyURL:   cfg.PrivacyURL,
+		Texts:        botTexts,
+	}, log.With("component", "telegram"))
 
 	b, err := bot.New(cfg.TelegramToken,
 		bot.WithDefaultHandler(handler.Handle),
@@ -92,9 +102,12 @@ func run() error {
 	if err := members.SetBotUsername(ctx, me.Username); err != nil {
 		return err
 	}
+	if _, err := b.SetMyCommands(ctx, &bot.SetMyCommandsParams{Commands: telegram.Commands(botTexts)}); err != nil {
+		log.Warn("set bot commands", "err", err) // the bot works without the menu
+	}
 
 	// Monday reports go to private chats, whose ID equals the user's Telegram ID.
-	weekly := report.NewWeekly(expenses, postgres.NewUserRepository(pool), postgres.NewReportRunRepository(pool),
+	weekly := report.NewWeekly(expenses, users, postgres.NewReportRunRepository(pool),
 		func(ctx context.Context, chatID int64, text string) error {
 			err := handler.Send(ctx, b, chatID, text)
 			if errors.Is(err, telegram.ErrUndeliverable) {
@@ -105,8 +118,11 @@ func run() error {
 		cfg.Location, log.With("component", "report"))
 	go weekly.Run(ctx)
 
+	if cfg.AdminID == 0 {
+		log.Warn("ADMIN_TELEGRAM_ID is not set: feedback is only logged")
+	}
 	log.Info("bot started", "username", me.Username, "llm", cfg.Provider, "model", cfg.GigaChat.Model,
-		"family_heads", len(cfg.AllowedUserIDs), "open_family", len(cfg.AllowedUserIDs) == 0)
+		"daily_messages", cfg.UserDailyMessages, "daily_tokens", cfg.UserDailyTokens)
 	b.Start(ctx) // blocks until ctx is cancelled
 	log.Info("bot stopped")
 	return nil

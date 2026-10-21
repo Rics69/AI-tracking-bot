@@ -27,7 +27,12 @@ export class ApiError extends Error {
     readonly status: number,
     readonly body?: ApiErrorBody,
   ) {
-    super(body?.error.message ?? `Ошибка сервера (${status})`);
+    super(
+      body?.error.code === "forbidden"
+        ? // Until the mini app signs users in, the panel shows the family of ADMIN_TELEGRAM_ID.
+          "Панель не настроена: укажите свой Telegram ID в ADMIN_TELEGRAM_ID и напишите боту /start."
+        : (body?.error.message ?? `Ошибка сервера (${status})`),
+    );
   }
 
   get field(): string | undefined {

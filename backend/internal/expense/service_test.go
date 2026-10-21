@@ -20,7 +20,10 @@ type memRepo struct {
 
 func newMemRepo() *memRepo { return &memRepo{items: map[int64]Expense{}} }
 
-func (r *memRepo) visible(s Scope, e Expense) bool { return s.All() || e.UserID == s.UserID() }
+// Every user of memRepo belongs to family 1.
+func (r *memRepo) visible(s Scope, e Expense) bool { return s.FamilyID() == 1 || e.UserID == s.UserID() }
+
+var family = InFamily(1)
 
 func (r *memRepo) Create(_ context.Context, e Expense) (Expense, error) {
 	r.nextID++
@@ -106,6 +109,24 @@ func TestCreateDefaultsToTodayInFamilyTimezone(t *testing.T) {
 	}
 }
 
+func TestFutureIsJudgedByTheCallersToday(t *testing.T) {
+	svc, _ := newTestService() // 15 October in Moscow, still 14 October in UTC
+	in := validInput()
+	in.SpentAt = new(date(2026, 10, 15))
+	in.Today = date(2026, 10, 14) // a user to the west of Moscow
+	var verr *ValidationError
+	if _, err := svc.Create(context.Background(), in); !errors.As(err, &verr) || verr.Field != "spent_at" {
+		t.Errorf("err = %v, want spent_at in the future for this user", err)
+	}
+	in.Today = date(2026, 10, 15)
+	if _, err := svc.Create(context.Background(), in); err != nil {
+		t.Errorf("today for the user: %v", err)
+	}
+	if got := svc.TodayIn(time.UTC); !got.Equal(date(2026, 10, 14)) {
+		t.Errorf("TodayIn(UTC) = %s", got)
+	}
+}
+
 func TestCreateValidation(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -182,7 +203,7 @@ func TestUpdateValidatesResult(t *testing.T) {
 	ctx := context.Background()
 	e, _ := svc.Create(ctx, validInput())
 
-	_, err := svc.Update(ctx, AllUsers(), e.ID, Patch{Amount: new(decimal.Zero)})
+	_, err := svc.Update(ctx, family, e.ID, Patch{Amount: new(decimal.Zero)})
 	var verr *ValidationError
 	if !errors.As(err, &verr) {
 		t.Fatalf("err = %v, want ValidationError", err)
@@ -219,7 +240,7 @@ func TestMemberCannotReassignExpense(t *testing.T) {
 		t.Fatalf("err = %v, want user_id ValidationError", err)
 	}
 	// The family head can.
-	if _, err := svc.Update(ctx, AllUsers(), e.ID, Patch{UserID: new(int64(2))}); err != nil {
+	if _, err := svc.Update(ctx, family, e.ID, Patch{UserID: new(int64(2))}); err != nil {
 		t.Fatalf("family head reassign: %v", err)
 	}
 }
@@ -228,14 +249,14 @@ func TestListNormalizesFilter(t *testing.T) {
 	svc, repo := newTestService()
 	ctx := context.Background()
 
-	if _, err := svc.List(ctx, AllUsers(), Filter{}); err != nil {
+	if _, err := svc.List(ctx, family, Filter{}); err != nil {
 		t.Fatal(err)
 	}
 	if repo.lastFilter.Limit != DefaultLimit {
 		t.Errorf("default Limit = %d, want %d", repo.lastFilter.Limit, DefaultLimit)
 	}
 
-	if _, err := svc.List(ctx, AllUsers(), Filter{Limit: 10_000, Query: "  такси "}); err != nil {
+	if _, err := svc.List(ctx, family, Filter{Limit: 10_000, Query: "  такси "}); err != nil {
 		t.Fatal(err)
 	}
 	if repo.lastFilter.Limit != MaxLimit {
@@ -245,7 +266,7 @@ func TestListNormalizesFilter(t *testing.T) {
 		t.Errorf("Query = %q, want trimmed", repo.lastFilter.Query)
 	}
 
-	_, err := svc.List(ctx, AllUsers(), Filter{From: new(date(2026, 10, 10)), To: new(date(2026, 10, 1))})
+	_, err := svc.List(ctx, family, Filter{From: new(date(2026, 10, 10)), To: new(date(2026, 10, 1))})
 	var verr *ValidationError
 	if !errors.As(err, &verr) {
 		t.Errorf("from > to: err = %v, want ValidationError", err)
@@ -261,7 +282,7 @@ func TestTimeSeriesFillsGaps(t *testing.T) {
 	}
 	defer func() { aggregates = nil }()
 
-	points, err := svc.TimeSeries(context.Background(), AllUsers(), Filter{}, BucketDay)
+	points, err := svc.TimeSeries(context.Background(), family, Filter{}, BucketDay)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,13 +303,13 @@ func TestTimeSeriesValidation(t *testing.T) {
 	svc, _ := newTestService()
 	ctx := context.Background()
 	var verr *ValidationError
-	if _, err := svc.TimeSeries(ctx, AllUsers(), Filter{}, "year"); !errors.As(err, &verr) {
+	if _, err := svc.TimeSeries(ctx, family, Filter{}, "year"); !errors.As(err, &verr) {
 		t.Errorf("unknown bucket: err = %v", err)
 	}
-	if _, err := svc.TimeSeries(ctx, AllUsers(), Filter{From: new(date(2020, 1, 1))}, BucketDay); !errors.As(err, &verr) {
+	if _, err := svc.TimeSeries(ctx, family, Filter{From: new(date(2020, 1, 1))}, BucketDay); !errors.As(err, &verr) {
 		t.Errorf("6 years by day: err = %v, want too many points", err)
 	}
-	if points, err := svc.TimeSeries(ctx, AllUsers(), Filter{}, BucketWeek); err != nil || len(points) != 0 {
+	if points, err := svc.TimeSeries(ctx, family, Filter{}, BucketWeek); err != nil || len(points) != 0 {
 		t.Errorf("no expenses, no period: %v %v", points, err)
 	}
 }

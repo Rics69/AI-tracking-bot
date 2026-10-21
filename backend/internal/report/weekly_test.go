@@ -70,7 +70,7 @@ func (f *fakeRuns) Release(_ context.Context, week time.Time, id int64) error {
 
 type fakeMembers []user.User
 
-func (f fakeMembers) List(context.Context) ([]user.User, error) { return f, nil }
+func (f fakeMembers) All(context.Context) ([]user.User, error) { return f, nil }
 
 type sent struct {
 	chat int64
@@ -95,14 +95,17 @@ func setup(t *testing.T) (*Weekly, *[]sent, *bool) {
 	add(1, "1200", expense.CategoryTransport, day(10, 13), "такси")
 	add(1, "10000", expense.CategoryFood, day(10, 7), "прошлая неделя")
 	add(1, "999", expense.CategoryOther, day(10, 19), "уже эта неделя")
+	add(4, "100", expense.CategoryFood, day(10, 14), "заблокирован")
+	add(5, "100", expense.CategoryFood, day(10, 14), "без согласия")
 
 	now := time.Date(2026, 10, 19, 10, 30, 0, 0, moscow)
-	removed := now
+	consented := now.AddDate(0, -1, 0)
 	members := fakeMembers{
-		{TelegramID: 1, FirstName: "Анна", WeeklyReport: true},
-		{TelegramID: 2, FirstName: "Борис", WeeklyReport: true}, // no expenses: no message
-		{TelegramID: 3, FirstName: "Вера", WeeklyReport: false},
-		{TelegramID: 4, FirstName: "Гоша", WeeklyReport: true, RemovedAt: &removed},
+		{TelegramID: 1, FirstName: "Анна", WeeklyReport: true, ConsentedAt: &consented},
+		{TelegramID: 2, FirstName: "Борис", WeeklyReport: true, ConsentedAt: &consented}, // no expenses: no message
+		{TelegramID: 3, FirstName: "Вера", WeeklyReport: false, ConsentedAt: &consented},
+		{TelegramID: 4, FirstName: "Гоша", WeeklyReport: true, ConsentedAt: &consented, BlockedAt: &consented},
+		{TelegramID: 5, FirstName: "Даша", WeeklyReport: true}, // has not accepted the policy
 	}
 	var out []sent
 	fail := false
@@ -196,5 +199,16 @@ func TestNoReportsBeforeMondayMorning(t *testing.T) {
 	w.Tick(context.Background())
 	if len(*out) != 0 {
 		t.Errorf("sent %d reports before 10:00 on Monday", len(*out))
+	}
+}
+
+func TestReportGoesOutAtTenInTheUsersTimezone(t *testing.T) {
+	w, out, _ := setup(t)
+	members := w.members.(fakeMembers)
+	members[0].Timezone = "Asia/Vladivostok" // UTC+10: 10:00 there is 03:00 in Moscow
+	w.now = func() time.Time { return time.Date(2026, 10, 19, 3, 30, 0, 0, moscow) }
+	w.Tick(context.Background())
+	if len(*out) != 1 || (*out)[0].chat != 1 {
+		t.Errorf("sent = %+v, want Anna's report: it is past 10:00 in Vladivostok", *out)
 	}
 }

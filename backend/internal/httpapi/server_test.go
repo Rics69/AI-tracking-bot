@@ -72,33 +72,42 @@ func (f *fakeExpenses) Summary(_ context.Context, s expense.Scope, flt expense.F
 	return expense.Summary{}, f.err
 }
 
+// head is the panel's viewer in tests: the head of family 10.
+var head = user.User{TelegramID: 1, FamilyID: 10, FirstName: "Анна", IsHead: true}
+
+// stranger is a Telegram user outside family 10.
+const stranger = 9
+
 // fakeFamily returns canned members and invites, or err from every call.
 type fakeFamily struct {
 	err     error
 	removed []int64
 }
 
-func (f *fakeFamily) Members(context.Context) ([]user.User, error) {
-	removedAt := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
-	return []user.User{
-		{TelegramID: 1, FirstName: "Анна", IsHead: true},
-		{TelegramID: 2, FirstName: "Борис", RemovedAt: &removedAt},
-	}, f.err
+func (f *fakeFamily) Member(_ context.Context, familyID, id int64) (user.User, error) {
+	if familyID != head.FamilyID || id == stranger {
+		return user.User{}, family.ErrNotMember
+	}
+	return user.User{TelegramID: id, FamilyID: familyID}, f.err
 }
 
-func (f *fakeFamily) Remove(_ context.Context, id int64) error {
+func (f *fakeFamily) Members(context.Context, int64) ([]user.User, error) {
+	return []user.User{head, {TelegramID: 2, FamilyID: 10, FirstName: "Борис"}}, f.err
+}
+
+func (f *fakeFamily) Remove(_ context.Context, _ user.User, id int64) error {
 	f.removed = append(f.removed, id)
 	return f.err
 }
 
-func (f *fakeFamily) CreateInvite(context.Context) (family.CreatedInvite, error) {
+func (f *fakeFamily) CreateInvite(context.Context, user.User) (family.CreatedInvite, error) {
 	return family.CreatedInvite{
 		Invite: family.Invite{ID: 5, ExpiresAt: time.Now().Add(family.InviteTTL)},
 		Link:   "https://t.me/FamilyBot?start=abc",
 	}, f.err
 }
 
-func (f *fakeFamily) ListInvites(context.Context) ([]family.Invite, error) {
+func (f *fakeFamily) ListInvites(context.Context, int64) ([]family.Invite, error) {
 	past := time.Now().Add(-time.Hour)
 	return []family.Invite{
 		{ID: 1, ExpiresAt: time.Now().Add(time.Hour)},
@@ -106,9 +115,9 @@ func (f *fakeFamily) ListInvites(context.Context) ([]family.Invite, error) {
 	}, f.err
 }
 
-func (f *fakeFamily) RevokeInvite(context.Context, int64) error { return f.err }
+func (f *fakeFamily) RevokeInvite(context.Context, int64, int64) error { return f.err }
 
-func (f *fakeFamily) SetWeeklyReport(_ context.Context, id int64, on bool) (user.User, error) {
+func (f *fakeFamily) SetWeeklyReport(_ context.Context, _ user.User, id int64, on bool) (user.User, error) {
 	return user.User{TelegramID: id, FirstName: "Анна", WeeklyReport: on}, f.err
 }
 func (f *fakeFamily) Now() time.Time { return time.Now() }
@@ -118,9 +127,14 @@ func newTestHandler(f *fakeExpenses, health error) http.Handler {
 }
 
 func newTestHandlerWithFamily(f *fakeExpenses, fam *fakeFamily, health error) http.Handler {
+	return newTestHandlerFor(f, fam, health, func(context.Context) (user.User, error) { return head, nil })
+}
+
+func newTestHandlerFor(f *fakeExpenses, fam *fakeFamily, health error, viewer Viewer) http.Handler {
 	return NewHandler(Deps{
 		Expenses: f,
 		Family:   fam,
+		Viewer:   viewer,
 		Health:   func(context.Context) error { return health },
 		Log:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
@@ -180,8 +194,8 @@ func TestListExpensesPassesFilter(t *testing.T) {
 		flt.Query != "кофе" || flt.Limit != 5 || flt.Offset != 10 {
 		t.Errorf("filter = %+v", flt)
 	}
-	if !f.lastScope.All() {
-		t.Error("panel must work in the AllUsers scope")
+	if f.lastScope.FamilyID() != head.FamilyID {
+		t.Errorf("scope = %+v, want the head's family", f.lastScope)
 	}
 }
 
@@ -247,8 +261,42 @@ func TestListUsersShowsMembership(t *testing.T) {
 		t.Fatalf("status = %d body = %v", status, body)
 	}
 	anna, boris := items[0].(map[string]any), items[1].(map[string]any)
-	if anna["is_head"] != true || anna["removed_at"] != nil || boris["removed_at"] != "2026-10-01T12:00:00Z" {
+	if anna["is_head"] != true || boris["is_head"] != false {
 		t.Errorf("users = %v", items)
+	}
+}
+
+func TestPanelNeedsAFamilyHead(t *testing.T) {
+	for name, viewer := range map[string]Viewer{
+		"no admin configured": func(context.Context) (user.User, error) { return user.User{}, ErrNoViewer },
+		"admin is a member":   func(context.Context) (user.User, error) { return user.User{TelegramID: 1, FamilyID: 10}, nil },
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := &fakeExpenses{}
+			h := newTestHandlerFor(f, &fakeFamily{}, nil, viewer)
+			for _, path := range []string{"/api/v1/expenses", "/api/v1/users", "/api/v1/invites"} {
+				if status, body := do(t, h, http.MethodGet, path, ""); status != 403 || errorCode(body) != "forbidden" {
+					t.Errorf("%s: %d %v", path, status, body)
+				}
+			}
+			if f.lastScope != (expense.Scope{}) {
+				t.Error("the service was called without a viewer")
+			}
+		})
+	}
+}
+
+func TestExpensesOnlyForFamilyMembers(t *testing.T) {
+	f := &fakeExpenses{}
+	h := newTestHandler(f, nil)
+	if status, body := do(t, h, http.MethodPost, "/api/v1/expenses", `{"user_id":9,"amount":1,"category":"food"}`); status != 400 || errorCode(body) != "unknown_user" {
+		t.Errorf("create for a stranger: %d %v", status, body)
+	}
+	if f.lastCreate.UserID != 0 {
+		t.Error("an expense for a stranger reached the service")
+	}
+	if status, body := do(t, h, http.MethodPatch, "/api/v1/expenses/7", `{"user_id":9}`); status != 400 || errorCode(body) != "unknown_user" {
+		t.Errorf("hand over to a stranger: %d %v", status, body)
 	}
 }
 

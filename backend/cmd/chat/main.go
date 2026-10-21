@@ -51,7 +51,7 @@ func run(userID int64, name string) error {
 	if err := postgres.Migrate(ctx, pool); err != nil {
 		return err
 	}
-	if _, err := postgres.NewUserRepository(pool).Upsert(ctx, user.User{TelegramID: userID, FirstName: name}); err != nil {
+	if _, err := postgres.NewUserRepository(pool).Admit(ctx, user.User{TelegramID: userID, FirstName: name}); err != nil {
 		return err
 	}
 

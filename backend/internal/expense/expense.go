@@ -66,8 +66,11 @@ type CreateInput struct {
 	UserID   int64
 	Amount   decimal.Decimal
 	Category Category
-	SpentAt  *time.Time // nil means today in the family timezone
+	SpentAt  *time.Time // nil means Today
 	Comment  string
+	// Today is the current date of whoever records the expense, in their
+	// timezone: later dates are rejected. Zero means today in the service timezone.
+	Today time.Time
 }
 
 // Patch holds the fields to change; nil fields are left as is.
@@ -78,6 +81,8 @@ type Patch struct {
 	Category *Category
 	SpentAt  *time.Time
 	Comment  *string
+	// Today is the current date of whoever edits, as in CreateInput.
+	Today time.Time
 }
 
 // Sort is the order of expenses in a list.
@@ -128,22 +133,26 @@ type Summary struct {
 //
 // The zero value matches no one, so a caller that forgets to set a scope
 // gets "not found" instead of someone else's data (fail closed).
+//
+// There is deliberately no scope over all users: the database holds many
+// families, and none may see another's expenses.
 type Scope struct {
-	userID int64
-	all    bool
+	userID   int64
+	familyID int64
 }
-
-// AllUsers is the scope of the family head: every member's expenses.
-func AllUsers() Scope { return Scope{all: true} }
 
 // OwnedBy restricts operations to the expenses of one Telegram user.
 func OwnedBy(userID int64) Scope { return Scope{userID: userID} }
 
-// All reports whether the scope covers every user.
-func (s Scope) All() bool { return s.all }
+// InFamily is the scope of a family head: the expenses of everyone who is a
+// member of the family now. Whoever leaves takes their expenses along.
+func InFamily(familyID int64) Scope { return Scope{familyID: familyID} }
 
-// UserID returns the user the scope is restricted to; meaningful only if !All().
+// UserID returns the owner of an OwnedBy scope, 0 otherwise.
 func (s Scope) UserID() int64 { return s.userID }
+
+// FamilyID returns the family of an InFamily scope, 0 otherwise.
+func (s Scope) FamilyID() int64 { return s.familyID }
 
 // Errors returned by the service and repositories.
 var (

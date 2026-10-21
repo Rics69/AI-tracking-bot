@@ -7,14 +7,22 @@ import (
 )
 
 func (s *Server) RemoveUser(ctx context.Context, req RemoveUserRequestObject) (RemoveUserResponseObject, error) {
-	if err := s.family.Remove(ctx, req.TelegramId); err != nil {
+	head, err := s.head(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.family.Remove(ctx, head, req.TelegramId); err != nil {
 		return nil, err
 	}
 	return RemoveUser204Response{}, nil
 }
 
 func (s *Server) UpdateUser(ctx context.Context, req UpdateUserRequestObject) (UpdateUserResponseObject, error) {
-	u, err := s.family.SetWeeklyReport(ctx, req.TelegramId, req.Body.WeeklyReport)
+	head, err := s.head(ctx)
+	if err != nil {
+		return nil, err
+	}
+	u, err := s.family.SetWeeklyReport(ctx, head, req.TelegramId, req.Body.WeeklyReport)
 	if err != nil {
 		return nil, err
 	}
@@ -22,7 +30,11 @@ func (s *Server) UpdateUser(ctx context.Context, req UpdateUserRequestObject) (U
 }
 
 func (s *Server) ListInvites(ctx context.Context, _ ListInvitesRequestObject) (ListInvitesResponseObject, error) {
-	invites, err := s.family.ListInvites(ctx)
+	head, err := s.head(ctx)
+	if err != nil {
+		return nil, err
+	}
+	invites, err := s.family.ListInvites(ctx, head.FamilyID)
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +54,11 @@ func (s *Server) ListInvites(ctx context.Context, _ ListInvitesRequestObject) (L
 }
 
 func (s *Server) CreateInvite(ctx context.Context, _ CreateInviteRequestObject) (CreateInviteResponseObject, error) {
-	inv, err := s.family.CreateInvite(ctx)
+	head, err := s.head(ctx)
+	if err != nil {
+		return nil, err
+	}
+	inv, err := s.family.CreateInvite(ctx, head)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +72,11 @@ func (s *Server) CreateInvite(ctx context.Context, _ CreateInviteRequestObject) 
 }
 
 func (s *Server) RevokeInvite(ctx context.Context, req RevokeInviteRequestObject) (RevokeInviteResponseObject, error) {
-	if err := s.family.RevokeInvite(ctx, req.Id); err != nil {
+	head, err := s.head(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.family.RevokeInvite(ctx, head.FamilyID, req.Id); err != nil {
 		return nil, err
 	}
 	return RevokeInvite204Response{}, nil

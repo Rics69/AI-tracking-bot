@@ -24,19 +24,26 @@ const (
 
 // Caller is the Telegram user the agent acts for.
 type Caller struct {
-	UserID int64 // Telegram user ID: the only source of the expense owner
-	Name   string
+	UserID   int64 // Telegram user ID: the only source of the expense owner
+	Name     string
+	Location *time.Location // the user's timezone; nil means Config.Location
 }
 
-// Clock tells the agent what "today" is in the family timezone.
+// Clock tells the agent what "today" is in a timezone.
 type Clock interface {
-	Today() time.Time
+	TodayIn(loc *time.Location) time.Time
+}
+
+// UsageRecorder accounts what a reply cost: the bot keeps per-user daily limits.
+type UsageRecorder interface {
+	RecordUsage(ctx context.Context, userID int64, day time.Time, u llm.Usage, failed bool)
 }
 
 // Config tunes the agent.
 type Config struct {
-	Location *time.Location
+	Location *time.Location // default timezone of users
 	MaxSteps int
+	Usage    UsageRecorder // optional
 }
 
 // Agent is the expense assistant.
@@ -47,6 +54,7 @@ type Agent struct {
 	history  HistoryStore
 	loc      *time.Location
 	maxSteps int
+	usage    UsageRecorder
 	log      *slog.Logger
 }
 
@@ -57,7 +65,7 @@ func New(client llm.Client, expenses Expenses, clock Clock, history HistoryStore
 	}
 	return &Agent{
 		llm: client, expenses: expenses, clock: clock, history: history,
-		loc: cfg.Location, maxSteps: cfg.MaxSteps, log: log,
+		loc: cfg.Location, maxSteps: cfg.MaxSteps, usage: cfg.Usage, log: log,
 	}
 }
 
@@ -73,9 +81,14 @@ func (a *Agent) Reply(ctx context.Context, caller Caller, text string) (string, 
 	start := time.Now()
 	userMsg := llm.Message{Role: llm.RoleUser, Content: text}
 
-	today := a.clock.Today()
+	loc := caller.Location
+	if loc == nil {
+		loc = a.loc
+	}
+	today := a.clock.TodayIn(loc)
+	t := turn{userID: caller.UserID, today: today}
 	tools := toolDefs(today)
-	messages := []llm.Message{{Role: llm.RoleSystem, Content: systemPrompt(today, a.loc, caller.Name)}}
+	messages := []llm.Message{{Role: llm.RoleSystem, Content: systemPrompt(today, loc, caller.Name)}}
 	// Without history the agent still works, only follow-ups lose context:
 	// a storage hiccup must not cost the user their reply.
 	history, err := a.history.Messages(ctx, caller.UserID)
@@ -87,6 +100,12 @@ func (a *Agent) Reply(ctx context.Context, caller Caller, text string) (string, 
 	turn := []llm.Message{userMsg}
 
 	var usage llm.Usage
+	account := func(failed bool) {
+		if a.usage != nil {
+			// The request may have timed out; the accounting must still be saved.
+			a.usage.RecordUsage(context.WithoutCancel(ctx), caller.UserID, today, usage, failed)
+		}
+	}
 	for step := 0; step < a.maxSteps; step++ {
 		resp, err := a.llm.Chat(ctx, llm.Request{
 			Messages:  messages,
@@ -94,9 +113,11 @@ func (a *Agent) Reply(ctx context.Context, caller Caller, text string) (string, 
 			SessionID: fmt.Sprintf("tg-%d", caller.UserID),
 		})
 		if errors.Is(err, llm.ErrBlocked) {
+			account(false)
 			return replyBlocked, nil
 		}
 		if err != nil {
+			account(true)
 			return "", fmt.Errorf("llm: %w", err)
 		}
 		addUsage(&usage, resp.Usage)
@@ -113,14 +134,16 @@ func (a *Agent) Reply(ctx context.Context, caller Caller, text string) (string, 
 				"user_id", caller.UserID, "steps", step+1, "duration", time.Since(start).Round(time.Millisecond),
 				"prompt_tokens", usage.PromptTokens, "cached_tokens", usage.CachedTokens,
 				"completion_tokens", usage.CompletionTokens)
+			account(false)
 			if strings.TrimSpace(msg.Content) == "" {
 				return replyNoAnswer, nil
 			}
 			return msg.Content, nil
 		}
 
-		result, err := a.runTool(ctx, caller.UserID, msg.ToolCall)
+		result, err := a.runTool(ctx, t, msg.ToolCall)
 		if err != nil {
+			account(true)
 			return "", fmt.Errorf("tool %s: %w", msg.ToolCall.Name, err)
 		}
 		a.log.InfoContext(ctx, "tool call",
@@ -135,6 +158,7 @@ func (a *Agent) Reply(ctx context.Context, caller Caller, text string) (string, 
 	// The model kept calling tools without answering. The unfinished turn is
 	// not saved so it does not confuse the next request.
 	a.log.WarnContext(ctx, "agent gave up", "user_id", caller.UserID, "steps", a.maxSteps)
+	account(false)
 	return replyGaveUp, nil
 }
 

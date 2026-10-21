@@ -13,8 +13,10 @@ down: ## Остановить контейнеры
 logs: ## Логи всех сервисов
 	docker compose logs -f
 
-seed: ## Демо-данные для панели: 3 члена семьи и месяц трат (можно запускать повторно)
-	docker compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' < scripts/demo-seed.sql
+seed: ## Демо-данные для панели: 3 участника в семье ADMIN_TELEGRAM_ID и месяц трат (можно запускать повторно)
+	@set -a && . ./.env && set +a && if [ -z "$$ADMIN_TELEGRAM_ID" ]; then echo "Укажите ADMIN_TELEGRAM_ID в .env"; exit 1; fi && \
+	docker compose exec -T -e ADMIN="$$ADMIN_TELEGRAM_ID" postgres \
+		sh -c 'psql -v ON_ERROR_STOP=1 -v admin="$$ADMIN" -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' < scripts/demo-seed.sql
 
 gen: ## Сгенерировать код из api/openapi.yaml (Go и TypeScript)
 	cd backend && go generate ./...

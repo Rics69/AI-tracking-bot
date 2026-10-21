@@ -25,8 +25,7 @@ import { formatDateTime } from "@/lib/format";
 
 export function MembersCard({ users }: { users?: User[] }) {
   const [removing, setRemoving] = useState<User | undefined>();
-  const current = users?.filter((u) => !u.removed_at) ?? [];
-  const former = users?.filter((u) => u.removed_at) ?? [];
+  const current = users ?? [];
 
   return (
     <Card>
@@ -73,19 +72,6 @@ export function MembersCard({ users }: { users?: User[] }) {
               </li>
             ))}
           </ul>
-        )}
-
-        {former.length > 0 && (
-          <div className="flex flex-col gap-2">
-            <p className="text-sm font-medium text-muted-foreground">Бывшие участники</p>
-            <ul className="flex flex-col gap-1 text-sm text-muted-foreground">
-              {former.map((u) => (
-                <li key={u.telegram_id}>
-                  {u.first_name} — удалён {formatDateTime(u.removed_at!)}, траты сохранены
-                </li>
-              ))}
-            </ul>
-          </div>
         )}
       </CardContent>
 
@@ -160,8 +146,8 @@ function RemoveMemberDialog({ member, onClose }: { member?: User; onClose: () =>
         <AlertDialogHeader>
           <AlertDialogTitle>Удалить {member?.first_name} из семьи?</AlertDialogTitle>
           <AlertDialogDescription>
-            Бот перестанет отвечать этому человеку. Его траты останутся в истории. Вернуть можно
-            новым приглашением.
+            Человек продолжит вести расходы сам и заберёт свои траты — вы перестанете их видеть.
+            Вернуть можно новым приглашением.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

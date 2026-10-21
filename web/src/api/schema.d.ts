@@ -97,8 +97,7 @@ export interface paths {
     };
     /**
      * Члены семьи
-     * @description Все, кто состоял в семье: сначала текущие (глава первым), затем удалённые —
-     *     их траты остаются в истории.
+     * @description Текущие члены семьи, глава первым.
      */
     get: operations["listUsers"];
     put?: never;
@@ -121,8 +120,8 @@ export interface paths {
     post?: never;
     /**
      * Удалить из семьи
-     * @description Бот перестаёт отвечать человеку, его траты остаются. Вернуть можно новым приглашением.
-     *     Главу семьи удалить нельзя.
+     * @description Человек продолжает вести расходы сам и забирает свои траты: глава перестаёт их видеть.
+     *     Вернуть можно новым приглашением. Главу семьи удалить нельзя.
      */
     delete: operations["removeUser"];
     options?: never;
@@ -297,11 +296,6 @@ export interface components {
       is_head: boolean;
       /** @description Присылать итоги недели в бот по понедельникам */
       weekly_report: boolean;
-      /**
-       * Format: date-time
-       * @description Когда удалён из семьи; нет — состоит в семье
-       */
-      removed_at?: string;
       /** Format: date-time */
       created_at: string;
     };
@@ -360,7 +354,13 @@ export interface components {
     ErrorDetail: {
       /** @enum {string} */
       code:
-        "bad_request" | "validation_error" | "not_found" | "unknown_user" | "conflict" | "internal";
+        | "bad_request"
+        | "validation_error"
+        | "not_found"
+        | "unknown_user"
+        | "forbidden"
+        | "conflict"
+        | "internal";
       message: string;
       /** @description Поле с ошибкой валидации */
       field?: string;

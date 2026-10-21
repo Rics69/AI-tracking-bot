@@ -60,6 +60,11 @@ func (r *ExpenseRepository) Get(ctx context.Context, s expense.Scope, id int64) 
 func (r *ExpenseRepository) Update(ctx context.Context, s expense.Scope, e expense.Expense) (expense.Expense, error) {
 	w := scopeWhere(s)
 	w.add("id = ?", e.ID)
+	if s.FamilyID() != 0 {
+		// The new owner must be in the family too: the head cannot hand an
+		// expense to a stranger. $1 is the family ID added by scopeWhere.
+		w.add("EXISTS (SELECT 1 FROM users WHERE family_id = $1 AND telegram_id = ?)", e.UserID)
+	}
 	w.args = append(w.args, e.UserID, e.Amount, e.Category, e.SpentAt, e.Comment)
 	n := len(w.args)
 	query := fmt.Sprintf(`
@@ -212,7 +217,9 @@ func (w *where) sql() string {
 // which no Telegram user has, so it matches nothing.
 func scopeWhere(s expense.Scope) *where {
 	w := &where{}
-	if !s.All() {
+	if s.FamilyID() != 0 {
+		w.add("user_id IN (SELECT telegram_id FROM users WHERE family_id = ?)", s.FamilyID())
+	} else {
 		w.add("user_id = ?", s.UserID())
 	}
 	return w

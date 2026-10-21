@@ -1,229 +1,256 @@
-package family
+package family_test
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/memory"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
 
-type fakeUsers struct{ m map[int64]user.User }
+var (
+	anna  = user.User{TelegramID: 1, FirstName: "Анна", Username: "anna"}
+	boris = user.User{TelegramID: 2, FirstName: "Борис"}
+	vera  = user.User{TelegramID: 3, FirstName: "Вера"}
+)
 
-func (f *fakeUsers) Upsert(_ context.Context, u user.User) (user.User, error) {
-	old := f.m[u.TelegramID]
-	old.TelegramID, old.FirstName, old.Username = u.TelegramID, u.FirstName, u.Username
-	f.m[u.TelegramID] = old
-	return old, nil
-}
-
-func (f *fakeUsers) List(context.Context) ([]user.User, error) { return nil, nil }
-
-func (f *fakeUsers) Get(_ context.Context, id int64) (user.User, error) {
-	u, ok := f.m[id]
-	if !ok {
-		return user.User{}, user.ErrNotFound
-	}
-	return u, nil
-}
-
-func (f *fakeUsers) Add(_ context.Context, u user.User) (user.User, error) {
-	u.IsHead = u.IsHead || f.m[u.TelegramID].IsHead
-	u.RemovedAt = nil
-	f.m[u.TelegramID] = u
-	return u, nil
-}
-
-func (f *fakeUsers) Remove(_ context.Context, id int64) error {
-	u, ok := f.m[id]
-	if !ok {
-		return user.ErrNotFound
-	}
-	now := time.Now()
-	u.RemovedAt = &now
-	f.m[id] = u
-	return nil
-}
-
-func (f *fakeUsers) SetWeeklyReport(_ context.Context, id int64, on bool) (user.User, error) {
-	u, ok := f.m[id]
-	if !ok {
-		return user.User{}, user.ErrNotFound
-	}
-	u.WeeklyReport = on
-	f.m[id] = u
-	return u, nil
-}
-
-func (f *fakeUsers) CountActive(context.Context) (int, error) {
-	n := 0
-	for _, u := range f.m {
-		if u.Active() {
-			n++
-		}
-	}
-	return n, nil
-}
-
-type fakeInvites struct {
-	users  *fakeUsers
-	hashes [][]byte
-	used   map[int]bool
-}
-
-func (f *fakeInvites) Create(_ context.Context, h []byte, exp time.Time) (Invite, error) {
-	f.hashes = append(f.hashes, h)
-	return Invite{ID: int64(len(f.hashes)), ExpiresAt: exp}, nil
-}
-
-func (f *fakeInvites) List(context.Context, time.Time) ([]Invite, error) { return nil, nil }
-func (f *fakeInvites) Revoke(context.Context, int64) error               { return nil }
-
-func (f *fakeInvites) Redeem(ctx context.Context, h []byte, u user.User) (user.User, error) {
-	for i, known := range f.hashes {
-		if bytes.Equal(known, h) && !f.used[i] {
-			f.used[i] = true
-			return f.users.Add(ctx, u)
-		}
-	}
-	return user.User{}, ErrInviteInvalid
-}
-
-type fakeSettings map[string]string
-
-func (f fakeSettings) Get(_ context.Context, k string) (string, bool, error) {
-	v, ok := f[k]
-	return v, ok, nil
-}
-
-func (f fakeSettings) Set(_ context.Context, k, v string) error { f[k] = v; return nil }
-
-func newTestService(bootstrap ...int64) (*Service, *fakeUsers, fakeSettings) {
-	users := &fakeUsers{m: map[int64]user.User{}}
-	settings := fakeSettings{}
-	return NewService(users, &fakeInvites{users: users, used: map[int]bool{}}, settings, bootstrap), users, settings
-}
-
-var anna = user.User{TelegramID: 1, FirstName: "Анна", Username: "anna"}
-
-func TestClosedFamilyRefusesStrangers(t *testing.T) {
-	s, _, _ := newTestService(99)
-	if _, err := s.Admit(context.Background(), anna); !errors.Is(err, ErrNotMember) {
-		t.Fatalf("err = %v, want ErrNotMember", err)
-	}
-}
-
-func TestBootstrapMakesHeadsAndKeepsNames(t *testing.T) {
-	s, users, _ := newTestService(1)
-	ctx := context.Background()
-	if err := s.Bootstrap(ctx, []int64{1}); err != nil {
+func newTestService(t *testing.T) (*family.Service, *memory.Users) {
+	t.Helper()
+	users := memory.NewUsers()
+	settings := memory.NewSettings()
+	if err := settings.Set(context.Background(), family.SettingBotUsername, "SavepointBot"); err != nil {
 		t.Fatal(err)
 	}
-	m, err := s.Admit(ctx, anna)
+	return family.NewService(users, users, settings), users
+}
+
+func admit(t *testing.T, s *family.Service, u user.User) user.User {
+	t.Helper()
+	m, err := s.Admit(context.Background(), u)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !m.IsHead || m.FirstName != "Анна" {
-		t.Errorf("member = %+v, want the head with a refreshed name", m)
-	}
-	// A restart must not overwrite the real name with the placeholder.
-	if err := s.Bootstrap(ctx, []int64{1}); err != nil {
-		t.Fatal(err)
-	}
-	if users.m[1].FirstName != "Анна" {
-		t.Errorf("name after re-bootstrap = %q", users.m[1].FirstName)
-	}
+	return m
 }
 
-func TestOpenFamilyFirstWriterIsHead(t *testing.T) {
-	s, _, _ := newTestService()
-	ctx := context.Background()
-	first, err := s.Admit(ctx, anna)
-	if err != nil || !first.IsHead {
-		t.Fatalf("first = %+v, err = %v", first, err)
-	}
-	second, err := s.Admit(ctx, user.User{TelegramID: 2, FirstName: "Борис"})
-	if err != nil || second.IsHead {
-		t.Fatalf("second = %+v, err = %v", second, err)
-	}
-}
-
-func TestRemovedMemberStaysOutEvenInOpenFamily(t *testing.T) {
-	s, _, _ := newTestService()
-	ctx := context.Background()
-	_, _ = s.Admit(ctx, anna) // head
-	boris := user.User{TelegramID: 2, FirstName: "Борис"}
-	_, _ = s.Admit(ctx, boris)
-	if err := s.Remove(ctx, 2); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.Admit(ctx, boris); !errors.Is(err, ErrNotMember) {
-		t.Errorf("removed member admitted: err = %v", err)
-	}
-}
-
-func TestHeadCannotBeRemoved(t *testing.T) {
-	s, _, _ := newTestService(1)
-	_ = s.Bootstrap(context.Background(), []int64{1})
-	if err := s.Remove(context.Background(), 1); !errors.Is(err, ErrHeadRemoval) {
-		t.Errorf("err = %v, want ErrHeadRemoval", err)
-	}
-	if err := s.Remove(context.Background(), 42); !errors.Is(err, user.ErrNotFound) {
-		t.Errorf("unknown user: err = %v", err)
-	}
-}
-
-func TestInviteLifecycle(t *testing.T) {
-	s, _, settings := newTestService(99)
-	ctx := context.Background()
-
-	if _, err := s.CreateInvite(ctx); !errors.Is(err, ErrBotUnknown) {
-		t.Fatalf("without bot username: err = %v", err)
-	}
-	settings[SettingBotUsername] = "FamilyBot"
-	inv, err := s.CreateInvite(ctx)
+// invite returns the code of a new invite to head's family.
+func invite(t *testing.T, s *family.Service, head user.User) string {
+	t.Helper()
+	inv, err := s.CreateInvite(context.Background(), head)
 	if err != nil {
 		t.Fatal(err)
 	}
-	code, ok := strings.CutPrefix(inv.Link, "https://t.me/FamilyBot?start=")
+	code, ok := strings.CutPrefix(inv.Link, "https://t.me/SavepointBot?start=")
 	if !ok || len(code) < 20 || len(code) > 64 {
 		t.Fatalf("link = %q", inv.Link)
 	}
-	if time.Until(inv.ExpiresAt) < InviteTTL-time.Minute {
-		t.Errorf("expires at %s", inv.ExpiresAt)
-	}
+	return code
+}
 
-	m, joined, err := s.Join(ctx, code, anna)
-	if err != nil || !joined || m.TelegramID != anna.TelegramID {
-		t.Fatalf("join: %+v %v %v", m, joined, err)
+func TestEveryoneStartsInAFamilyOfTheirOwn(t *testing.T) {
+	s, _ := newTestService(t)
+	a, b := admit(t, s, anna), admit(t, s, boris)
+	if !a.IsHead || !b.IsHead || a.FamilyID == b.FamilyID {
+		t.Errorf("anna = %+v, boris = %+v: want two separate one-person families", a, b)
 	}
-	if _, err := s.Admit(ctx, anna); err != nil {
-		t.Errorf("new member not admitted: %v", err)
+	if a.Consented() {
+		t.Error("a new user must accept the data policy first")
 	}
-	// Opening the link again as a member does nothing.
-	if _, joined, err := s.Join(ctx, code, anna); err != nil || joined {
-		t.Errorf("second join: joined=%v err=%v", joined, err)
+	again := admit(t, s, user.User{TelegramID: 1, FirstName: "Аня"})
+	if again.FamilyID != a.FamilyID || again.FirstName != "Аня" {
+		t.Errorf("second message: %+v, want the same family and a refreshed name", again)
+	}
+}
+
+func TestJoinByInvite(t *testing.T) {
+	s, _ := newTestService(t)
+	ctx := context.Background()
+	head := admit(t, s, anna)
+	admit(t, s, boris)
+	code := invite(t, s, head)
+
+	inviter, err := s.Invitation(ctx, code)
+	if err != nil || inviter.TelegramID != anna.TelegramID {
+		t.Fatalf("invitation: %+v %v", inviter, err)
+	}
+	m, err := s.Join(ctx, code, boris.TelegramID)
+	if err != nil || m.FamilyID != head.FamilyID || m.IsHead {
+		t.Fatalf("join: %+v %v", m, err)
+	}
+	if members, _ := s.Members(ctx, head.FamilyID); len(members) != 2 || members[0].TelegramID != anna.TelegramID {
+		t.Errorf("members = %+v, want Anna (head) first, then Boris", members)
 	}
 	// The code is single-use.
-	if _, _, err := s.Join(ctx, code, user.User{TelegramID: 2}); !errors.Is(err, ErrInviteInvalid) {
+	admit(t, s, vera)
+	if _, err := s.Join(ctx, code, vera.TelegramID); !errors.Is(err, family.ErrInviteInvalid) {
 		t.Errorf("reused code: err = %v", err)
 	}
-	if _, _, err := s.Join(ctx, "made-up", user.User{TelegramID: 3}); !errors.Is(err, ErrInviteInvalid) {
+	if _, err := s.Invitation(ctx, "made-up"); !errors.Is(err, family.ErrInviteInvalid) {
 		t.Errorf("unknown code: err = %v", err)
+	}
+	// A member opening a new link to their own family stays put; the link stays unused.
+	again := invite(t, s, head)
+	if _, err := s.Join(ctx, again, boris.TelegramID); !errors.Is(err, family.ErrAlreadyMember) {
+		t.Errorf("member joins own family: err = %v", err)
+	}
+	if _, err := s.Join(ctx, again, vera.TelegramID); err != nil {
+		t.Errorf("the unused link must still work: %v", err)
+	}
+}
+
+func TestHeadWithMembersCannotJoinAnotherFamily(t *testing.T) {
+	s, _ := newTestService(t)
+	ctx := context.Background()
+	a, v := admit(t, s, anna), admit(t, s, vera)
+	admit(t, s, boris)
+	if _, err := s.Join(ctx, invite(t, s, a), boris.TelegramID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Join(ctx, invite(t, s, v), anna.TelegramID); !errors.Is(err, family.ErrHeadHasMembers) {
+		t.Errorf("err = %v, want family.ErrHeadHasMembers", err)
+	}
+	// A member may switch families.
+	if m, err := s.Join(ctx, invite(t, s, v), boris.TelegramID); err != nil || m.FamilyID != v.FamilyID {
+		t.Errorf("member switches: %+v %v", m, err)
+	}
+}
+
+func TestLeaveAndRemove(t *testing.T) {
+	s, _ := newTestService(t)
+	ctx := context.Background()
+	head := admit(t, s, anna)
+	admit(t, s, boris)
+	admit(t, s, vera)
+	if _, err := s.Leave(ctx, anna.TelegramID); !errors.Is(err, family.ErrAlone) {
+		t.Errorf("alone: err = %v", err)
+	}
+	for _, u := range []user.User{boris, vera} {
+		if _, err := s.Join(ctx, invite(t, s, head), u.TelegramID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.Leave(ctx, anna.TelegramID); !errors.Is(err, family.ErrHeadHasMembers) {
+		t.Errorf("head leaves: err = %v", err)
+	}
+
+	b, err := s.Leave(ctx, boris.TelegramID)
+	if err != nil || !b.IsHead || b.FamilyID == head.FamilyID {
+		t.Errorf("Boris leaves: %+v %v, want a family of his own", b, err)
+	}
+	member, _ := s.Get(ctx, vera.TelegramID)
+	if err := s.Remove(ctx, member, anna.TelegramID); !errors.Is(err, family.ErrNotHead) {
+		t.Errorf("member removes the head: err = %v", err)
+	}
+	if err := s.Remove(ctx, head, anna.TelegramID); !errors.Is(err, family.ErrHeadRemoval) {
+		t.Errorf("head removes self: err = %v", err)
+	}
+	if err := s.Remove(ctx, head, boris.TelegramID); !errors.Is(err, family.ErrNotMember) {
+		t.Errorf("head removes a stranger: err = %v", err)
+	}
+	if err := s.Remove(ctx, head, vera.TelegramID); err != nil {
+		t.Fatal(err)
+	}
+	if members, _ := s.Members(ctx, head.FamilyID); len(members) != 1 {
+		t.Errorf("members after removal = %+v", members)
+	}
+}
+
+func TestDeleteAccountDissolvesTheFamily(t *testing.T) {
+	s, users := newTestService(t)
+	ctx := context.Background()
+	head := admit(t, s, anna)
+	admit(t, s, boris)
+	if _, err := s.Join(ctx, invite(t, s, head), boris.TelegramID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteAccount(ctx, anna.TelegramID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := users.Get(ctx, anna.TelegramID); !errors.Is(err, user.ErrNotFound) {
+		t.Errorf("deleted user still there: %v", err)
+	}
+	b, _ := users.Get(ctx, boris.TelegramID)
+	if !b.IsHead || b.FamilyID == head.FamilyID {
+		t.Errorf("Boris after the head left: %+v, want a family of his own", b)
+	}
+}
+
+func TestOnlyTheHeadManagesTheFamily(t *testing.T) {
+	s, _ := newTestService(t)
+	ctx := context.Background()
+	head := admit(t, s, anna)
+	admit(t, s, boris)
+	stranger := admit(t, s, vera)
+	if _, err := s.Join(ctx, invite(t, s, head), boris.TelegramID); err != nil {
+		t.Fatal(err)
+	}
+	member, _ := s.Get(ctx, boris.TelegramID)
+	if _, err := s.CreateInvite(ctx, member); !errors.Is(err, family.ErrNotHead) {
+		t.Errorf("member invites: err = %v", err)
+	}
+	if _, err := s.SetWeeklyReport(ctx, member, anna.TelegramID, false); !errors.Is(err, family.ErrNotHead) {
+		t.Errorf("member changes the head's settings: err = %v", err)
+	}
+	if u, err := s.SetWeeklyReport(ctx, member, boris.TelegramID, false); err != nil || u.WeeklyReport {
+		t.Errorf("own setting: %+v %v", u, err)
+	}
+	if _, err := s.SetWeeklyReport(ctx, head, boris.TelegramID, true); err != nil {
+		t.Errorf("head changes a member's setting: %v", err)
+	}
+	if _, err := s.SetWeeklyReport(ctx, head, stranger.TelegramID, false); !errors.Is(err, family.ErrNotMember) {
+		t.Errorf("head changes a stranger's setting: err = %v", err)
+	}
+	invites, _ := s.ListInvites(ctx, head.FamilyID)
+	if err := s.RevokeInvite(ctx, stranger.FamilyID, invites[0].ID); !errors.Is(err, family.ErrInviteNotFound) {
+		t.Errorf("revoke another family's invite: err = %v", err)
+	}
+}
+
+func TestInviteNeedsBotUsername(t *testing.T) {
+	users := memory.NewUsers()
+	s := family.NewService(users, users, memory.NewSettings())
+	head := admit(t, s, anna)
+	if _, err := s.CreateInvite(context.Background(), head); !errors.Is(err, family.ErrBotUnknown) {
+		t.Errorf("err = %v, want family.ErrBotUnknown", err)
+	}
+}
+
+func TestBlockedUserIsRefused(t *testing.T) {
+	s, users := newTestService(t)
+	admit(t, s, anna)
+	users.Block(anna.TelegramID)
+	if _, err := s.Admit(context.Background(), anna); !errors.Is(err, family.ErrBlocked) {
+		t.Errorf("err = %v, want family.ErrBlocked", err)
+	}
+}
+
+func TestTimezone(t *testing.T) {
+	s, _ := newTestService(t)
+	admit(t, s, anna)
+	ctx := context.Background()
+	u, err := s.SetTimezone(ctx, anna.TelegramID, "Asia/Novosibirsk")
+	if err != nil || u.Location(time.UTC).String() != "Asia/Novosibirsk" {
+		t.Errorf("set: %+v %v", u, err)
+	}
+	for _, bad := range []string{"", "Local", "Mars/Olympus"} {
+		if _, err := s.SetTimezone(ctx, anna.TelegramID, bad); !errors.Is(err, family.ErrBadTimezone) {
+			t.Errorf("%q: err = %v", bad, err)
+		}
 	}
 }
 
 func TestInviteStatus(t *testing.T) {
 	now := time.Now()
 	past := now.Add(-time.Hour)
-	for want, inv := range map[InviteStatus]Invite{
-		InviteActive:  {ExpiresAt: now.Add(time.Hour)},
-		InviteExpired: {ExpiresAt: past},
-		InviteUsed:    {ExpiresAt: now.Add(time.Hour), UsedAt: &past},
-		InviteRevoked: {ExpiresAt: now.Add(time.Hour), RevokedAt: &past},
+	for want, inv := range map[family.InviteStatus]family.Invite{
+		family.InviteActive:  {ExpiresAt: now.Add(time.Hour)},
+		family.InviteExpired: {ExpiresAt: past},
+		family.InviteUsed:    {ExpiresAt: now.Add(time.Hour), UsedAt: &past},
+		family.InviteRevoked: {ExpiresAt: now.Add(time.Hour), RevokedAt: &past},
 	} {
 		if got := inv.Status(now); got != want {
 			t.Errorf("status = %s, want %s", got, want)

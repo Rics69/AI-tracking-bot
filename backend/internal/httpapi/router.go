@@ -14,6 +14,8 @@ const basePath = "/api/v1"
 type Deps struct {
 	Expenses ExpenseService
 	Family   FamilyService
+	// Viewer is whose family the panel shows.
+	Viewer Viewer
 	// Health reports whether the service can serve requests (e.g. the database is reachable).
 	Health func(ctx context.Context) error
 	Log    *slog.Logger
@@ -24,7 +26,7 @@ type Deps struct {
 func NewHandler(d Deps) http.Handler {
 	mux := http.NewServeMux()
 
-	strict := NewStrictHandlerWithOptions(NewServer(d.Expenses, d.Family), nil, StrictHTTPServerOptions{
+	strict := NewStrictHandlerWithOptions(NewServer(d.Expenses, d.Family, d.Viewer), nil, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) { writeBadRequest(w, err) },
 		ResponseErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 			writeError(d.Log, w, r, err)

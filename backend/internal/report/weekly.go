@@ -1,4 +1,4 @@
-// Package report sends every family member a summary of the past week.
+// Package report sends every user a summary of their past week.
 //
 // The text is built by code, not by the LLM: numbers in a report must be
 // exact, and it costs no tokens.
@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	// SendHour is when Monday reports go out, in the family timezone.
+	// SendHour is when Monday reports go out, in each user's timezone.
 	SendHour     = 10
 	tickInterval = 5 * time.Minute
 	topExpenses  = 3
@@ -31,9 +31,9 @@ type Expenses interface {
 	Summary(ctx context.Context, s expense.Scope, f expense.Filter) (expense.Summary, error)
 }
 
-// Members lists family members.
+// Members lists everyone the bot knows.
 type Members interface {
-	List(ctx context.Context) ([]user.User, error)
+	All(ctx context.Context) ([]user.User, error)
 }
 
 // Runs records handled reports so each is sent once.
@@ -56,7 +56,7 @@ type Weekly struct {
 	members  Members
 	runs     Runs
 	send     SendFunc
-	loc      *time.Location
+	loc      *time.Location // timezone of users who have not chosen one
 	now      func() time.Time
 	log      *slog.Logger
 }
@@ -66,8 +66,8 @@ func NewWeekly(expenses Expenses, members Members, runs Runs, send SendFunc, loc
 }
 
 // Run checks every few minutes whether reports are due, until ctx is cancelled.
-// Reports for the past week go out from Monday 10:00; if the bot was down then,
-// they are sent when it is back, up to the end of the week.
+// Reports for the past week go out from Monday 10:00 in the user's timezone;
+// if the bot was down then, they are sent when it is back, up to the end of the week.
 func (w *Weekly) Run(ctx context.Context) {
 	t := time.NewTicker(tickInterval)
 	defer t.Stop()
@@ -83,17 +83,18 @@ func (w *Weekly) Run(ctx context.Context) {
 
 // Tick sends all reports that are due and not yet handled.
 func (w *Weekly) Tick(ctx context.Context) {
-	weekStart, due := reportWeek(w.now().In(w.loc))
-	if !due {
-		return
-	}
-	members, err := w.members.List(ctx)
+	members, err := w.members.All(ctx)
 	if err != nil {
-		w.log.ErrorContext(ctx, "weekly report: list members", "err", err)
+		w.log.ErrorContext(ctx, "weekly report: list users", "err", err)
 		return
 	}
+	now := w.now()
 	for _, m := range members {
-		if !m.Active() || !m.WeeklyReport {
+		if !m.WeeklyReport || !m.Consented() || m.Blocked() {
+			continue
+		}
+		weekStart, due := reportWeek(now.In(m.Location(w.loc)))
+		if !due {
 			continue
 		}
 		if err := w.sendOne(ctx, m, weekStart); err != nil {
@@ -186,7 +187,7 @@ func render(weekStart time.Time, cur, prev expense.Summary, top []expense.Expens
 			fmt.Fprintf(&b, "\n• %s — %s, %s", what, Money(e.Amount), dayMonth(e.SpentAt))
 		}
 	}
-	b.WriteString("\n\nОтключить итоги может глава семьи в веб-панели.")
+	b.WriteString("\n\nОтключить итоги — /settings")
 	return b.String()
 }
 

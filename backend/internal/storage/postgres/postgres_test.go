@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"io/fs"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/pressly/goose/v3"
 	"github.com/shopspring/decimal"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
@@ -59,16 +62,41 @@ func TestMain(m *testing.M) {
 
 func setup(t *testing.T) (*ExpenseRepository, *UserRepository) {
 	t.Helper()
-	if _, err := testPool.Exec(context.Background(), `TRUNCATE expenses, invites, settings, chat_turns, report_runs, users RESTART IDENTITY`); err != nil {
-		t.Fatal(err)
-	}
+	truncate(t)
 	users := NewUserRepository(testPool)
+	// Anna and Boris start in families of their own.
 	for _, u := range []user.User{{TelegramID: 1, FirstName: "Анна"}, {TelegramID: 2, FirstName: "Борис"}} {
-		if _, err := users.Upsert(context.Background(), u); err != nil {
+		if _, err := users.Admit(context.Background(), u); err != nil {
 			t.Fatal(err)
 		}
 	}
 	return NewExpenseRepository(testPool), users
+}
+
+func truncate(t *testing.T) {
+	t.Helper()
+	if _, err := testPool.Exec(context.Background(), `
+		TRUNCATE expenses, invites, settings, chat_turns, report_runs, llm_usage, users, families RESTART IDENTITY`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// joinFamily moves member into head's family through an invite.
+func joinFamily(t *testing.T, head, member int64) {
+	t.Helper()
+	ctx := context.Background()
+	h, err := NewUserRepository(testPool).Get(ctx, head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invites := NewInviteRepository(testPool)
+	hash := []byte(time.Now().String())
+	if _, err := invites.Create(ctx, h.FamilyID, head, hash, time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := invites.Redeem(ctx, hash, member); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func day(d int) time.Time { return time.Date(2026, 10, d, 0, 0, 0, 0, time.UTC) }
@@ -99,7 +127,7 @@ func TestCreateAndGetRoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	created := mustCreate(t, repo, 1, "350.50", expense.CategoryFood, 15, "кофе")
-	got, err := repo.Get(ctx, expense.AllUsers(), created.ID)
+	got, err := repo.Get(ctx, expense.OwnedBy(1), created.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,15 +187,56 @@ func TestScopeIsolation(t *testing.T) {
 		t.Errorf("zero scope sees %d expenses", page.Total)
 	}
 	// Anna's expense is untouched.
-	got, _ := repo.Get(ctx, expense.AllUsers(), annas.ID)
+	got, _ := repo.Get(ctx, expense.OwnedBy(1), annas.ID)
 	if !got.Amount.Equal(amount("100")) {
 		t.Errorf("Anna's amount changed to %s", got.Amount)
 	}
 }
 
-func TestListFiltersAndTotals(t *testing.T) {
-	repo, _ := setup(t)
+func TestFamilyScope(t *testing.T) {
+	repo, users := setup(t)
 	ctx := context.Background()
+	if _, err := users.Admit(ctx, user.User{TelegramID: 3, FirstName: "Вера"}); err != nil {
+		t.Fatal(err)
+	}
+	mustCreate(t, repo, 1, "100", expense.CategoryFood, 10, "")
+	boris := mustCreate(t, repo, 2, "200", expense.CategoryFood, 10, "")
+	veras := mustCreate(t, repo, 3, "300", expense.CategoryFood, 10, "")
+	joinFamily(t, 1, 2)
+	anna, _ := users.Get(ctx, 1)
+	family := expense.InFamily(anna.FamilyID)
+
+	page, err := repo.List(ctx, family, expense.Filter{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 2 || !page.Sum.Equal(amount("300")) {
+		t.Errorf("the head sees %+v, want Anna's and Boris's expenses", page.Items)
+	}
+	if _, err := repo.Get(ctx, family, veras.ID); !errors.Is(err, expense.ErrNotFound) {
+		t.Errorf("another family's expense: err = %v", err)
+	}
+	// The head cannot hand an expense to someone outside the family.
+	boris.UserID = 3
+	if _, err := repo.Update(ctx, family, boris); !errors.Is(err, expense.ErrNotFound) {
+		t.Errorf("hand over to a stranger: err = %v", err)
+	}
+	boris.UserID = 1
+	if moved, err := repo.Update(ctx, family, boris); err != nil || moved.UserID != 1 {
+		t.Errorf("hand over within the family: %+v, %v", moved, err)
+	}
+	// Family 0 is the zero scope: nothing.
+	if page, _ := repo.List(ctx, expense.InFamily(0), expense.Filter{Limit: 10}); page.Total != 0 {
+		t.Errorf("family 0 sees %d", page.Total)
+	}
+}
+
+func TestListFiltersAndTotals(t *testing.T) {
+	repo, users := setup(t)
+	ctx := context.Background()
+	joinFamily(t, 1, 2)
+	anna, _ := users.Get(ctx, 1)
+	family := expense.InFamily(anna.FamilyID)
 	coffee := mustCreate(t, repo, 1, "350", expense.CategoryFood, 14, "Кофе в зёрнах")
 	taxi := mustCreate(t, repo, 1, "1200", expense.CategoryTransport, 13, "такси")
 	lunch := mustCreate(t, repo, 2, "500.25", expense.CategoryFood, 15, "обед")
@@ -190,7 +259,7 @@ func TestListFiltersAndTotals(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.f.Limit = 10
-			page, err := repo.List(ctx, expense.AllUsers(), tt.f)
+			page, err := repo.List(ctx, family, tt.f)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -204,7 +273,7 @@ func TestListFiltersAndTotals(t *testing.T) {
 	}
 
 	t.Run("paging keeps totals of the whole selection", func(t *testing.T) {
-		page, err := repo.List(ctx, expense.AllUsers(), expense.Filter{Limit: 1, Offset: 1})
+		page, err := repo.List(ctx, family, expense.Filter{Limit: 1, Offset: 1})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -269,18 +338,45 @@ func TestSummary(t *testing.T) {
 	}
 }
 
-func TestUserUpsertRefreshesName(t *testing.T) {
+func TestAdmit(t *testing.T) {
 	_, users := setup(t)
 	ctx := context.Background()
-	if _, err := users.Upsert(ctx, user.User{TelegramID: 1, FirstName: "Аня", Username: "anya"}); err != nil {
-		t.Fatal(err)
+	anna, _ := users.Get(ctx, 1)
+	boris, _ := users.Get(ctx, 2)
+	if !anna.IsHead || !boris.IsHead || anna.FamilyID == boris.FamilyID || anna.LastSeenAt == nil {
+		t.Errorf("anna = %+v, boris = %+v: want separate families, each its own head", anna, boris)
 	}
-	list, err := users.List(ctx)
+	if anna.Consented() || !anna.WeeklyReport || anna.Timezone != "" {
+		t.Errorf("defaults of a new user: %+v", anna)
+	}
+	again, err := users.Admit(ctx, user.User{TelegramID: 1, FirstName: "Аня", Username: "anya"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list) != 2 || list[0].FirstName != "Аня" || list[0].Username != "anya" {
+	if again.FamilyID != anna.FamilyID || again.FirstName != "Аня" || again.Username != "anya" {
+		t.Errorf("second admit = %+v", again)
+	}
+	list, _ := users.All(ctx)
+	if len(list) != 2 {
 		t.Errorf("users = %+v", list)
+	}
+}
+
+func TestUserSettings(t *testing.T) {
+	_, users := setup(t)
+	ctx := context.Background()
+	at := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	if u, err := users.SetConsent(ctx, 1, at); err != nil || !u.ConsentedAt.Equal(at) {
+		t.Errorf("consent: %+v %v", u, err)
+	}
+	if u, err := users.SetTimezone(ctx, 1, "Asia/Omsk"); err != nil || u.Timezone != "Asia/Omsk" {
+		t.Errorf("timezone: %+v %v", u, err)
+	}
+	if u, _ := users.SetTimezone(ctx, 1, ""); u.Timezone != "" {
+		t.Errorf("reset timezone: %q", u.Timezone)
+	}
+	if _, err := users.SetConsent(ctx, 404, at); !errors.Is(err, user.ErrNotFound) {
+		t.Errorf("unknown user: err = %v", err)
 	}
 }
 
@@ -296,40 +392,56 @@ func equalIDs(a, b []int64) bool {
 	return true
 }
 
-func TestRemovedMemberKeepsExpensesAndStaysRemoved(t *testing.T) {
+func TestDetachTakesExpensesAlong(t *testing.T) {
 	repo, users := setup(t)
 	ctx := context.Background()
 	mustCreate(t, repo, 2, "500", expense.CategoryFood, 10, "обед")
+	joinFamily(t, 1, 2)
+	anna, _ := users.Get(ctx, 1)
+	if members, _ := users.Family(ctx, anna.FamilyID); len(members) != 2 || members[0].TelegramID != 1 {
+		t.Fatalf("family = %+v, want Anna (head) first", members)
+	}
+	if page, _ := repo.List(ctx, expense.InFamily(anna.FamilyID), expense.Filter{}); page.Total != 1 {
+		t.Fatalf("the head does not see Boris's expense")
+	}
 
-	if err := users.Remove(ctx, 2); err != nil {
-		t.Fatal(err)
+	boris, err := users.Detach(ctx, 2)
+	if err != nil || !boris.IsHead || boris.FamilyID == anna.FamilyID {
+		t.Fatalf("detached = %+v, %v", boris, err)
 	}
-	// A name refresh must not bring the member back.
-	if _, err := users.Upsert(ctx, user.User{TelegramID: 2, FirstName: "Боря"}); err != nil {
-		t.Fatal(err)
+	if page, _ := repo.List(ctx, expense.InFamily(anna.FamilyID), expense.Filter{}); page.Total != 0 {
+		t.Error("the head still sees the expense of someone who left")
 	}
-	boris, err := users.Get(ctx, 2)
-	if err != nil || boris.Active() || boris.FirstName != "Боря" {
-		t.Fatalf("boris = %+v, err = %v", boris, err)
+	if page, _ := repo.List(ctx, expense.InFamily(boris.FamilyID), expense.Filter{}); page.Total != 1 {
+		t.Error("Boris lost his expense")
 	}
-	if n, _ := users.CountActive(ctx); n != 1 {
-		t.Errorf("active members = %d, want 1", n)
-	}
-	page, _ := repo.List(ctx, expense.AllUsers(), expense.Filter{Limit: 10})
-	if page.Total != 1 {
-		t.Errorf("expenses of a removed member disappeared: total = %d", page.Total)
-	}
-	list, _ := users.List(ctx)
-	if len(list) != 2 || list[1].TelegramID != 2 {
-		t.Errorf("removed members must be listed last: %+v", list)
-	}
-	if err := users.Remove(ctx, 404); !errors.Is(err, user.ErrNotFound) {
+	if _, err := users.Detach(ctx, 404); !errors.Is(err, user.ErrNotFound) {
 		t.Errorf("unknown user: err = %v", err)
 	}
-	// Adding again restores membership.
-	back, err := users.Add(ctx, user.User{TelegramID: 2, FirstName: "Борис"})
-	if err != nil || !back.Active() {
-		t.Errorf("re-added = %+v, err = %v", back, err)
+}
+
+func TestDeleteUser(t *testing.T) {
+	repo, users := setup(t)
+	ctx := context.Background()
+	mustCreate(t, repo, 2, "500", expense.CategoryFood, 10, "обед")
+	boris, _ := users.Get(ctx, 2)
+	if err := NewUsageRepository(testPool).Add(ctx, 2, day(10), llm.Usage{PromptTokens: 10}, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := users.Delete(ctx, 2); err != nil {
+		t.Fatal(err)
+	}
+	var left int
+	if err := testPool.QueryRow(ctx, `
+		SELECT (SELECT count(*) FROM expenses WHERE user_id = 2) + (SELECT count(*) FROM llm_usage WHERE user_id = 2)
+		     + (SELECT count(*) FROM families WHERE id = $1)`, boris.FamilyID).Scan(&left); err != nil {
+		t.Fatal(err)
+	}
+	if left != 0 {
+		t.Errorf("%d rows of a deleted user are left", left)
+	}
+	if err := users.Delete(ctx, 2); !errors.Is(err, user.ErrNotFound) {
+		t.Errorf("second delete: err = %v", err)
 	}
 }
 
@@ -338,33 +450,55 @@ func TestInviteRedeem(t *testing.T) {
 	invites := NewInviteRepository(testPool)
 	ctx := context.Background()
 	future := time.Now().Add(time.Hour)
-	vera := user.User{TelegramID: 3, FirstName: "Вера"}
+	anna, _ := users.Get(ctx, 1)
+	vera, _ := users.Admit(ctx, user.User{TelegramID: 3, FirstName: "Вера"})
 
-	valid, _ := invites.Create(ctx, []byte("valid"), future)
-	_, _ = invites.Create(ctx, []byte("expired"), time.Now().Add(-time.Minute))
-	revoked, _ := invites.Create(ctx, []byte("revoked"), future)
-	if err := invites.Revoke(ctx, revoked.ID); err != nil {
+	valid, _ := invites.Create(ctx, anna.FamilyID, 1, []byte("valid"), future)
+	_, _ = invites.Create(ctx, anna.FamilyID, 1, []byte("expired"), time.Now().Add(-time.Minute))
+	revoked, _ := invites.Create(ctx, anna.FamilyID, 1, []byte("revoked"), future)
+	if err := invites.Revoke(ctx, vera.FamilyID, revoked.ID); !errors.Is(err, family.ErrInviteNotFound) {
+		t.Errorf("revoke another family's invite: err = %v", err)
+	}
+	if err := invites.Revoke(ctx, anna.FamilyID, revoked.ID); err != nil {
 		t.Fatal(err)
 	}
 
 	for _, hash := range []string{"expired", "revoked", "unknown"} {
-		if _, err := invites.Redeem(ctx, []byte(hash), vera); !errors.Is(err, family.ErrInviteInvalid) {
+		if _, err := invites.Redeem(ctx, []byte(hash), 3); !errors.Is(err, family.ErrInviteInvalid) {
 			t.Errorf("%s: err = %v, want ErrInviteInvalid", hash, err)
 		}
+		if _, err := invites.Find(ctx, []byte(hash)); !errors.Is(err, family.ErrInviteInvalid) {
+			t.Errorf("find %s: err = %v", hash, err)
+		}
 	}
-	if _, err := users.Get(ctx, 3); !errors.Is(err, user.ErrNotFound) {
-		t.Fatal("a failed redeem must not add the user")
+	if found, err := invites.Find(ctx, []byte("valid")); err != nil || found.FamilyID != anna.FamilyID {
+		t.Errorf("find valid: %+v %v", found, err)
+	}
+	if _, err := invites.Redeem(ctx, []byte("valid"), 1); !errors.Is(err, family.ErrAlreadyMember) {
+		t.Errorf("the head redeems own invite: err = %v", err)
 	}
 
-	m, err := invites.Redeem(ctx, []byte("valid"), vera)
-	if err != nil || !m.Active() || m.FirstName != "Вера" {
+	m, err := invites.Redeem(ctx, []byte("valid"), 3)
+	if err != nil || m.FamilyID != anna.FamilyID || m.IsHead {
 		t.Fatalf("redeem: %+v, %v", m, err)
 	}
-	if _, err := invites.Redeem(ctx, []byte("valid"), user.User{TelegramID: 4, FirstName: "Гоша"}); !errors.Is(err, family.ErrInviteInvalid) {
+	var families int
+	_ = testPool.QueryRow(ctx, `SELECT count(*) FROM families WHERE id = $1`, vera.FamilyID).Scan(&families)
+	if families != 0 {
+		t.Error("Vera's empty family was not deleted")
+	}
+	if _, err := invites.Redeem(ctx, []byte("valid"), 2); !errors.Is(err, family.ErrInviteInvalid) {
 		t.Errorf("second redeem: err = %v", err)
 	}
 
-	list, _ := invites.List(ctx, time.Now().Add(-time.Hour))
+	// A head whose family has members cannot leave it for another one.
+	boris, _ := users.Get(ctx, 2)
+	_, _ = invites.Create(ctx, boris.FamilyID, 2, []byte("to-boris"), future)
+	if _, err := invites.Redeem(ctx, []byte("to-boris"), 1); !errors.Is(err, family.ErrHeadHasMembers) {
+		t.Errorf("head with members: err = %v", err)
+	}
+
+	list, _ := invites.List(ctx, anna.FamilyID, time.Now().Add(-time.Hour))
 	statuses := map[int64]family.InviteStatus{}
 	for _, inv := range list {
 		statuses[inv.ID] = inv.Status(time.Now())
@@ -372,8 +506,24 @@ func TestInviteRedeem(t *testing.T) {
 	if statuses[valid.ID] != family.InviteUsed || statuses[revoked.ID] != family.InviteRevoked || len(list) != 3 {
 		t.Errorf("statuses = %v", statuses)
 	}
-	if err := invites.Revoke(ctx, valid.ID); !errors.Is(err, family.ErrInviteNotFound) {
+	if err := invites.Revoke(ctx, anna.FamilyID, valid.ID); !errors.Is(err, family.ErrInviteNotFound) {
 		t.Errorf("revoking a used invite: err = %v", err)
+	}
+}
+
+func TestUsage(t *testing.T) {
+	setup(t)
+	ctx := context.Background()
+	r := NewUsageRepository(testPool)
+	if d, err := r.Get(ctx, 1, day(21)); err != nil || d.Requests != 0 {
+		t.Fatalf("empty day: %+v %v", d, err)
+	}
+	_ = r.Add(ctx, 1, day(21), llm.Usage{PromptTokens: 100, CachedTokens: 900, CompletionTokens: 20}, false)
+	_ = r.Add(ctx, 1, day(21), llm.Usage{PromptTokens: 50}, true)
+	_ = r.Add(ctx, 1, day(22), llm.Usage{PromptTokens: 1}, false)
+	d, err := r.Get(ctx, 1, day(21))
+	if err != nil || d.Requests != 2 || d.Failures != 1 || d.Tokens() != 170 || d.CachedTokens != 900 {
+		t.Errorf("day = %+v, %v", d, err)
 	}
 }
 
@@ -522,5 +672,63 @@ func TestAggregateMatchesGoBuckets(t *testing.T) {
 		if got[k] != v {
 			t.Errorf("%s = %s, want %s (all: %v)", k, got[k], v, got)
 		}
+	}
+}
+
+// TestFamiliesMigrationKeepsExistingData replays migration 5 on data of the
+// single-family version: the users of a live database must land correctly.
+func TestFamiliesMigrationKeepsExistingData(t *testing.T) {
+	truncate(t)
+	ctx := context.Background()
+	db := stdlib.OpenDBFromPool(testPool)
+	defer func() { _ = db.Close() }()
+	dir, _ := fs.Sub(migrations, "migrations")
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.DownTo(ctx, 4); err != nil {
+		t.Fatal(err)
+	}
+	// Back to the latest schema whatever happens: other tests share the database.
+	defer func() {
+		if _, err := provider.Up(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	_, err = testPool.Exec(ctx, `
+		INSERT INTO users (telegram_id, first_name, is_head, removed_at, created_at) VALUES
+		    (1, 'Анна',  true,  NULL,  now() - interval '3 days'),
+		    (2, 'Борис', true,  NULL,  now() - interval '2 days'), -- a second head from ALLOWED_TELEGRAM_IDS
+		    (3, 'Вера',  false, NULL,  now() - interval '1 day'),
+		    (4, 'Гоша',  false, now(), now() - interval '1 day');  -- removed earlier
+		INSERT INTO expenses (user_id, amount, category, spent_at) VALUES (4, 100, 'food', '2026-10-01');
+		INSERT INTO invites (code_hash, expires_at) VALUES ('legacy', now() + interval '1 day');`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(ctx, 5); err != nil {
+		t.Fatal(err)
+	}
+
+	users := NewUserRepository(testPool)
+	anna, _ := users.Get(ctx, 1)
+	members, _ := users.Family(ctx, anna.FamilyID)
+	if len(members) != 3 || !members[0].IsHead || members[0].TelegramID != 1 || members[1].IsHead || members[2].IsHead {
+		t.Errorf("family = %+v, want Anna as the only head, Boris and Vera as members", members)
+	}
+	gosha, _ := users.Get(ctx, 4)
+	if !gosha.IsHead || gosha.FamilyID == anna.FamilyID {
+		t.Errorf("removed member = %+v, want a family of his own", gosha)
+	}
+	if page, _ := NewExpenseRepository(testPool).List(ctx, expense.InFamily(gosha.FamilyID), expense.Filter{}); page.Total != 1 {
+		t.Error("the removed member lost his expense")
+	}
+	if anna.Consented() {
+		t.Error("existing users must accept the data policy again")
+	}
+	if inv, err := NewInviteRepository(testPool).Find(ctx, []byte("legacy")); err != nil || inv.FamilyID != anna.FamilyID {
+		t.Errorf("legacy invite = %+v, %v", inv, err)
 	}
 }

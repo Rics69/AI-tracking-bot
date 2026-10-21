@@ -23,6 +23,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-expenses}:${POSTGRES_PASSWORD:-expenses}@postgres:5432/${POSTGRES_DB:-expenses}?sslmode=disable
       APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Moscow}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      ADMIN_TELEGRAM_ID: ${ADMIN_TELEGRAM_ID:-}
     ports:
       - "8080:8080"
     depends_on:
@@ -38,7 +39,10 @@ services:
       APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Moscow}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      ALLOWED_TELEGRAM_IDS: ${ALLOWED_TELEGRAM_IDS:-}
+      ADMIN_TELEGRAM_ID: ${ADMIN_TELEGRAM_ID:-}
+      PRIVACY_URL: ${PRIVACY_URL:-}
+      USER_DAILY_MESSAGES: ${USER_DAILY_MESSAGES:-150}
+      USER_DAILY_TOKENS: ${USER_DAILY_TOKENS:-200000}
       LLM_PROVIDER: ${LLM_PROVIDER:-gigachat}
       GIGACHAT_AUTH_KEY: ${GIGACHAT_AUTH_KEY:-}
       GIGACHAT_SCOPE: ${GIGACHAT_SCOPE:-GIGACHAT_API_PERS}

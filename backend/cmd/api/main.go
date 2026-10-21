@@ -18,6 +18,7 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/httpapi"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/logger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/postgres"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
 
 func main() {
@@ -49,11 +50,21 @@ func run() error {
 	}
 	log.Info("database ready")
 
+	users := postgres.NewUserRepository(pool)
 	handler := httpapi.NewHandler(httpapi.Deps{
 		Expenses: expense.NewService(postgres.NewExpenseRepository(pool), cfg.Location),
-		// The API never admits anyone, so bootstrap IDs (open/closed family) do not matter here.
-		Family: family.NewService(postgres.NewUserRepository(pool), postgres.NewInviteRepository(pool),
-			postgres.NewSettingsRepository(pool), nil),
+		Family:   family.NewService(users, postgres.NewInviteRepository(pool), postgres.NewSettingsRepository(pool)),
+		// Until the mini app signs users in with Telegram, the panel is the owner's.
+		Viewer: func(ctx context.Context) (user.User, error) {
+			if cfg.AdminID == 0 {
+				return user.User{}, httpapi.ErrNoViewer
+			}
+			u, err := users.Get(ctx, cfg.AdminID)
+			if errors.Is(err, user.ErrNotFound) {
+				return user.User{}, httpapi.ErrNoViewer
+			}
+			return u, err
+		},
 		Health: pool.Ping,
 		Log:    log,
 	})

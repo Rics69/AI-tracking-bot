@@ -21,13 +21,15 @@ type ExpenseRepository struct {
 	mu     sync.Mutex
 	items  map[int64]expense.Expense
 	nextID int64
-	clock  time.Time // creation timestamps: strictly increasing, so "last added" is stable
+	// families maps users to their family, standing in for the users table.
+	families map[int64]int64
+	clock    time.Time // creation timestamps: strictly increasing, so "last added" is stable
 }
 
 var _ expense.Repository = (*ExpenseRepository)(nil)
 
 func NewExpenseRepository() *ExpenseRepository {
-	return &ExpenseRepository{items: map[int64]expense.Expense{}, clock: time.Now()}
+	return &ExpenseRepository{items: map[int64]expense.Expense{}, families: map[int64]int64{}, clock: time.Now()}
 }
 
 func (r *ExpenseRepository) Create(_ context.Context, e expense.Expense) (expense.Expense, error) {
@@ -45,7 +47,7 @@ func (r *ExpenseRepository) Get(_ context.Context, s expense.Scope, id int64) (e
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	e, ok := r.items[id]
-	if !ok || !visible(s, e) {
+	if !ok || !r.visible(s, e) {
 		return expense.Expense{}, expense.ErrNotFound
 	}
 	return e, nil
@@ -55,7 +57,7 @@ func (r *ExpenseRepository) Update(_ context.Context, s expense.Scope, e expense
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	old, ok := r.items[e.ID]
-	if !ok || !visible(s, old) {
+	if !ok || !r.visible(s, old) || !r.visible(s, e) {
 		return expense.Expense{}, expense.ErrNotFound
 	}
 	r.clock = r.clock.Add(time.Millisecond)
@@ -68,7 +70,7 @@ func (r *ExpenseRepository) Delete(_ context.Context, s expense.Scope, id int64)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	e, ok := r.items[id]
-	if !ok || !visible(s, e) {
+	if !ok || !r.visible(s, e) {
 		return expense.ErrNotFound
 	}
 	delete(r.items, id)
@@ -168,7 +170,7 @@ func (r *ExpenseRepository) match(s expense.Scope, f expense.Filter) []expense.E
 	var out []expense.Expense
 	for _, e := range r.items {
 		switch {
-		case !visible(s, e),
+		case !r.visible(s, e),
 			f.UserID != nil && e.UserID != *f.UserID,
 			f.Category != nil && e.Category != *f.Category,
 			f.From != nil && e.SpentAt.Before(*f.From),
@@ -182,6 +184,29 @@ func (r *ExpenseRepository) match(s expense.Scope, f expense.Filter) []expense.E
 }
 
 // visible applies the scope like the SQL repository: the zero scope sees nothing.
-func visible(s expense.Scope, e expense.Expense) bool {
-	return s.All() || e.UserID == s.UserID()
+func (r *ExpenseRepository) visible(s expense.Scope, e expense.Expense) bool {
+	if s.FamilyID() != 0 {
+		return r.families[e.UserID] == s.FamilyID()
+	}
+	return e.UserID == s.UserID()
+}
+
+// deleteOwner drops a deleted user's expenses, like ON DELETE CASCADE.
+func (r *ExpenseRepository) deleteOwner(userID int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id, e := range r.items {
+		if e.UserID == userID {
+			delete(r.items, id)
+		}
+	}
+	delete(r.families, userID)
+}
+
+// SetFamily records the family of a user for InFamily scopes; users without
+// one are in no family.
+func (r *ExpenseRepository) SetFamily(userID, familyID int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.families[userID] = familyID
 }

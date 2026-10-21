@@ -3,8 +3,9 @@ info:
   title: Family Expenses API
   version: 1.0.0
   description: |
-    REST API веб-панели главы семьи: траты всех членов семьи.
-    Авторизации нет (по условию задания).
+    REST API веб-панели главы семьи: траты всех членов его семьи.
+    Входа пока нет: до mini app с авторизацией через Telegram панель показывает
+    семью владельца бота (ADMIN_TELEGRAM_ID), если он в ней глава.
 
     Суммы передаются JSON-числами с не более чем двумя знаками после запятой,
     даты — строками `YYYY-MM-DD`.
@@ -155,9 +156,7 @@ paths:
       operationId: listUsers
       tags: [users]
       summary: Члены семьи
-      description: |
-        Все, кто состоял в семье: сначала текущие (глава первым), затем удалённые —
-        их траты остаются в истории.
+      description: Текущие члены семьи, глава первым.
       responses:
         '200':
           description: Список членов семьи
@@ -192,8 +191,8 @@ paths:
       tags: [users]
       summary: Удалить из семьи
       description: |
-        Бот перестаёт отвечать человеку, его траты остаются. Вернуть можно новым приглашением.
-        Главу семьи удалить нельзя.
+        Человек продолжает вести расходы сам и забирает свои траты: глава перестаёт их видеть.
+        Вернуть можно новым приглашением. Главу семьи удалить нельзя.
       parameters:
         - name: telegram_id
           in: path
@@ -412,10 +411,6 @@ components:
         username: { type: string, example: rics69 }
         is_head: { type: boolean, description: Глава семьи }
         weekly_report: { type: boolean, description: Присылать итоги недели в бот по понедельникам }
-        removed_at:
-          type: string
-          format: date-time
-          description: Когда удалён из семьи; нет — состоит в семье
         created_at: { type: string, format: date-time }
 
     UserList:
@@ -496,8 +491,8 @@ components:
       properties:
         code:
           type: string
-          enum: [bad_request, validation_error, not_found, unknown_user, conflict, internal]
+          enum: [bad_request, validation_error, not_found, unknown_user, forbidden, conflict, internal]
           x-enum-varnames:
-            [ErrCodeBadRequest, ErrCodeValidation, ErrCodeNotFound, ErrCodeUnknownUser, ErrCodeConflict, ErrCodeInternal]
+            [ErrCodeBadRequest, ErrCodeValidation, ErrCodeNotFound, ErrCodeUnknownUser, ErrCodeForbidden, ErrCodeConflict, ErrCodeInternal]
         message: { type: string }
         field: { type: string, description: Поле с ошибкой валидации }

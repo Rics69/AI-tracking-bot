@@ -1,5 +1,7 @@
-// Package family manages who belongs to the family: invite links, joining
-// through the bot, removing members, and deciding whom the bot talks to.
+// Package family manages who sees whose expenses. Everyone starts in a family
+// of their own; a family is joined by an invite link from its head, who then
+// sees the expenses of every member. Expenses belong to the person: whoever
+// leaves a family takes them along.
 package family
 
 import (
@@ -22,11 +24,17 @@ const InviteTTL = 7 * 24 * time.Hour
 const SettingBotUsername = "telegram_bot_username"
 
 var (
-	ErrNotMember      = errors.New("not a family member")
+	ErrBlocked        = errors.New("the user is blocked")
+	ErrNotMember      = errors.New("not a member of this family")
+	ErrNotHead        = errors.New("only the family head can do this")
+	ErrHeadRemoval    = errors.New("the family head cannot be removed")
+	ErrHeadHasMembers = errors.New("the head of a family with members cannot leave it")
+	ErrAlone          = errors.New("the user is the only member of their family")
+	ErrAlreadyMember  = errors.New("already a member of this family")
 	ErrInviteInvalid  = errors.New("invite is unknown, expired, revoked or already used")
 	ErrInviteNotFound = errors.New("invite not found")
-	ErrHeadRemoval    = errors.New("the family head cannot be removed")
 	ErrBotUnknown     = errors.New("the bot has not started yet, so its username for the link is unknown")
+	ErrBadTimezone    = errors.New("unknown timezone")
 )
 
 // InviteStatus is the state of an invite at a moment in time.
@@ -39,9 +47,11 @@ const (
 	InviteRevoked InviteStatus = "revoked"
 )
 
-// Invite is a one-time link to join the family. The code itself is never stored.
+// Invite is a one-time link to join a family. The code itself is never stored.
 type Invite struct {
 	ID        int64
+	FamilyID  int64
+	CreatedBy *int64
 	CreatedAt time.Time
 	ExpiresAt time.Time
 	UsedAt    *time.Time
@@ -71,14 +81,17 @@ type CreatedInvite struct {
 
 // Invites persists invites.
 type Invites interface {
-	Create(ctx context.Context, codeHash []byte, expiresAt time.Time) (Invite, error)
-	// List returns invites created after since, newest first.
-	List(ctx context.Context, since time.Time) ([]Invite, error)
-	// Revoke cancels an active invite; ErrInviteNotFound if there is none.
-	Revoke(ctx context.Context, id int64) error
-	// Redeem atomically marks a valid invite as used and adds u to the family;
-	// ErrInviteInvalid if the invite cannot be used.
-	Redeem(ctx context.Context, codeHash []byte, u user.User) (user.User, error)
+	Create(ctx context.Context, familyID, createdBy int64, codeHash []byte, expiresAt time.Time) (Invite, error)
+	// List returns the family's invites created after since, newest first.
+	List(ctx context.Context, familyID int64, since time.Time) ([]Invite, error)
+	// Revoke cancels an active invite of the family; ErrInviteNotFound if there is none.
+	Revoke(ctx context.Context, familyID, id int64) error
+	// Find returns the usable invite with this code hash; ErrInviteInvalid otherwise.
+	Find(ctx context.Context, codeHash []byte) (Invite, error)
+	// Redeem atomically uses a valid invite and moves the user into its family
+	// as a member. It fails with ErrInviteInvalid, with ErrAlreadyMember (the
+	// invite stays unused) or with ErrHeadHasMembers.
+	Redeem(ctx context.Context, codeHash []byte, userID int64) (user.User, error)
 }
 
 // Settings is a small key-value store.
@@ -92,81 +105,180 @@ type Service struct {
 	users    user.Repository
 	invites  Invites
 	settings Settings
-	// open: no bootstrap members configured, so anyone who writes to the bot
-	// joins (handy for a demo; set ALLOWED_TELEGRAM_IDS in production).
-	open bool
-	now  func() time.Time
+	now      func() time.Time
 }
 
-// NewService creates the service. With no bootstrap IDs the family is open.
-func NewService(users user.Repository, invites Invites, settings Settings, bootstrapIDs []int64) *Service {
-	return &Service{users: users, invites: invites, settings: settings, open: len(bootstrapIDs) == 0, now: time.Now}
+func NewService(users user.Repository, invites Invites, settings Settings) *Service {
+	return &Service{users: users, invites: invites, settings: settings, now: time.Now}
 }
 
-// Bootstrap makes the configured IDs family heads, so a fresh install has
-// someone who can invite the rest.
-func (s *Service) Bootstrap(ctx context.Context, ids []int64) error {
-	for _, id := range ids {
-		u := user.User{TelegramID: id, FirstName: "Глава семьи", IsHead: true}
-		if existing, err := s.users.Get(ctx, id); err == nil {
-			u.FirstName, u.Username = existing.FirstName, existing.Username
-		} else if !errors.Is(err, user.ErrNotFound) {
-			return err
-		}
-		if _, err := s.users.Add(ctx, u); err != nil {
-			return fmt.Errorf("bootstrap member %d: %w", id, err)
-		}
-	}
-	return nil
-}
-
-// Admit decides whether the bot talks to a Telegram user and returns them as
-// a member, refreshing their name. ErrNotMember means the bot must refuse.
+// Admit returns the person writing to the bot, creating them with a family of
+// their own on the first message. A blocked user comes back with ErrBlocked.
 func (s *Service) Admit(ctx context.Context, tg user.User) (user.User, error) {
-	m, err := s.users.Get(ctx, tg.TelegramID)
-	switch {
-	case err == nil && m.Active():
-		if m.FirstName == tg.FirstName && m.Username == tg.Username {
-			return m, nil
-		}
-		return s.users.Upsert(ctx, tg) // names change in Telegram; the panel shows them
-	case err == nil:
-		return user.User{}, ErrNotMember // removed: stays out even in open mode
-	case !errors.Is(err, user.ErrNotFound):
-		return user.User{}, err
-	case !s.open:
-		return user.User{}, ErrNotMember
-	}
-	// Open family: the first person to write becomes the head.
-	n, err := s.users.CountActive(ctx)
+	u, err := s.users.Admit(ctx, tg)
 	if err != nil {
 		return user.User{}, err
 	}
-	tg.IsHead = n == 0
-	return s.users.Add(ctx, tg)
+	if u.Blocked() {
+		return u, ErrBlocked
+	}
+	return u, nil
 }
 
-// Join redeems an invite code. joined is false when the user already was a
-// member: the invite then stays unused for whoever it was meant for.
-func (s *Service) Join(ctx context.Context, code string, tg user.User) (member user.User, joined bool, err error) {
-	if m, err := s.users.Get(ctx, tg.TelegramID); err == nil && m.Active() {
-		return m, false, nil
-	}
+// Get returns a user by Telegram ID.
+func (s *Service) Get(ctx context.Context, telegramID int64) (user.User, error) {
+	return s.users.Get(ctx, telegramID)
+}
+
+// Consent records that the user accepted the data policy.
+func (s *Service) Consent(ctx context.Context, telegramID int64) (user.User, error) {
+	return s.users.SetConsent(ctx, telegramID, s.now())
+}
+
+// Invitation checks an invite code and returns the head of the family it
+// leads to, so the bot can ask the user before they join.
+func (s *Service) Invitation(ctx context.Context, code string) (head user.User, err error) {
 	code = strings.TrimSpace(code)
 	if code == "" {
-		return user.User{}, false, ErrInviteInvalid
+		return user.User{}, ErrInviteInvalid
 	}
-	m, err := s.invites.Redeem(ctx, hashCode(code), user.User{
-		TelegramID: tg.TelegramID, FirstName: tg.FirstName, Username: tg.Username,
-	})
+	inv, err := s.invites.Find(ctx, hashCode(code))
 	if err != nil {
-		return user.User{}, false, err
+		return user.User{}, err
 	}
-	return m, true, nil
+	members, err := s.users.Family(ctx, inv.FamilyID)
+	if err != nil {
+		return user.User{}, err
+	}
+	for _, m := range members {
+		if m.IsHead {
+			return m, nil
+		}
+	}
+	return user.User{}, ErrInviteInvalid // a family without a head cannot be joined
 }
 
-// CreateInvite issues a new invite link to the bot.
-func (s *Service) CreateInvite(ctx context.Context) (CreatedInvite, error) {
+// Join redeems an invite code: the user moves into the family as a member.
+// A head with members must hand them off first (ErrHeadHasMembers).
+func (s *Service) Join(ctx context.Context, code string, telegramID int64) (user.User, error) {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return user.User{}, ErrInviteInvalid
+	}
+	return s.invites.Redeem(ctx, hashCode(code), telegramID)
+}
+
+// Leave takes a member out of their family into a family of their own.
+func (s *Service) Leave(ctx context.Context, telegramID int64) (user.User, error) {
+	u, err := s.users.Get(ctx, telegramID)
+	if err != nil {
+		return user.User{}, err
+	}
+	members, err := s.users.Family(ctx, u.FamilyID)
+	if err != nil {
+		return user.User{}, err
+	}
+	switch {
+	case len(members) <= 1:
+		return user.User{}, ErrAlone
+	case u.IsHead:
+		return user.User{}, ErrHeadHasMembers
+	}
+	return s.users.Detach(ctx, telegramID)
+}
+
+// Remove takes a member out of the head's family; they keep their expenses
+// in a family of their own.
+func (s *Service) Remove(ctx context.Context, head user.User, telegramID int64) error {
+	if !head.IsHead {
+		return ErrNotHead
+	}
+	m, err := s.Member(ctx, head.FamilyID, telegramID)
+	if err != nil {
+		return err
+	}
+	if m.IsHead {
+		return ErrHeadRemoval
+	}
+	_, err = s.users.Detach(ctx, telegramID)
+	return err
+}
+
+// Member returns a member of the family; ErrNotMember if the user is in another one.
+func (s *Service) Member(ctx context.Context, familyID, telegramID int64) (user.User, error) {
+	u, err := s.users.Get(ctx, telegramID)
+	if errors.Is(err, user.ErrNotFound) {
+		return user.User{}, ErrNotMember
+	}
+	if err != nil {
+		return user.User{}, err
+	}
+	if u.FamilyID != familyID {
+		return user.User{}, ErrNotMember
+	}
+	return u, nil
+}
+
+// Members lists the family, the head first.
+func (s *Service) Members(ctx context.Context, familyID int64) ([]user.User, error) {
+	return s.users.Family(ctx, familyID)
+}
+
+// DeleteAccount removes the user with all their data. A head's family is
+// dissolved first: every other member keeps their expenses in a family of
+// their own.
+func (s *Service) DeleteAccount(ctx context.Context, telegramID int64) error {
+	u, err := s.users.Get(ctx, telegramID)
+	if err != nil {
+		return err
+	}
+	if u.IsHead {
+		members, err := s.users.Family(ctx, u.FamilyID)
+		if err != nil {
+			return err
+		}
+		for _, m := range members {
+			if m.TelegramID == u.TelegramID {
+				continue
+			}
+			if _, err := s.users.Detach(ctx, m.TelegramID); err != nil {
+				return fmt.Errorf("detach member %d: %w", m.TelegramID, err)
+			}
+		}
+	}
+	return s.users.Delete(ctx, telegramID)
+}
+
+// SetWeeklyReport turns the weekly summary on or off. by may change it for
+// themselves or, as the head, for a member of their family.
+func (s *Service) SetWeeklyReport(ctx context.Context, by user.User, telegramID int64, on bool) (user.User, error) {
+	if telegramID != by.TelegramID {
+		if !by.IsHead {
+			return user.User{}, ErrNotHead
+		}
+		if _, err := s.Member(ctx, by.FamilyID, telegramID); err != nil {
+			return user.User{}, err
+		}
+	}
+	return s.users.SetWeeklyReport(ctx, telegramID, on)
+}
+
+// SetTimezone sets the user's timezone by IANA name ("Asia/Novosibirsk").
+func (s *Service) SetTimezone(ctx context.Context, telegramID int64, tz string) (user.User, error) {
+	if tz == "" || tz == "Local" {
+		return user.User{}, ErrBadTimezone
+	}
+	if _, err := time.LoadLocation(tz); err != nil {
+		return user.User{}, ErrBadTimezone
+	}
+	return s.users.SetTimezone(ctx, telegramID, tz)
+}
+
+// CreateInvite issues a link to the head's family.
+func (s *Service) CreateInvite(ctx context.Context, head user.User) (CreatedInvite, error) {
+	if !head.IsHead {
+		return CreatedInvite{}, ErrNotHead
+	}
 	botName, ok, err := s.settings.Get(ctx, SettingBotUsername)
 	if err != nil {
 		return CreatedInvite{}, err
@@ -178,7 +290,7 @@ func (s *Service) CreateInvite(ctx context.Context) (CreatedInvite, error) {
 	if err != nil {
 		return CreatedInvite{}, err
 	}
-	inv, err := s.invites.Create(ctx, hashCode(code), s.now().Add(InviteTTL))
+	inv, err := s.invites.Create(ctx, head.FamilyID, head.TelegramID, hashCode(code), s.now().Add(InviteTTL))
 	if err != nil {
 		return CreatedInvite{}, err
 	}
@@ -186,36 +298,14 @@ func (s *Service) CreateInvite(ctx context.Context) (CreatedInvite, error) {
 	return CreatedInvite{Invite: inv, Link: "https://t.me/" + botName + "?start=" + code}, nil
 }
 
-// ListInvites returns the invites of the last month, newest first.
-func (s *Service) ListInvites(ctx context.Context) ([]Invite, error) {
-	return s.invites.List(ctx, s.now().Add(-30*24*time.Hour))
+// ListInvites returns the family's invites of the last month, newest first.
+func (s *Service) ListInvites(ctx context.Context, familyID int64) ([]Invite, error) {
+	return s.invites.List(ctx, familyID, s.now().Add(-30*24*time.Hour))
 }
 
-// RevokeInvite cancels an active invite.
-func (s *Service) RevokeInvite(ctx context.Context, id int64) error {
-	return s.invites.Revoke(ctx, id)
-}
-
-// Remove takes a member out of the family; their expenses stay in history.
-func (s *Service) Remove(ctx context.Context, telegramID int64) error {
-	m, err := s.users.Get(ctx, telegramID)
-	if err != nil {
-		return err
-	}
-	if m.IsHead {
-		return ErrHeadRemoval
-	}
-	return s.users.Remove(ctx, telegramID)
-}
-
-// SetWeeklyReport turns the weekly summary in the bot on or off for a member.
-func (s *Service) SetWeeklyReport(ctx context.Context, telegramID int64, on bool) (user.User, error) {
-	return s.users.SetWeeklyReport(ctx, telegramID, on)
-}
-
-// Members lists everyone who has been in the family, removed members included.
-func (s *Service) Members(ctx context.Context) ([]user.User, error) {
-	return s.users.List(ctx)
+// RevokeInvite cancels an active invite of the family.
+func (s *Service) RevokeInvite(ctx context.Context, familyID, id int64) error {
+	return s.invites.Revoke(ctx, familyID, id)
 }
 
 // SetBotUsername remembers the bot's @username for invite links.

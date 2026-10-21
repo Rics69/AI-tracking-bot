@@ -22,12 +22,16 @@ func writeError(log *slog.Logger, w http.ResponseWriter, r *http.Request, err er
 	case errors.As(err, &verr):
 		status = http.StatusBadRequest
 		detail = ErrorDetail{Code: ErrCodeValidation, Message: verr.Message, Field: &verr.Field}
-	case errors.Is(err, expense.ErrNotFound), errors.Is(err, user.ErrNotFound), errors.Is(err, family.ErrInviteNotFound):
+	case errors.Is(err, expense.ErrNotFound), errors.Is(err, user.ErrNotFound), errors.Is(err, family.ErrInviteNotFound),
+		errors.Is(err, family.ErrNotMember):
 		status = http.StatusNotFound
 		detail = ErrorDetail{Code: ErrCodeNotFound, Message: err.Error()}
 	case errors.Is(err, family.ErrHeadRemoval), errors.Is(err, family.ErrBotUnknown):
 		status = http.StatusConflict
 		detail = ErrorDetail{Code: ErrCodeConflict, Message: err.Error()}
+	case errors.Is(err, ErrNoViewer), errors.Is(err, family.ErrNotHead):
+		status = http.StatusForbidden
+		detail = ErrorDetail{Code: ErrCodeForbidden, Message: err.Error()}
 	case errors.Is(err, expense.ErrUnknownUser):
 		status = http.StatusBadRequest
 		detail = ErrorDetail{Code: ErrCodeUnknownUser, Message: err.Error()}

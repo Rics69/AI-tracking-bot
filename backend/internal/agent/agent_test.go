@@ -49,16 +49,20 @@ func text(s string) llm.Response {
 
 // memExpenses is an in-memory Expenses honouring scopes.
 type memExpenses struct {
-	items  map[int64]expense.Expense
-	nextID int64
+	items   map[int64]expense.Expense
+	nextID  int64
+	lastLoc *time.Location // the timezone the agent asked "today" for
 }
 
 func newMemExpenses() *memExpenses { return &memExpenses{items: map[int64]expense.Expense{}} }
 
-func (m *memExpenses) Today() time.Time { return today }
+func (m *memExpenses) TodayIn(loc *time.Location) time.Time {
+	m.lastLoc = loc
+	return today
+}
 
 func (m *memExpenses) visible(s expense.Scope, e expense.Expense) bool {
-	return s.All() || e.UserID == s.UserID()
+	return e.UserID == s.UserID() // the agent only ever uses OwnedBy scopes
 }
 
 func (m *memExpenses) Create(_ context.Context, in expense.CreateInput) (expense.Expense, error) {
@@ -382,5 +386,52 @@ func TestToolExamplesUseRealDates(t *testing.T) {
 	}
 	if got := lastWeekday(today, time.Friday); !got.Equal(today) {
 		t.Errorf("lastWeekday(Friday) on a Friday = %s, want today", got)
+	}
+}
+
+type usageCall struct {
+	userID int64
+	day    time.Time
+	usage  llm.Usage
+	failed bool
+}
+
+type fakeRecorder struct{ calls []usageCall }
+
+func (f *fakeRecorder) RecordUsage(_ context.Context, userID int64, day time.Time, u llm.Usage, failed bool) {
+	f.calls = append(f.calls, usageCall{userID, day, u, failed})
+}
+
+func TestUserTimezoneAndUsage(t *testing.T) {
+	exp := newMemExpenses()
+	rec := &fakeRecorder{}
+	withUsage := func(r llm.Response, prompt int) llm.Response {
+		r.Usage = llm.Usage{PromptTokens: prompt, CompletionTokens: 10}
+		return r
+	}
+	model := &scriptedLLM{responses: []llm.Response{
+		withUsage(call(toolAdd, `{"amount": 350, "category": "food", "comment": "кофе", "date": "2026-10-16"}`), 100),
+		withUsage(text("Записано"), 120),
+	}}
+	omsk, _ := time.LoadLocation("Asia/Omsk")
+	a := New(model, exp, exp, NewHistory(6, time.Hour), Config{Location: time.UTC, Usage: rec},
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if _, err := a.Reply(context.Background(), Caller{UserID: 1, Name: "Анна", Location: omsk}, "кофе 350"); err != nil {
+		t.Fatal(err)
+	}
+	if exp.lastLoc != omsk || !strings.Contains(model.requests[0].Messages[0].Content, "Asia/Omsk") {
+		t.Errorf("today was computed in %v, want the user's timezone", exp.lastLoc)
+	}
+	want := usageCall{1, today, llm.Usage{PromptTokens: 220, CompletionTokens: 20}, false}
+	if len(rec.calls) != 1 || rec.calls[0] != want {
+		t.Errorf("usage = %+v, want %+v", rec.calls, want)
+	}
+
+	model.err = errors.New("gigachat: HTTP 500")
+	if _, err := a.Reply(context.Background(), anna, "кофе 350"); err == nil {
+		t.Fatal("want an error")
+	}
+	if len(rec.calls) != 2 || !rec.calls[1].failed || exp.lastLoc != time.UTC {
+		t.Errorf("after a failure: usage = %+v, timezone = %v", rec.calls, exp.lastLoc)
 	}
 }

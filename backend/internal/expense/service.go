@@ -48,9 +48,21 @@ func NewService(repo Repository, loc *time.Location) *Service {
 	return &Service{repo: repo, loc: loc, now: time.Now}
 }
 
-// Today returns the current calendar date in the family timezone.
+// Today returns the current calendar date in the service timezone.
 func (s *Service) Today() time.Time {
-	return dateOf(s.now().In(s.loc))
+	return s.TodayIn(s.loc)
+}
+
+// TodayIn returns the current calendar date in loc.
+func (s *Service) TodayIn(loc *time.Location) time.Time {
+	return dateOf(s.now().In(loc))
+}
+
+func (s *Service) today(t time.Time) time.Time {
+	if t.IsZero() {
+		return s.Today()
+	}
+	return dateOf(t)
 }
 
 // Create validates and stores a new expense.
@@ -60,12 +72,12 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Expense, error) {
 		Amount:   in.Amount,
 		Category: in.Category,
 		Comment:  in.Comment,
-		SpentAt:  s.Today(),
+		SpentAt:  s.today(in.Today),
 	}
 	if in.SpentAt != nil {
 		e.SpentAt = dateOf(*in.SpentAt)
 	}
-	if err := s.normalize(&e); err != nil {
+	if err := s.normalize(&e, s.today(in.Today)); err != nil {
 		return Expense{}, err
 	}
 	return s.repo.Create(ctx, e)
@@ -78,8 +90,8 @@ func (s *Service) Get(ctx context.Context, sc Scope, id int64) (Expense, error) 
 
 // Update applies a patch to an expense visible in the scope.
 func (s *Service) Update(ctx context.Context, sc Scope, id int64, p Patch) (Expense, error) {
-	if p.UserID != nil && !sc.All() {
-		// A member must not be able to move an expense to someone else.
+	if p.UserID != nil && sc.FamilyID() == 0 {
+		// Only the head moves an expense between members of the family.
 		return Expense{}, invalid("user_id", "cannot reassign an expense to another user")
 	}
 	e, err := s.repo.Get(ctx, sc, id)
@@ -101,7 +113,7 @@ func (s *Service) Update(ctx context.Context, sc Scope, id int64, p Patch) (Expe
 	if p.Comment != nil {
 		e.Comment = *p.Comment
 	}
-	if err := s.normalize(&e); err != nil {
+	if err := s.normalize(&e, s.today(p.Today)); err != nil {
 		return Expense{}, err
 	}
 	return s.repo.Update(ctx, sc, e)
@@ -129,7 +141,8 @@ func (s *Service) Summary(ctx context.Context, sc Scope, f Filter) (Summary, err
 }
 
 // normalize validates e and brings it to canonical form.
-func (s *Service) normalize(e *Expense) error {
+// today is the current date of whoever makes the change.
+func (s *Service) normalize(e *Expense, today time.Time) error {
 	if e.UserID <= 0 {
 		return invalid("user_id", "must be a positive Telegram ID")
 	}
@@ -148,7 +161,7 @@ func (s *Service) normalize(e *Expense) error {
 	if e.SpentAt.Before(minSpentAt) {
 		return invalid("spent_at", "must not be earlier than %s", minSpentAt.Format(time.DateOnly))
 	}
-	if e.SpentAt.After(s.Today()) {
+	if e.SpentAt.After(today) {
 		return invalid("spent_at", "must not be in the future")
 	}
 	e.Comment = strings.TrimSpace(e.Comment)
