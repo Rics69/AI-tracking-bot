@@ -18,7 +18,6 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/logger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/postgres"
-	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
 
 func main() {
@@ -50,23 +49,25 @@ func run() error {
 	}
 	log.Info("database ready")
 
-	users := postgres.NewUserRepository(pool)
+	families := family.NewService(postgres.NewUserRepository(pool), postgres.NewInviteRepository(pool),
+		postgres.NewSettingsRepository(pool))
+	if cfg.DevUser() != 0 {
+		log.Warn("development login: requests without Telegram init data act as AUTH_DEV_USER_ID", "user_id", cfg.DevUser())
+	} else if cfg.AuthDevUserID != 0 {
+		log.Warn("AUTH_DEV_USER_ID is ignored: it works only with APP_ENV=dev")
+	}
 	handler := httpapi.NewHandler(httpapi.Deps{
-		Expenses: ledger.NewService(postgres.NewOperationRepository(pool), cfg.Location),
-		Family:   family.NewService(users, postgres.NewInviteRepository(pool), postgres.NewSettingsRepository(pool)),
-		// Until the mini app signs users in with Telegram, the panel is the owner's.
-		Viewer: func(ctx context.Context) (user.User, error) {
-			if cfg.AdminID == 0 {
-				return user.User{}, httpapi.ErrNoViewer
-			}
-			u, err := users.Get(ctx, cfg.AdminID)
-			if errors.Is(err, user.ErrNotFound) {
-				return user.User{}, httpapi.ErrNoViewer
-			}
-			return u, err
+		Ledger: ledger.NewService(postgres.NewOperationRepository(pool), cfg.Location),
+		Family: families,
+		Auth: &httpapi.Auth{
+			BotToken:  cfg.TelegramToken,
+			Users:     families,
+			DevUserID: cfg.DevUser(),
+			Log:       log,
 		},
-		Health: pool.Ping,
-		Log:    log,
+		Location: cfg.Location,
+		Health:   pool.Ping,
+		Log:      log,
 	})
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,

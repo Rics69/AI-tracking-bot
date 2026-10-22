@@ -9,6 +9,7 @@ import {
   type Category,
   type ExpenseCreate,
   type ExpenseUpdate,
+  type Summary,
 } from "./client";
 
 export type ExpenseQuery = {
@@ -19,8 +20,8 @@ export type ExpenseQuery = {
 };
 
 export const queryKeys = {
-  users: ["users"] as const,
-  invites: ["invites"] as const,
+  me: ["me"] as const,
+  family: ["family"] as const,
   categories: ["categories"] as const,
   // Prefix shared by lists and summaries: invalidated together after a change.
   expenses: ["expenses"] as const,
@@ -34,19 +35,39 @@ function toParams(q: ExpenseQuery) {
   return { user_id: q.userId, category: q.category, from: q.from, to: q.to };
 }
 
-export function useUsers() {
+export function useMe() {
   return useQuery({
-    queryKey: queryKeys.users,
-    queryFn: async () => unwrap(await api.GET("/users")).items,
+    queryKey: queryKeys.me,
+    queryFn: async () => unwrap(await api.GET("/me")),
     staleTime: 60_000,
   });
 }
 
+function useFamily<T>(select: (f: Awaited<ReturnType<typeof fetchFamily>>) => T) {
+  return useQuery({ queryKey: queryKeys.family, queryFn: fetchFamily, staleTime: 60_000, select });
+}
+
+async function fetchFamily() {
+  return unwrap(await api.GET("/family"));
+}
+
+/** Family members, the head first. */
+export function useUsers() {
+  return useFamily((f) => f.members);
+}
+
+/** Invites of the last month: the head sees them, a member gets none. */
+export function useInvites() {
+  return useFamily((f) => f.invites);
+}
+
+/** Expense categories: the panel does not show incomes. */
 export function useCategories() {
   return useQuery({
     queryKey: queryKeys.categories,
     queryFn: async () => unwrap(await api.GET("/categories")).items,
     staleTime: Infinity, // a fixed list
+    select: (items) => items.filter((c) => c.kind === "expense"),
   });
 }
 
@@ -54,7 +75,11 @@ export function useExpenses(q: ExpenseQuery, limit: number, offset: number) {
   return useQuery({
     queryKey: queryKeys.expenseList(q, limit, offset),
     queryFn: async () =>
-      unwrap(await api.GET("/expenses", { params: { query: { ...toParams(q), limit, offset } } })),
+      unwrap(
+        await api.GET("/operations", {
+          params: { query: { ...toParams(q), kind: "expense", limit, offset } },
+        }),
+      ),
     // Keep showing the previous page while the next one loads: no table flicker.
     placeholderData: keepPreviousData,
   });
@@ -63,8 +88,10 @@ export function useExpenses(q: ExpenseQuery, limit: number, offset: number) {
 export function useSummary(q: ExpenseQuery) {
   return useQuery({
     queryKey: queryKeys.expenseSummary(q),
-    queryFn: async () =>
-      unwrap(await api.GET("/expenses/summary", { params: { query: toParams(q) } })),
+    queryFn: async (): Promise<Summary> => {
+      const s = unwrap(await api.GET("/summary", { params: { query: toParams(q) } }));
+      return { items: s.expense.categories, sum: s.expense.sum, count: s.expense.count };
+    },
     placeholderData: keepPreviousData,
   });
 }
@@ -75,7 +102,7 @@ export function useSummary(q: ExpenseQuery) {
 export function useCreateExpense() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (body: ExpenseCreate) => unwrap(await api.POST("/expenses", { body })),
+    mutationFn: async (body: ExpenseCreate) => unwrap(await api.POST("/operations", { body })),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.expenses }),
   });
 }
@@ -84,7 +111,7 @@ export function useUpdateExpense() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, body }: { id: number; body: ExpenseUpdate }) =>
-      unwrap(await api.PATCH("/expenses/{id}", { params: { path: { id } }, body })),
+      unwrap(await api.PATCH("/operations/{id}", { params: { path: { id } }, body })),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.expenses }),
   });
 }
@@ -93,7 +120,7 @@ export function useDeleteExpense() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: number) =>
-      unwrap(await api.DELETE("/expenses/{id}", { params: { path: { id } } })),
+      unwrap(await api.DELETE("/operations/{id}", { params: { path: { id } } })),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.expenses }),
   });
 }
@@ -103,24 +130,19 @@ export function useTimeSeries(q: ExpenseQuery, bucket: Bucket) {
     queryKey: queryKeys.expenseSeries(q, bucket),
     queryFn: async () =>
       unwrap(
-        await api.GET("/expenses/timeseries", { params: { query: { ...toParams(q), bucket } } }),
+        await api.GET("/timeseries", {
+          params: { query: { ...toParams(q), bucket, kind: "expense" } },
+        }),
       ),
     placeholderData: keepPreviousData,
-  });
-}
-
-export function useInvites() {
-  return useQuery({
-    queryKey: queryKeys.invites,
-    queryFn: async () => unwrap(await api.GET("/invites")).items,
   });
 }
 
 export function useCreateInvite() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async () => unwrap(await api.POST("/invites")),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.invites }),
+    mutationFn: async () => unwrap(await api.POST("/family/invites")),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.family }),
   });
 }
 
@@ -128,8 +150,8 @@ export function useRevokeInvite() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: number) =>
-      unwrap(await api.DELETE("/invites/{id}", { params: { path: { id } } })),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.invites }),
+      unwrap(await api.DELETE("/family/invites/{id}", { params: { path: { id } } })),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.family }),
   });
 }
 
@@ -138,12 +160,12 @@ export function useSetWeeklyReport() {
   return useMutation({
     mutationFn: async ({ telegramId, on }: { telegramId: number; on: boolean }) =>
       unwrap(
-        await api.PATCH("/users/{telegram_id}", {
+        await api.PATCH("/family/members/{telegram_id}", {
           params: { path: { telegram_id: telegramId } },
           body: { weekly_report: on },
         }),
       ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.users }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.family }),
   });
 }
 
@@ -152,10 +174,10 @@ export function useRemoveMember() {
   return useMutation({
     mutationFn: async (telegramId: number) =>
       unwrap(
-        await api.DELETE("/users/{telegram_id}", {
+        await api.DELETE("/family/members/{telegram_id}", {
           params: { path: { telegram_id: telegramId } },
         }),
       ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.users }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.family }),
   });
 }

@@ -12,10 +12,12 @@ const basePath = "/api/v1"
 
 // Deps are the dependencies of the HTTP handler.
 type Deps struct {
-	Expenses ExpenseService
-	Family   FamilyService
-	// Viewer is whose family the panel shows.
-	Viewer Viewer
+	Ledger LedgerService
+	Family FamilyService
+	// Auth identifies the user of every API request.
+	Auth *Auth
+	// Location is the timezone of users who have not chosen one.
+	Location *time.Location
 	// Health reports whether the service can serve requests (e.g. the database is reachable).
 	Health func(ctx context.Context) error
 	Log    *slog.Logger
@@ -26,15 +28,17 @@ type Deps struct {
 func NewHandler(d Deps) http.Handler {
 	mux := http.NewServeMux()
 
-	strict := NewStrictHandlerWithOptions(NewServer(d.Expenses, d.Family, d.Viewer), nil, StrictHTTPServerOptions{
+	strict := NewStrictHandlerWithOptions(NewServer(d.Ledger, d.Family, d.Location), nil, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) { writeBadRequest(w, err) },
 		ResponseErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 			writeError(d.Log, w, r, err)
 		},
 	})
 	HandlerWithOptions(strict, StdHTTPServerOptions{
-		BaseURL:          basePath,
-		BaseRouter:       mux,
+		BaseURL:    basePath,
+		BaseRouter: mux,
+		// Every API operation needs a Telegram user; the spec, docs and health check do not.
+		Middlewares:      []MiddlewareFunc{d.Auth.Middleware},
 		ErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) { writeBadRequest(w, err) },
 	})
 
@@ -66,7 +70,7 @@ func serveDocs(w http.ResponseWriter, _ *http.Request) {
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <title>Family Expenses API</title>
+  <title>Savepoint API</title>
   <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui.css">
 </head>
 <body>

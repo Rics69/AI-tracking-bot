@@ -4,7 +4,7 @@ import { UserMinusIcon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import type { User } from "@/api/client";
+import type { Me, User } from "@/api/client";
 import { useRemoveMember, useSetWeeklyReport } from "@/api/queries";
 import {
   AlertDialog,
@@ -23,7 +23,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { formatDateTime } from "@/lib/format";
 
-export function MembersCard({ users }: { users?: User[] }) {
+export function MembersCard({ users, me }: { users?: User[]; me?: Me }) {
+  // The head manages the family; a member only their own settings.
+  const canManage = !!me?.is_head;
   const [removing, setRemoving] = useState<User | undefined>();
   const current = users ?? [];
 
@@ -57,12 +59,14 @@ export function MembersCard({ users }: { users?: User[] }) {
                     {u.username ? `@${u.username} · ` : ""}в семье с {formatDateTime(u.created_at)}
                   </span>
                 </div>
-                <WeeklyReportSwitch member={u} />
-                {!u.is_head && (
+                {(canManage || u.telegram_id === me?.telegram_id) && (
+                  <WeeklyReportSwitch member={u} />
+                )}
+                {canManage && !u.is_head && (
                   <Button
                     variant="ghost"
                     size="icon-lg"
-                    aria-label={`Удалить ${u.first_name} из семьи`}
+                    aria-label={`Исключить ${u.first_name} из семьи`}
                     className="text-muted-foreground hover:text-destructive"
                     onClick={() => setRemoving(u)}
                   >
@@ -136,7 +140,7 @@ function RemoveMemberDialog({ member, onClose }: { member?: User; onClose: () =>
       toast.success(`${member.first_name} больше не в семье`);
       onClose();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Не удалось удалить участника");
+      toast.error(err instanceof Error ? err.message : "Не удалось исключить участника");
     }
   }
 
@@ -144,7 +148,7 @@ function RemoveMemberDialog({ member, onClose }: { member?: User; onClose: () =>
     <AlertDialog open={!!member} onOpenChange={(open) => !open && onClose()}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Удалить {member?.first_name} из семьи?</AlertDialogTitle>
+          <AlertDialogTitle>Исключить {member?.first_name} из семьи?</AlertDialogTitle>
           <AlertDialogDescription>
             Человек продолжит вести расходы сам и заберёт свои траты — вы перестанете их видеть.
             Вернуть можно новым приглашением.
@@ -161,7 +165,7 @@ function RemoveMemberDialog({ member, onClose }: { member?: User; onClose: () =>
               void confirm();
             }}
           >
-            {remove.isPending ? "Удаление…" : "Удалить"}
+            {remove.isPending ? "Исключение…" : "Исключить"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

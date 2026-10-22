@@ -23,9 +23,13 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-expenses}:${POSTGRES_PASSWORD:-expenses}@postgres:5432/${POSTGRES_DB:-expenses}?sslmode=disable
       APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Moscow}
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      ADMIN_TELEGRAM_ID: ${ADMIN_TELEGRAM_ID:-}
+      # Checks the signature of Mini App init data.
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      APP_ENV: ${APP_ENV:-prod}
+      AUTH_DEV_USER_ID: ${AUTH_DEV_USER_ID:-}
     ports:
-      - "8080:8080"
+      # Only on this machine: browsers reach the API through the web app (/api).
+      - "127.0.0.1:8080:8080"
     depends_on:
       postgres:
         condition: service_healthy

@@ -21,7 +21,9 @@
 - `backend/internal/storage/postgres` — репозитории на pgx, миграции goose (вшиты через embed, применяются при старте).
 - `backend/internal/storage/memory` — in-memory репозиторий трат с той же семантикой (для eval).
 - `backend/internal/report` — итоги недели: собираются кодом (не LLM), отправка по понедельникам 10:00, `report_runs` гарантирует одну отправку. Постоянные ошибки Telegram (`telegram.ErrUndeliverable`) не ретраятся.
-- `backend/internal/httpapi` — REST: `api.gen.go` генерируется из `backend/api/openapi.yaml`, руками пишется `server.go`.
+- `backend/internal/httpapi` — REST для mini app: `api.gen.go` генерируется из `backend/api/openapi.yaml`, руками пишутся `server.go`, `family.go`, `auth.go` (вход по `initData`).
+- `backend/internal/initdata` — проверка подписи Telegram Mini App `initData`.
+- `backend/internal/savik` — состояние маскота Сейвика по деньгам месяца (считается кодом).
 - `web/` — Next.js 16 панель главы семьи (App Router, TanStack Query, shadcn/ui). Перед правками читай `web/AGENTS.md`: API Next 16 отличаются от привычных.
   - `web/src/api/schema.d.ts` генерируется из `openapi.yaml` (`npm run gen:api`), руками не править.
   - Фильтры живут в URL (`use-filters.ts`); `/api/*` проксируется на Go API через rewrites в `next.config.ts`.
@@ -47,11 +49,12 @@ npm run typecheck && npm run lint
 ## Правила
 
 - **Contract-first.** Любое изменение REST API начинается с `backend/api/openapi.yaml`, затем `make gen` и `npm run gen:api` в `web/`. Сгенерированный код руками не править.
-- **Scope обязателен.** Все операции с тратами принимают `ledger.Scope`: `InFamily(familyID)` для панели главы, `OwnedBy(telegramID)` для бота. Scope «все пользователи» не добавлять: в базе много семей. Нулевой scope не видит ничего — не обходить это.
+- **Scope обязателен.** Все операции с тратами принимают `ledger.Scope`: `InFamily(familyID)` — чтение для главы, `OwnedBy(telegramID)` — бот и любая запись (глава видит семью, но меняет только своё). Scope «все пользователи» не добавлять: в базе много семей. Нулевой scope не видит ничего — не обходить это.
 - **user_id для бота берётся только из Telegram-апдейта**, никогда из аргументов LLM.
 - **Деньги — `decimal.Decimal` / `NUMERIC(12,2)`**, никаких float.
 - **Даты трат — календарные** (`time.Time` в полночь UTC), «сегодня» считается в часовом поясе пользователя (`user.Location`, по умолчанию `APP_TIMEZONE`).
-- **Панель до mini app** показывает семью `ADMIN_TELEGRAM_ID` (`httpapi.Viewer`) и только траты (`filterFrom` ставит `Kind=expense`, доход по `/expenses/{id}` — 404); в этапе 3 появятся операции и пользователь из `initData`.
+- **Пользователь API — только из `initData`** (`httpapi.Auth`, пакет `initdata`): заголовок `Authorization: tma <initData>`, проверка HMAC токеном бота. `AUTH_DEV_USER_ID` работает только при `APP_ENV=dev` (`config.API.DevUser`). Хендлеры берут пользователя через `caller`/`consented`/`head`, никогда из параметров.
+- Текущая desktop-панель показывает только траты (`kind=expense`); доходы — в mini app (этап 4).
 - Доменные ошибки (`ValidationError`, `ErrNotFound`, `ErrUnknownUser`) превращаются в HTTP-ответы только в `httpapi/errors.go`.
 - Комментарии и сообщения в коде — на английском, документация для людей — на русском.
 - После изменений: `make lint && make test`. После правок промпта, тулов или модели — `make eval` и сравнить с прошлым `report.md`.

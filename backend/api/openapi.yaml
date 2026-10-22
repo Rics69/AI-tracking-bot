@@ -1,31 +1,89 @@
 openapi: 3.0.3
 info:
-  title: Family Expenses API
-  version: 1.0.0
+  title: Savepoint API
+  version: 2.0.0
   description: |
-    REST API веб-панели главы семьи: траты всех членов его семьи.
-    Входа пока нет: до mini app с авторизацией через Telegram панель показывает
-    семью владельца бота (ADMIN_TELEGRAM_ID), если он в ней глава.
+    REST API mini app «Сейвпоинт»: траты и доходы пользователя, его семья и настройки.
+
+    **Вход.** Каждый запрос несёт заголовок `Authorization: tma <initData>`, где
+    `initData` — строка `Telegram.WebApp.initData`. Сервер проверяет её подпись
+    токеном бота и берёт пользователя только оттуда. Новый пользователь создаётся
+    при первом запросе, как при `/start` в боте. Пока пользователь не принял
+    политику данных (`PATCH /me` с `consent: true`), доступны только `/me` и
+    справочник категорий, остальное отвечает 403 `consent_required`.
+
+    **Кто что видит.** Глава семьи видит операции всех участников, участник — только
+    свои. Создавать, менять и удалять каждый может только свои операции.
 
     Суммы передаются JSON-числами с не более чем двумя знаками после запятой,
     даты — строками `YYYY-MM-DD`.
 servers:
   - url: /api/v1
 
+security:
+  - telegram: []
+
 tags:
-  - name: expenses
-  - name: users
-  - name: invites
+  - name: me
+  - name: operations
+  - name: family
   - name: categories
 
 paths:
-  /expenses:
+  /me:
     get:
-      operationId: listExpenses
-      tags: [expenses]
-      summary: Список трат с фильтрами
-      description: Возвращает страницу трат и итоги (количество и сумму) по всей выборке.
+      operationId: getMe
+      tags: [me]
+      summary: Текущий пользователь и его настройки
+      responses:
+        '200':
+          description: Пользователь
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    patch:
+      operationId: updateMe
+      tags: [me]
+      summary: Изменить настройки или принять политику данных
+      description: Меняет только переданные поля.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MeUpdate' }
+      responses:
+        '200':
+          description: Пользователь после изменения
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      operationId: deleteMe
+      tags: [me]
+      summary: Удалить аккаунт со всеми данными
+      description: |
+        Удаляет пользователя, его операции, историю диалога и настройки. Семья главы
+        распускается: участники продолжают вести расходы сами, со своими операциями.
+      responses:
+        '204': { description: Аккаунт удалён }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /operations:
+    get:
+      operationId: listOperations
+      tags: [operations]
+      summary: Траты и доходы с фильтрами
+      description: |
+        Страница операций, новые первыми, и итоги по всей выборке. Глава видит
+        операции всей семьи, участник — только свои.
       parameters:
+        - $ref: '#/components/parameters/KindQuery'
         - $ref: '#/components/parameters/UserIDQuery'
         - $ref: '#/components/parameters/CategoryQuery'
         - $ref: '#/components/parameters/FromQuery'
@@ -42,33 +100,87 @@ paths:
           schema: { type: integer, minimum: 0, default: 0 }
       responses:
         '200':
-          description: Страница трат
+          description: Страница операций
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ExpenseList' }
+              schema: { $ref: '#/components/schemas/OperationList' }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
     post:
-      operationId: createExpense
-      tags: [expenses]
-      summary: Создать трату
+      operationId: createOperation
+      tags: [operations]
+      summary: Записать трату или доход
+      description: Операция записывается на текущего пользователя; вид следует из категории.
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/ExpenseCreate' }
+            schema: { $ref: '#/components/schemas/OperationCreate' }
       responses:
         '201':
-          description: Созданная трата
+          description: Созданная операция
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Expense' }
+              schema: { $ref: '#/components/schemas/Operation' }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
-  /expenses/summary:
+  /operations/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
     get:
-      operationId: getExpenseSummary
-      tags: [expenses]
-      summary: Суммы по категориям
+      operationId: getOperation
+      tags: [operations]
+      summary: Получить операцию
+      responses:
+        '200':
+          description: Операция
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Operation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: updateOperation
+      tags: [operations]
+      summary: Изменить свою операцию
+      description: Меняет только переданные поля. Чужие операции, в том числе для главы, — 404.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OperationUpdate' }
+      responses:
+        '200':
+          description: Изменённая операция
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Operation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: deleteOperation
+      tags: [operations]
+      summary: Удалить свою операцию
+      responses:
+        '204': { description: Операция удалена }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /summary:
+    get:
+      operationId: getSummary
+      tags: [operations]
+      summary: Траты, доходы и баланс за период
       parameters:
         - $ref: '#/components/parameters/UserIDQuery'
         - $ref: '#/components/parameters/CategoryQuery'
@@ -76,26 +188,32 @@ paths:
         - $ref: '#/components/parameters/ToQuery'
       responses:
         '200':
-          description: Траты, сгруппированные по категориям
+          description: Итоги по видам и категориям
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Summary' }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
-  /expenses/timeseries:
+  /timeseries:
     get:
-      operationId: getExpenseTimeSeries
-      tags: [expenses]
-      summary: Траты по дням, неделям или месяцам
+      operationId: getTimeSeries
+      tags: [operations]
+      summary: Траты или доходы по дням, неделям или месяцам
       description: |
-        Сумма за каждый интервал с разбивкой по категориям. Интервалы без трат
-        присутствуют с нулём. Без `from` ряд начинается с первой подходящей траты,
+        Сумма за каждый интервал с разбивкой по категориям. Интервалы без операций
+        присутствуют с нулём. Без `from` ряд начинается с первой подходящей операции,
         без `to` — заканчивается сегодня. Не больше 400 точек.
       parameters:
         - name: bucket
           in: query
           required: true
           schema: { $ref: '#/components/schemas/Bucket' }
+        - name: kind
+          in: query
+          required: true
+          schema: { $ref: '#/components/schemas/Kind' }
         - $ref: '#/components/parameters/UserIDQuery'
         - $ref: '#/components/parameters/CategoryQuery'
         - $ref: '#/components/parameters/FromQuery'
@@ -107,117 +225,49 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/TimeSeries' }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
-  /expenses/{id}:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema: { type: integer, format: int64 }
+  /savik:
     get:
-      operationId: getExpense
-      tags: [expenses]
-      summary: Получить трату
-      responses:
-        '200':
-          description: Трата
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Expense' }
-        '404': { $ref: '#/components/responses/NotFound' }
-    patch:
-      operationId: updateExpense
-      tags: [expenses]
-      summary: Изменить трату
-      description: Меняет только переданные поля.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/ExpenseUpdate' }
-      responses:
-        '200':
-          description: Изменённая трата
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Expense' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
-    delete:
-      operationId: deleteExpense
-      tags: [expenses]
-      summary: Удалить трату
-      responses:
-        '204': { description: Трата удалена }
-        '404': { $ref: '#/components/responses/NotFound' }
-
-  /users:
-    get:
-      operationId: listUsers
-      tags: [users]
-      summary: Члены семьи
-      description: Текущие члены семьи, глава первым.
-      responses:
-        '200':
-          description: Список членов семьи
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/UserList' }
-
-  /users/{telegram_id}:
-    patch:
-      operationId: updateUser
-      tags: [users]
-      summary: Изменить настройки участника
-      parameters:
-        - name: telegram_id
-          in: path
-          required: true
-          schema: { type: integer, format: int64 }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/UserUpdate' }
-      responses:
-        '200':
-          description: Участник
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/User' }
-        '404': { $ref: '#/components/responses/NotFound' }
-    delete:
-      operationId: removeUser
-      tags: [users]
-      summary: Удалить из семьи
+      operationId: getSavik
+      tags: [me]
+      summary: Состояние Сейвика
       description: |
-        Человек продолжает вести расходы сам и забирает свои траты: глава перестаёт их видеть.
-        Вернуть можно новым приглашением. Главу семьи удалить нельзя.
-      parameters:
-        - name: telegram_id
-          in: path
-          required: true
-          schema: { type: integer, format: int64 }
-      responses:
-        '204': { description: Удалён }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
-
-  /invites:
-    get:
-      operationId: listInvites
-      tags: [invites]
-      summary: Приглашения за последний месяц
+        Состояние маскота считается кодом по деньгам пользователя за текущий месяц.
+        Пока нет целей и лимита, состояний два: `neutral` и `empty` (траты месяца
+        больше записанных доходов). Фразы и позы для состояний живут в mini app.
       responses:
         '200':
-          description: Приглашения, новые первыми
+          description: Состояние и цифры месяца, из которых оно получилось
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/InviteList' }
+              schema: { $ref: '#/components/schemas/Savik' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /family:
+    get:
+      operationId: getFamily
+      tags: [family]
+      summary: Семья пользователя
+      description: |
+        Участники, глава первым. Приглашения за последний месяц видит только глава,
+        участнику приходит пустой список.
+      responses:
+        '200':
+          description: Семья
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Family' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /family/invites:
     post:
       operationId: createInvite
-      tags: [invites]
-      summary: Создать приглашение
+      tags: [family]
+      summary: Создать приглашение (глава)
       description: |
         Одноразовая ссылка на бота на 7 дней. Ссылка возвращается только здесь:
         в базе хранится лишь хэш кода.
@@ -227,13 +277,15 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CreatedInvite' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/Conflict' }
 
-  /invites/{id}:
+  /family/invites/{id}:
     delete:
       operationId: revokeInvite
-      tags: [invites]
-      summary: Отозвать приглашение
+      tags: [family]
+      summary: Отозвать приглашение (глава)
       parameters:
         - name: id
           in: path
@@ -241,6 +293,78 @@ paths:
           schema: { type: integer, format: int64 }
       responses:
         '204': { description: Отозвано }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /family/members/{telegram_id}:
+    parameters:
+      - name: telegram_id
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    patch:
+      operationId: updateMember
+      tags: [family]
+      summary: Изменить настройки участника (глава или сам участник)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MemberUpdate' }
+      responses:
+        '200':
+          description: Участник после изменения
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Member' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: removeMember
+      tags: [family]
+      summary: Исключить из семьи (глава)
+      description: |
+        Человек продолжает вести расходы сам и забирает свои операции: глава перестаёт их видеть.
+        Вернуть можно новым приглашением. Себя глава исключить не может.
+      responses:
+        '204': { description: Исключён }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /family/leave:
+    post:
+      operationId: leaveFamily
+      tags: [family]
+      summary: Выйти из семьи (участник)
+      description: |
+        Участник уходит в собственную семью вместе со своими операциями. Глава семьи
+        с участниками выйти не может — сначала передаёт роль главы или исключает всех.
+      responses:
+        '204': { description: Вышел }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /family/head:
+    put:
+      operationId: transferHead
+      tags: [family]
+      summary: Передать роль главы участнику (глава)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HeadTransfer' }
+      responses:
+        '204': { description: Роль главы передана }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
   /categories:
@@ -248,19 +372,33 @@ paths:
       operationId: listCategories
       tags: [categories]
       summary: Справочник категорий
+      description: Сначала категории трат, затем доходов, в порядке показа.
       responses:
         '200':
           description: Категории с русскими названиями
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CategoryList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 
 components:
+  securitySchemes:
+    telegram:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: '`tma <initData>` — строка `Telegram.WebApp.initData` целиком.'
+
   parameters:
+    KindQuery:
+      name: kind
+      in: query
+      description: Только траты или только доходы; без параметра — и то и другое.
+      schema: { $ref: '#/components/schemas/Kind' }
     UserIDQuery:
       name: user_id
       in: query
-      description: Telegram ID члена семьи.
+      description: Telegram ID члена семьи; для участника имеет смысл только свой.
       schema: { type: integer, format: int64 }
     CategoryQuery:
       name: category
@@ -280,6 +418,18 @@ components:
   responses:
     BadRequest:
       description: Некорректный запрос
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Нет подписи Telegram, она неверна или устарела — откройте приложение из Telegram заново
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: |
+        Действие недоступно: `consent_required` — сначала принять политику данных,
+        `forbidden` — нужна роль главы или пользователь заблокирован.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -303,58 +453,93 @@ components:
       x-go-type-import:
         path: github.com/shopspring/decimal
 
+    Kind:
+      type: string
+      enum: [expense, income]
+      description: Трата или доход
+      x-enum-varnames: [KindExpense, KindIncome]
+
     Category:
       type: string
-      enum: [food, transport, housing, entertainment, health, shopping, other]
+      description: Категория; её вид (трата или доход) фиксирован.
+      enum: [food, transport, housing, entertainment, health, shopping, other,
+             salary, freelance, gift, interest, refund, other_income]
       x-enum-varnames:
         [CategoryFood, CategoryTransport, CategoryHousing, CategoryEntertainment,
-         CategoryHealth, CategoryShopping, CategoryOther]
+         CategoryHealth, CategoryShopping, CategoryOther,
+         CategorySalary, CategoryFreelance, CategoryGift, CategoryInterest, CategoryRefund, CategoryOtherIncome]
 
-    Expense:
+    Me:
       type: object
-      required: [id, user_id, amount, category, spent_at, created_at, updated_at]
+      required: [telegram_id, first_name, family_id, is_head, weekly_report, effective_timezone, consented, created_at]
+      properties:
+        telegram_id: { type: integer, format: int64, example: 123456789 }
+        first_name: { type: string, example: Данил }
+        username: { type: string, example: rics69 }
+        family_id: { type: integer, format: int64 }
+        is_head: { type: boolean, description: Глава семьи }
+        weekly_report: { type: boolean, description: Присылать итоги недели в бот по понедельникам }
+        timezone:
+          type: string
+          example: Asia/Novosibirsk
+          description: Выбранный часовой пояс; нет — пользователь не выбирал (mini app может подставить пояс устройства)
+        effective_timezone: { type: string, example: Europe/Moscow, description: Пояс, по которому считается «сегодня» }
+        consented: { type: boolean, description: Принял политику обработки данных }
+        created_at: { type: string, format: date-time }
+
+    MeUpdate:
+      type: object
+      description: Передаются только изменяемые поля.
+      properties:
+        timezone: { type: string, description: IANA-имя часового пояса, example: Asia/Novosibirsk }
+        weekly_report: { type: boolean }
+        consent: { type: boolean, description: '`true` — принять политику данных; отозвать согласие можно только удалением аккаунта' }
+
+    Operation:
+      type: object
+      required: [id, user_id, kind, amount, category, date, created_at, updated_at]
       properties:
         id: { type: integer, format: int64, example: 42 }
         user_id: { type: integer, format: int64, description: Telegram ID владельца, example: 123456789 }
+        kind: { $ref: '#/components/schemas/Kind' }
         amount: { $ref: '#/components/schemas/Money' }
         category: { $ref: '#/components/schemas/Category' }
-        spent_at: { type: string, format: date, example: '2026-10-15' }
+        date: { type: string, format: date, example: '2026-10-15' }
         comment: { type: string, example: кофе }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
-    ExpenseCreate:
+    OperationCreate:
       type: object
-      required: [user_id, amount, category]
+      required: [amount, category]
       properties:
-        user_id: { type: integer, format: int64 }
         amount: { $ref: '#/components/schemas/Money' }
         category: { $ref: '#/components/schemas/Category' }
-        spent_at:
+        date:
           type: string
           format: date
-          description: По умолчанию — сегодня в таймзоне семьи.
+          description: По умолчанию — сегодня в часовом поясе пользователя.
         comment: { type: string, maxLength: 500 }
 
-    ExpenseUpdate:
+    OperationUpdate:
       type: object
       description: Передаются только изменяемые поля. Пустой `comment` удаляет комментарий.
       properties:
-        user_id: { type: integer, format: int64 }
         amount: { $ref: '#/components/schemas/Money' }
         category: { $ref: '#/components/schemas/Category' }
-        spent_at: { type: string, format: date }
+        date: { type: string, format: date }
         comment: { type: string, maxLength: 500 }
 
-    ExpenseList:
+    OperationList:
       type: object
-      required: [items, total, sum]
+      required: [items, total, expense_sum, income_sum]
       properties:
         items:
           type: array
-          items: { $ref: '#/components/schemas/Expense' }
-        total: { type: integer, description: Количество трат во всей выборке }
-        sum: { $ref: '#/components/schemas/Money' }
+          items: { $ref: '#/components/schemas/Operation' }
+        total: { type: integer, description: Количество операций во всей выборке }
+        expense_sum: { $ref: '#/components/schemas/Money' }
+        income_sum: { $ref: '#/components/schemas/Money' }
 
     CategoryTotal:
       type: object
@@ -363,6 +548,25 @@ components:
         category: { $ref: '#/components/schemas/Category' }
         sum: { $ref: '#/components/schemas/Money' }
         count: { type: integer }
+
+    Totals:
+      type: object
+      required: [sum, count, categories]
+      properties:
+        sum: { $ref: '#/components/schemas/Money' }
+        count: { type: integer }
+        categories:
+          type: array
+          description: Категории по убыванию суммы
+          items: { $ref: '#/components/schemas/CategoryTotal' }
+
+    Summary:
+      type: object
+      required: [expense, income, balance]
+      properties:
+        expense: { $ref: '#/components/schemas/Totals' }
+        income: { $ref: '#/components/schemas/Totals' }
+        balance: { $ref: '#/components/schemas/Money' }
 
     Bucket:
       type: string
@@ -384,25 +588,39 @@ components:
 
     TimeSeries:
       type: object
-      required: [bucket, items]
+      required: [bucket, kind, items]
       properties:
         bucket: { $ref: '#/components/schemas/Bucket' }
+        kind: { $ref: '#/components/schemas/Kind' }
         items:
           type: array
           items: { $ref: '#/components/schemas/TimePoint' }
 
-    Summary:
-      type: object
-      required: [items, sum, count]
-      properties:
-        items:
-          type: array
-          description: Категории по убыванию суммы
-          items: { $ref: '#/components/schemas/CategoryTotal' }
-        sum: { $ref: '#/components/schemas/Money' }
-        count: { type: integer }
+    SavikState:
+      type: string
+      enum: [neutral, empty]
+      description: '`neutral` — всё спокойно или данных мало; `empty` — траты месяца больше записанных доходов (без доходов не определить)'
+      x-enum-varnames: [SavikNeutral, SavikEmpty]
 
-    User:
+    Savik:
+      type: object
+      required: [state, month]
+      properties:
+        state: { $ref: '#/components/schemas/SavikState' }
+        month: { $ref: '#/components/schemas/SavikMonth' }
+
+    SavikMonth:
+      type: object
+      description: Свои операции пользователя с начала месяца по сегодня
+      required: [from, to, expense, income, balance]
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date, description: Сегодня }
+        expense: { $ref: '#/components/schemas/Money' }
+        income: { $ref: '#/components/schemas/Money' }
+        balance: { $ref: '#/components/schemas/Money' }
+
+    Member:
       type: object
       required: [telegram_id, first_name, is_head, weekly_report, created_at]
       properties:
@@ -413,19 +631,30 @@ components:
         weekly_report: { type: boolean, description: Присылать итоги недели в бот по понедельникам }
         created_at: { type: string, format: date-time }
 
-    UserList:
-      type: object
-      required: [items]
-      properties:
-        items:
-          type: array
-          items: { $ref: '#/components/schemas/User' }
-
-    UserUpdate:
+    MemberUpdate:
       type: object
       required: [weekly_report]
       properties:
         weekly_report: { type: boolean }
+
+    Family:
+      type: object
+      required: [id, members, invites]
+      properties:
+        id: { type: integer, format: int64 }
+        members:
+          type: array
+          items: { $ref: '#/components/schemas/Member' }
+        invites:
+          type: array
+          description: Приглашения за последний месяц, новые первыми; только для главы
+          items: { $ref: '#/components/schemas/Invite' }
+
+    HeadTransfer:
+      type: object
+      required: [telegram_id]
+      properties:
+        telegram_id: { type: integer, format: int64, description: Участник, который станет главой }
 
     InviteStatus:
       type: string
@@ -453,22 +682,15 @@ components:
         expires_at: { type: string, format: date-time }
         link:
           type: string
-          example: https://t.me/FamilyExpensesBot?start=Xk9q2LmPz0aB7cD1eF3gHw
-          description: Ссылка для члена семьи; открывает бота и добавляет в семью
-
-    InviteList:
-      type: object
-      required: [items]
-      properties:
-        items:
-          type: array
-          items: { $ref: '#/components/schemas/Invite' }
+          example: https://t.me/SavepointBot?start=Xk9q2LmPz0aB7cD1eF3gHw
+          description: Ссылка для члена семьи; открывает бота и предлагает вступить
 
     CategoryInfo:
       type: object
-      required: [code, label]
+      required: [code, kind, label]
       properties:
         code: { $ref: '#/components/schemas/Category' }
+        kind: { $ref: '#/components/schemas/Kind' }
         label: { type: string, example: еда }
 
     CategoryList:
@@ -491,8 +713,9 @@ components:
       properties:
         code:
           type: string
-          enum: [bad_request, validation_error, not_found, unknown_user, forbidden, conflict, internal]
+          enum: [bad_request, validation_error, not_found, unauthorized, consent_required, forbidden, conflict, internal]
           x-enum-varnames:
-            [ErrCodeBadRequest, ErrCodeValidation, ErrCodeNotFound, ErrCodeUnknownUser, ErrCodeForbidden, ErrCodeConflict, ErrCodeInternal]
+            [ErrCodeBadRequest, ErrCodeValidation, ErrCodeNotFound, ErrCodeUnauthorized, ErrCodeConsentRequired,
+             ErrCodeForbidden, ErrCodeConflict, ErrCodeInternal]
         message: { type: string }
         field: { type: string, description: Поле с ошибкой валидации }

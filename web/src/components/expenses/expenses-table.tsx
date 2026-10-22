@@ -31,6 +31,8 @@ type Props = {
   stale: boolean;
   onEdit: (e: Expense) => void;
   onDelete: (e: Expense) => void;
+  /** Whether the user may change the expense: everyone changes only their own. */
+  canEdit: (e: Expense) => boolean;
 };
 
 export function ExpensesTable({
@@ -44,6 +46,7 @@ export function ExpensesTable({
   stale,
   onEdit,
   onDelete,
+  canEdit,
 }: Props) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const first = (page - 1) * pageSize + 1;
@@ -69,16 +72,16 @@ export function ExpensesTable({
               <li key={e.id}>
                 <button
                   type="button"
+                  disabled={!canEdit(e)}
                   onClick={() => onEdit(e)}
-                  className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left outline-none hover:bg-muted/50 focus-visible:bg-muted/50"
+                  className="flex w-full disabled:cursor-default disabled:hover:bg-transparent items-center justify-between gap-4 px-4 py-3 text-left outline-none hover:bg-muted/50 focus-visible:bg-muted/50"
                 >
                   <div className="flex min-w-0 flex-col gap-1">
                     <span className="truncate font-medium">
                       {e.comment ?? capitalize(categoryLabel(e.category))}
                     </span>
                     <span className="truncate text-sm text-muted-foreground">
-                      {formatDate(e.spent_at)} · {memberLabel(e.user_id)} ·{" "}
-                      {categoryLabel(e.category)}
+                      {formatDate(e.date)} · {memberLabel(e.user_id)} · {categoryLabel(e.category)}
                     </span>
                   </div>
                   <span className="shrink-0 font-medium tabular-nums">{formatMoney(e.amount)}</span>
@@ -120,7 +123,7 @@ export function ExpensesTable({
               : items.map((e) => (
                   <TableRow key={e.id}>
                     <TableCell className="py-3 pl-4 whitespace-nowrap text-muted-foreground">
-                      {formatDate(e.spent_at)}
+                      {formatDate(e.date)}
                     </TableCell>
                     <TableCell className="py-3">{memberLabel(e.user_id)}</TableCell>
                     <TableCell className="py-3">
@@ -133,23 +136,27 @@ export function ExpensesTable({
                       {formatMoney(e.amount)}
                     </TableCell>
                     <TableCell className="py-1 pr-4 text-right whitespace-nowrap">
-                      <Button
-                        variant="ghost"
-                        size="icon-lg"
-                        aria-label="Изменить трату"
-                        onClick={() => onEdit(e)}
-                      >
-                        <PencilIcon />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon-lg"
-                        aria-label="Удалить трату"
-                        className="text-muted-foreground hover:text-destructive"
-                        onClick={() => onDelete(e)}
-                      >
-                        <Trash2Icon />
-                      </Button>
+                      {canEdit(e) && (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon-lg"
+                            aria-label="Изменить трату"
+                            onClick={() => onEdit(e)}
+                          >
+                            <PencilIcon />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon-lg"
+                            aria-label="Удалить трату"
+                            className="text-muted-foreground hover:text-destructive"
+                            onClick={() => onDelete(e)}
+                          >
+                            <Trash2Icon />
+                          </Button>
+                        </>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

@@ -2,8 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"time"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -11,6 +9,7 @@ import (
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/savik"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
 
@@ -19,8 +18,8 @@ func init() {
 	decimal.MarshalJSONWithoutQuotes = true
 }
 
-// ExpenseService is the part of ledger.Service the API needs.
-type ExpenseService interface {
+// LedgerService is the part of ledger.Service the API needs.
+type LedgerService interface {
 	Create(ctx context.Context, in ledger.CreateInput) (ledger.Operation, error)
 	Get(ctx context.Context, s ledger.Scope, id int64) (ledger.Operation, error)
 	Update(ctx context.Context, s ledger.Scope, id int64, p ledger.Patch) (ledger.Operation, error)
@@ -28,282 +27,321 @@ type ExpenseService interface {
 	List(ctx context.Context, s ledger.Scope, f ledger.Filter) (ledger.Page, error)
 	Summary(ctx context.Context, s ledger.Scope, f ledger.Filter) (ledger.Summary, error)
 	TimeSeries(ctx context.Context, s ledger.Scope, f ledger.Filter, b ledger.Bucket) ([]ledger.Point, error)
+	TodayIn(loc *time.Location) time.Time
 }
 
-// FamilyService manages members and invites; *family.Service implements it.
+// FamilyService manages users, families and invites; *family.Service implements it.
 type FamilyService interface {
-	Member(ctx context.Context, familyID, telegramID int64) (user.User, error)
+	Admitter
+	Consent(ctx context.Context, telegramID int64) (user.User, error)
+	SetTimezone(ctx context.Context, telegramID int64, tz string) (user.User, error)
+	SetWeeklyReport(ctx context.Context, by user.User, telegramID int64, on bool) (user.User, error)
+	DeleteAccount(ctx context.Context, telegramID int64) error
 	Members(ctx context.Context, familyID int64) ([]user.User, error)
 	Remove(ctx context.Context, head user.User, telegramID int64) error
-	SetWeeklyReport(ctx context.Context, by user.User, telegramID int64, on bool) (user.User, error)
+	Leave(ctx context.Context, telegramID int64) (user.User, error)
+	TransferHead(ctx context.Context, head user.User, telegramID int64) error
 	CreateInvite(ctx context.Context, head user.User) (family.CreatedInvite, error)
 	ListInvites(ctx context.Context, familyID int64) ([]family.Invite, error)
 	RevokeInvite(ctx context.Context, familyID, id int64) error
 	Now() time.Time
 }
 
-// Viewer returns the user the panel works for.
-type Viewer func(ctx context.Context) (user.User, error)
-
-// ErrNoViewer means the panel does not know whose family to show.
-var ErrNoViewer = errors.New("the panel has no user: set ADMIN_TELEGRAM_ID and write to the bot first")
-
-// Server implements StrictServerInterface. The panel belongs to a family head,
-// so every operation works in the scope of the head's family.
+// Server implements StrictServerInterface for the user of the request (see
+// Auth): a family head reads the operations of the whole family, everyone
+// writes only their own.
 //
 // Domain errors are returned as plain errors and turned into HTTP responses
 // in one place (writeError), instead of building 400/404 objects in each handler.
 type Server struct {
-	expenses ExpenseService
-	family   FamilyService
-	viewer   Viewer
+	ledger LedgerService
+	family FamilyService
+	loc    *time.Location // timezone of users who have not chosen one
 }
 
 var _ StrictServerInterface = (*Server)(nil)
 
-func NewServer(expenses ExpenseService, family FamilyService, viewer Viewer) *Server {
-	return &Server{expenses: expenses, family: family, viewer: viewer}
+func NewServer(l LedgerService, f FamilyService, loc *time.Location) *Server {
+	return &Server{ledger: l, family: f, loc: loc}
 }
 
-// head returns the viewer, who must be the head of their family.
-func (s *Server) head(ctx context.Context) (user.User, error) {
-	u, err := s.viewer(ctx)
-	if err != nil {
-		return user.User{}, err
+// readScope is what the user may see: the head sees the whole family.
+func readScope(u user.User) ledger.Scope {
+	if u.IsHead {
+		return ledger.InFamily(u.FamilyID)
 	}
-	if !u.IsHead {
-		return user.User{}, family.ErrNotHead
-	}
-	return u, nil
+	return ledger.OwnedBy(u.TelegramID)
 }
 
-// scope is the head's family: what the panel may see and change.
-func (s *Server) scope(ctx context.Context) (ledger.Scope, user.User, error) {
-	u, err := s.head(ctx)
-	if err != nil {
-		return ledger.Scope{}, user.User{}, err
-	}
-	return ledger.InFamily(u.FamilyID), u, nil
-}
+// writeScope is what the user may change: only their own operations, the
+// head included — a family shares the view, not the pen.
+func writeScope(u user.User) ledger.Scope { return ledger.OwnedBy(u.TelegramID) }
 
-// member checks that an expense owner chosen in the panel is in the family.
-func (s *Server) member(ctx context.Context, head user.User, telegramID int64) error {
-	_, err := s.family.Member(ctx, head.FamilyID, telegramID)
-	if errors.Is(err, family.ErrNotMember) {
-		return ledger.ErrUnknownUser
-	}
-	return err
-}
+func (s *Server) today(u user.User) time.Time { return s.ledger.TodayIn(u.Location(s.loc)) }
 
-func (s *Server) ListExpenses(ctx context.Context, req ListExpensesRequestObject) (ListExpensesResponseObject, error) {
-	p := req.Params
-	f := filterFrom(p.UserId, p.Category, p.From, p.To)
-	f.Query = deref(p.Q)
-	f.Limit = deref(p.Limit)
-	f.Offset = deref(p.Offset)
+// Me.
 
-	scope, _, err := s.scope(ctx)
+func (s *Server) GetMe(ctx context.Context, _ GetMeRequestObject) (GetMeResponseObject, error) {
+	u, err := caller(ctx)
 	if err != nil {
 		return nil, err
 	}
-	page, err := s.expenses.List(ctx, scope, f)
-	if err != nil {
-		return nil, err
-	}
-	items := make([]Expense, len(page.Items))
-	for i, e := range page.Items {
-		items[i] = toAPIExpense(e)
-	}
-	return ListExpenses200JSONResponse{Items: items, Total: page.Total, Sum: page.ExpenseSum}, nil
+	return GetMe200JSONResponse(s.toAPIMe(u)), nil
 }
 
-func (s *Server) CreateExpense(ctx context.Context, req CreateExpenseRequestObject) (CreateExpenseResponseObject, error) {
-	_, head, err := s.scope(ctx)
+func (s *Server) UpdateMe(ctx context.Context, req UpdateMeRequestObject) (UpdateMeResponseObject, error) {
+	u, err := caller(ctx)
 	if err != nil {
 		return nil, err
 	}
 	b := req.Body
-	if err := s.member(ctx, head, b.UserId); err != nil {
+	if b.Consent != nil {
+		if !*b.Consent {
+			return nil, &ledger.ValidationError{Field: "consent", Message: "can only be accepted; delete the account to withdraw it"}
+		}
+		if u, err = s.family.Consent(ctx, u.TelegramID); err != nil {
+			return nil, err
+		}
+	}
+	// The rest is personal data: only after the policy is accepted.
+	if (b.Timezone != nil || b.WeeklyReport != nil) && !u.Consented() {
+		return nil, ErrConsentRequired
+	}
+	if b.Timezone != nil {
+		if u, err = s.family.SetTimezone(ctx, u.TelegramID, *b.Timezone); err != nil {
+			return nil, err
+		}
+	}
+	if b.WeeklyReport != nil {
+		if u, err = s.family.SetWeeklyReport(ctx, u, u.TelegramID, *b.WeeklyReport); err != nil {
+			return nil, err
+		}
+	}
+	return UpdateMe200JSONResponse(s.toAPIMe(u)), nil
+}
+
+func (s *Server) DeleteMe(ctx context.Context, _ DeleteMeRequestObject) (DeleteMeResponseObject, error) {
+	u, err := caller(ctx)
+	if err != nil {
 		return nil, err
 	}
-	if err := expenseCategory(ledger.Category(b.Category)); err != nil {
+	if err := s.family.DeleteAccount(ctx, u.TelegramID); err != nil {
 		return nil, err
 	}
-	in := ledger.CreateInput{
-		UserID:   b.UserId,
+	return DeleteMe204Response{}, nil
+}
+
+func (s *Server) toAPIMe(u user.User) Me {
+	return Me{
+		TelegramId:        u.TelegramID,
+		FirstName:         u.FirstName,
+		Username:          optional(u.Username),
+		FamilyId:          u.FamilyID,
+		IsHead:            u.IsHead,
+		WeeklyReport:      u.WeeklyReport,
+		Timezone:          optional(u.Timezone),
+		EffectiveTimezone: u.Location(s.loc).String(),
+		Consented:         u.Consented(),
+		CreatedAt:         u.CreatedAt,
+	}
+}
+
+// Operations.
+
+func (s *Server) ListOperations(ctx context.Context, req ListOperationsRequestObject) (ListOperationsResponseObject, error) {
+	u, err := consented(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p := req.Params
+	f := filterFrom(p.UserId, p.Category, p.From, p.To)
+	if p.Kind != nil {
+		k := ledger.Kind(*p.Kind)
+		f.Kind = &k
+	}
+	f.Query = deref(p.Q)
+	f.Limit = deref(p.Limit)
+	f.Offset = deref(p.Offset)
+
+	page, err := s.ledger.List(ctx, readScope(u), f)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]Operation, len(page.Items))
+	for i, o := range page.Items {
+		items[i] = toAPIOperation(o)
+	}
+	return ListOperations200JSONResponse{
+		Items: items, Total: page.Total, ExpenseSum: page.ExpenseSum, IncomeSum: page.IncomeSum,
+	}, nil
+}
+
+func (s *Server) CreateOperation(ctx context.Context, req CreateOperationRequestObject) (CreateOperationResponseObject, error) {
+	u, err := consented(ctx)
+	if err != nil {
+		return nil, err
+	}
+	b := req.Body
+	o, err := s.ledger.Create(ctx, ledger.CreateInput{
+		UserID:   u.TelegramID, // always the caller: nobody records for someone else
 		Amount:   b.Amount,
 		Category: ledger.Category(b.Category),
-		Date:     dateTime(b.SpentAt),
+		Date:     dateTime(b.Date),
 		Comment:  deref(b.Comment),
-	}
-	e, err := s.expenses.Create(ctx, in)
+		Today:    s.today(u),
+	})
 	if err != nil {
 		return nil, err
 	}
-	return CreateExpense201JSONResponse(toAPIExpense(e)), nil
+	return CreateOperation201JSONResponse(toAPIOperation(o)), nil
 }
 
-func (s *Server) GetExpenseSummary(ctx context.Context, req GetExpenseSummaryRequestObject) (GetExpenseSummaryResponseObject, error) {
-	p := req.Params
-	scope, _, err := s.scope(ctx)
+func (s *Server) GetOperation(ctx context.Context, req GetOperationRequestObject) (GetOperationResponseObject, error) {
+	u, err := consented(ctx)
 	if err != nil {
 		return nil, err
 	}
-	sum, err := s.expenses.Summary(ctx, scope, filterFrom(p.UserId, p.Category, p.From, p.To))
+	o, err := s.ledger.Get(ctx, readScope(u), req.Id)
 	if err != nil {
 		return nil, err
 	}
-	spent := sum.Of(ledger.KindExpense)
-	items := make([]CategoryTotal, len(spent))
-	for i, t := range spent {
-		items[i] = CategoryTotal{Category: Category(t.Category), Sum: t.Sum, Count: t.Count}
-	}
-	return GetExpenseSummary200JSONResponse{Items: items, Sum: sum.Expense.Sum, Count: sum.Expense.Count}, nil
+	return GetOperation200JSONResponse(toAPIOperation(o)), nil
 }
 
-func (s *Server) GetExpenseTimeSeries(ctx context.Context, req GetExpenseTimeSeriesRequestObject) (GetExpenseTimeSeriesResponseObject, error) {
-	p := req.Params
-	scope, _, err := s.scope(ctx)
+func (s *Server) UpdateOperation(ctx context.Context, req UpdateOperationRequestObject) (UpdateOperationResponseObject, error) {
+	u, err := consented(ctx)
 	if err != nil {
 		return nil, err
 	}
-	points, err := s.expenses.TimeSeries(ctx, scope,
-		filterFrom(p.UserId, p.Category, p.From, p.To), ledger.Bucket(p.Bucket))
+	b := req.Body
+	p := ledger.Patch{Amount: b.Amount, Date: dateTime(b.Date), Comment: b.Comment, Today: s.today(u)}
+	if b.Category != nil {
+		c := ledger.Category(*b.Category)
+		p.Category = &c
+	}
+	o, err := s.ledger.Update(ctx, writeScope(u), req.Id, p)
+	if err != nil {
+		return nil, err
+	}
+	return UpdateOperation200JSONResponse(toAPIOperation(o)), nil
+}
+
+func (s *Server) DeleteOperation(ctx context.Context, req DeleteOperationRequestObject) (DeleteOperationResponseObject, error) {
+	u, err := consented(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.ledger.Delete(ctx, writeScope(u), req.Id); err != nil {
+		return nil, err
+	}
+	return DeleteOperation204Response{}, nil
+}
+
+func (s *Server) GetSummary(ctx context.Context, req GetSummaryRequestObject) (GetSummaryResponseObject, error) {
+	u, err := consented(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p := req.Params
+	sum, err := s.ledger.Summary(ctx, readScope(u), filterFrom(p.UserId, p.Category, p.From, p.To))
+	if err != nil {
+		return nil, err
+	}
+	return GetSummary200JSONResponse{
+		Expense: toAPITotals(sum, ledger.KindExpense),
+		Income:  toAPITotals(sum, ledger.KindIncome),
+		Balance: sum.Balance(),
+	}, nil
+}
+
+func (s *Server) GetTimeSeries(ctx context.Context, req GetTimeSeriesRequestObject) (GetTimeSeriesResponseObject, error) {
+	u, err := consented(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p := req.Params
+	f := filterFrom(p.UserId, p.Category, p.From, p.To)
+	kind := ledger.Kind(p.Kind)
+	if !kind.Valid() {
+		return nil, &ledger.ValidationError{Field: "kind", Message: "must be expense or income"}
+	}
+	f.Kind = &kind
+	points, err := s.ledger.TimeSeries(ctx, readScope(u), f, ledger.Bucket(p.Bucket))
 	if err != nil {
 		return nil, err
 	}
 	items := make([]TimePoint, len(points))
 	for i, pt := range points {
-		cats := make([]CategoryTotal, len(pt.Categories))
-		for j, c := range pt.Categories {
-			cats[j] = CategoryTotal{Category: Category(c.Category), Sum: c.Sum, Count: c.Count}
-		}
-		items[i] = TimePoint{Start: openapi_types.Date{Time: pt.Start}, Sum: pt.Sum, Count: pt.Count, Categories: cats}
+		items[i] = TimePoint{Start: openapi_types.Date{Time: pt.Start}, Sum: pt.Sum, Count: pt.Count, Categories: toAPICategories(pt.Categories)}
 	}
-	return GetExpenseTimeSeries200JSONResponse{Bucket: p.Bucket, Items: items}, nil
+	return GetTimeSeries200JSONResponse{Bucket: p.Bucket, Kind: p.Kind, Items: items}, nil
 }
 
-func (s *Server) GetExpense(ctx context.Context, req GetExpenseRequestObject) (GetExpenseResponseObject, error) {
-	scope, _, err := s.scope(ctx)
+func (s *Server) GetSavik(ctx context.Context, _ GetSavikRequestObject) (GetSavikResponseObject, error) {
+	u, err := consented(ctx)
 	if err != nil {
 		return nil, err
 	}
-	e, err := s.getExpense(ctx, scope, req.Id)
+	// Savik reflects the user's own money, even for a family head.
+	today := s.today(u)
+	from := time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, time.UTC)
+	month, err := s.ledger.Summary(ctx, ledger.OwnedBy(u.TelegramID), ledger.Filter{From: &from, To: &today})
 	if err != nil {
 		return nil, err
 	}
-	return GetExpense200JSONResponse(toAPIExpense(e)), nil
-}
-
-func (s *Server) UpdateExpense(ctx context.Context, req UpdateExpenseRequestObject) (UpdateExpenseResponseObject, error) {
-	scope, head, err := s.scope(ctx)
-	if err != nil {
-		return nil, err
-	}
-	b := req.Body
-	if b.UserId != nil {
-		if err := s.member(ctx, head, *b.UserId); err != nil {
-			return nil, err
-		}
-	}
-	p := ledger.Patch{
-		UserID:  b.UserId,
-		Amount:  b.Amount,
-		Date:    dateTime(b.SpentAt),
-		Comment: b.Comment,
-	}
-	if b.Category != nil {
-		c := ledger.Category(*b.Category)
-		if err := expenseCategory(c); err != nil {
-			return nil, err
-		}
-		p.Category = &c
-	}
-	if _, err := s.getExpense(ctx, scope, req.Id); err != nil {
-		return nil, err
-	}
-	e, err := s.expenses.Update(ctx, scope, req.Id, p)
-	if err != nil {
-		return nil, err
-	}
-	return UpdateExpense200JSONResponse(toAPIExpense(e)), nil
-}
-
-func (s *Server) DeleteExpense(ctx context.Context, req DeleteExpenseRequestObject) (DeleteExpenseResponseObject, error) {
-	scope, _, err := s.scope(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := s.getExpense(ctx, scope, req.Id); err != nil {
-		return nil, err
-	}
-	if err := s.expenses.Delete(ctx, scope, req.Id); err != nil {
-		return nil, err
-	}
-	return DeleteExpense204Response{}, nil
-}
-
-// getExpense returns an operation only if it is an expense: incomes are not
-// part of this API yet, so for it they do not exist.
-func (s *Server) getExpense(ctx context.Context, scope ledger.Scope, id int64) (ledger.Operation, error) {
-	e, err := s.expenses.Get(ctx, scope, id)
-	if err != nil {
-		return ledger.Operation{}, err
-	}
-	if e.Kind() != ledger.KindExpense {
-		return ledger.Operation{}, ledger.ErrNotFound
-	}
-	return e, nil
-}
-
-func expenseCategory(c ledger.Category) error {
-	if !c.Valid() || c.Kind() != ledger.KindExpense {
-		return &ledger.ValidationError{Field: "category", Message: fmt.Sprintf("unknown expense category %q", c)}
-	}
-	return nil
-}
-
-func (s *Server) ListUsers(ctx context.Context, _ ListUsersRequestObject) (ListUsersResponseObject, error) {
-	head, err := s.head(ctx)
-	if err != nil {
-		return nil, err
-	}
-	users, err := s.family.Members(ctx, head.FamilyID)
-	if err != nil {
-		return nil, err
-	}
-	items := make([]User, len(users))
-	for i, u := range users {
-		items[i] = toAPIUser(u)
-	}
-	return ListUsers200JSONResponse{Items: items}, nil
+	return GetSavik200JSONResponse{
+		State: SavikState(savik.Of(month)),
+		Month: SavikMonth{
+			From:    openapi_types.Date{Time: from},
+			To:      openapi_types.Date{Time: today},
+			Expense: month.Expense.Sum,
+			Income:  month.Income.Sum,
+			Balance: month.Balance(),
+		},
+	}, nil
 }
 
 func (s *Server) ListCategories(context.Context, ListCategoriesRequestObject) (ListCategoriesResponseObject, error) {
-	items := make([]CategoryInfo, len(ledger.ExpenseCategories))
-	for i, c := range ledger.ExpenseCategories {
-		items[i] = CategoryInfo{Code: Category(c), Label: c.Label()}
+	all := append(append([]ledger.Category{}, ledger.ExpenseCategories...), ledger.IncomeCategories...)
+	items := make([]CategoryInfo, len(all))
+	for i, c := range all {
+		items[i] = CategoryInfo{Code: Category(c), Kind: Kind(c.Kind()), Label: c.Label()}
 	}
 	return ListCategories200JSONResponse{Items: items}, nil
 }
 
-func toAPIExpense(e ledger.Operation) Expense {
-	return Expense{
-		Id:        e.ID,
-		UserId:    e.UserID,
-		Amount:    e.Amount,
-		Category:  Category(e.Category),
-		SpentAt:   openapi_types.Date{Time: e.Date},
-		Comment:   optional(e.Comment),
-		CreatedAt: e.CreatedAt,
-		UpdatedAt: e.UpdatedAt,
+func toAPIOperation(o ledger.Operation) Operation {
+	return Operation{
+		Id:        o.ID,
+		UserId:    o.UserID,
+		Kind:      Kind(o.Kind()),
+		Amount:    o.Amount,
+		Category:  Category(o.Category),
+		Date:      openapi_types.Date{Time: o.Date},
+		Comment:   optional(o.Comment),
+		CreatedAt: o.CreatedAt,
+		UpdatedAt: o.UpdatedAt,
 	}
 }
 
-// filterFrom builds a filter of expenses: the API does not serve incomes yet.
+func toAPITotals(s ledger.Summary, k ledger.Kind) Totals {
+	t := s.Expense
+	if k == ledger.KindIncome {
+		t = s.Income
+	}
+	return Totals{Sum: t.Sum, Count: t.Count, Categories: toAPICategories(s.Of(k))}
+}
+
+func toAPICategories(totals []ledger.CategoryTotal) []CategoryTotal {
+	out := make([]CategoryTotal, len(totals))
+	for i, t := range totals {
+		out[i] = CategoryTotal{Category: Category(t.Category), Sum: t.Sum, Count: t.Count}
+	}
+	return out
+}
+
 func filterFrom(userID *int64, category *Category, from, to *openapi_types.Date) ledger.Filter {
-	expense := ledger.KindExpense
-	f := ledger.Filter{UserID: userID, Kind: &expense, From: dateTime(from), To: dateTime(to)}
+	f := ledger.Filter{UserID: userID, From: dateTime(from), To: dateTime(to)}
 	if category != nil {
 		c := ledger.Category(*category)
 		f.Category = &c
@@ -311,13 +349,3 @@ func filterFrom(userID *int64, category *Category, from, to *openapi_types.Date)
 	return f
 }
 
-func toAPIUser(u user.User) User {
-	return User{
-		TelegramId:   u.TelegramID,
-		FirstName:    u.FirstName,
-		Username:     optional(u.Username),
-		IsHead:       u.IsHead,
-		WeeklyReport: u.WeeklyReport,
-		CreatedAt:    u.CreatedAt,
-	}
-}

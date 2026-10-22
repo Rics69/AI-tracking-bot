@@ -44,7 +44,7 @@ export function DeleteExpenseDialog({ expense, onOpenChange, memberLabel }: Prop
           <AlertDialogDescription>
             {expense &&
               `${expense.comment ?? "Без комментария"} — ${formatMoney(expense.amount)}, ` +
-                `${formatDate(expense.spent_at)}, ${memberLabel(expense.user_id)}. Это действие нельзя отменить.`}
+                `${formatDate(expense.date)}, ${memberLabel(expense.user_id)}. Это действие нельзя отменить.`}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

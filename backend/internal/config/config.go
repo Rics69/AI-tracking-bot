@@ -18,7 +18,6 @@ type Common struct {
 	LogLevel    slog.Level `env:"LOG_LEVEL" envDefault:"info"`
 	LogFormat   string     `env:"LOG_FORMAT" envDefault:"text"`
 	// AdminID is the owner of the bot: receives /feedback and is not limited.
-	// Until the mini app has its own login, the panel shows the admin's family.
 	AdminID int64 `env:"ADMIN_TELEGRAM_ID"`
 
 	// Location is parsed from Timezone by Load.
@@ -30,6 +29,22 @@ type API struct {
 	Common
 	HTTPAddr        string        `env:"HTTP_ADDR" envDefault:":8080"`
 	ShutdownTimeout time.Duration `env:"SHUTDOWN_TIMEOUT" envDefault:"10s"`
+	// TelegramToken checks the signature of Mini App init data.
+	TelegramToken string `env:"TELEGRAM_BOT_TOKEN,required"`
+	// Env is "dev" on a developer's machine; anything else is production.
+	Env string `env:"APP_ENV" envDefault:"prod"`
+	// AuthDevUserID serves requests without init data as this user, so the
+	// panel opens in a plain browser. Honoured only when Env is "dev".
+	AuthDevUserID int64 `env:"AUTH_DEV_USER_ID"`
+}
+
+// DevUser returns the user for requests without init data: AUTH_DEV_USER_ID
+// in development, 0 (nobody) anywhere else, whatever the variable says.
+func (c API) DevUser() int64 {
+	if c.Env != "dev" {
+		return 0
+	}
+	return c.AuthDevUserID
 }
 
 // LLM selects and configures the model provider.

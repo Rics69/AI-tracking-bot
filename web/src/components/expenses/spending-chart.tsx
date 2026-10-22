@@ -4,7 +4,7 @@ import { BarChart3Icon, TableIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 
-import type { Bucket, Category, TimePoint } from "@/api/client";
+import type { Bucket, Category, ExpenseCategory, TimePoint } from "@/api/client";
 import type { ExpenseQuery } from "@/api/queries";
 import { useTimeSeries } from "@/api/queries";
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,7 @@ import { capitalize } from "./filters-bar";
 // Each category keeps its colour whatever the filter: colour follows the
 // entity, never its rank. Hues are the validated categorical palette in its
 // fixed order (light / dark steps), checked for colour-blind separation.
-const CATEGORY_ORDER: Category[] = [
+const CATEGORY_ORDER: ExpenseCategory[] = [
   "food",
   "transport",
   "housing",
@@ -36,7 +36,7 @@ const CATEGORY_ORDER: Category[] = [
   "shopping",
   "other",
 ];
-const PALETTE: Record<Category, { light: string; dark: string }> = {
+const PALETTE: Record<ExpenseCategory, { light: string; dark: string }> = {
   food: { light: "#2a78d6", dark: "#3987e5" },
   transport: { light: "#eb6834", dark: "#d95926" },
   housing: { light: "#1baf7a", dark: "#199e70" },

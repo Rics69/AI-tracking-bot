@@ -772,3 +772,24 @@ func TestIncomes(t *testing.T) {
 		t.Error("an expense category was stored as an income")
 	}
 }
+
+func TestSetHead(t *testing.T) {
+	_, users := setup(t)
+	ctx := context.Background()
+	joinFamily(t, 1, 2)
+	anna, _ := users.Get(ctx, 1)
+	if err := users.SetHead(ctx, anna.FamilyID, 2); err != nil {
+		t.Fatal(err)
+	}
+	members, _ := users.Family(ctx, anna.FamilyID)
+	if len(members) != 2 || members[0].TelegramID != 2 || !members[0].IsHead || members[1].IsHead {
+		t.Errorf("family = %+v, want Boris as the only head", members)
+	}
+	// A user outside the family: nothing changes.
+	if err := users.SetHead(ctx, anna.FamilyID, 404); !errors.Is(err, user.ErrNotFound) {
+		t.Errorf("err = %v", err)
+	}
+	if b, _ := users.Get(ctx, 2); !b.IsHead {
+		t.Error("a failed transfer demoted the head")
+	}
+}

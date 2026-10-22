@@ -50,9 +50,15 @@ func (e Bucket) Valid() bool {
 const (
 	CategoryEntertainment Category = "entertainment"
 	CategoryFood          Category = "food"
+	CategoryFreelance     Category = "freelance"
+	CategoryGift          Category = "gift"
 	CategoryHealth        Category = "health"
 	CategoryHousing       Category = "housing"
+	CategoryInterest      Category = "interest"
 	CategoryOther         Category = "other"
+	CategoryOtherIncome   Category = "other_income"
+	CategoryRefund        Category = "refund"
+	CategorySalary        Category = "salary"
 	CategoryShopping      Category = "shopping"
 	CategoryTransport     Category = "transport"
 )
@@ -64,11 +70,23 @@ func (e Category) Valid() bool {
 		return true
 	case CategoryFood:
 		return true
+	case CategoryFreelance:
+		return true
+	case CategoryGift:
+		return true
 	case CategoryHealth:
 		return true
 	case CategoryHousing:
 		return true
+	case CategoryInterest:
+		return true
 	case CategoryOther:
+		return true
+	case CategoryOtherIncome:
+		return true
+	case CategoryRefund:
+		return true
+	case CategorySalary:
 		return true
 	case CategoryShopping:
 		return true
@@ -81,13 +99,14 @@ func (e Category) Valid() bool {
 
 // Defines values for ErrorDetailCode.
 const (
-	ErrCodeBadRequest  ErrorDetailCode = "bad_request"
-	ErrCodeConflict    ErrorDetailCode = "conflict"
-	ErrCodeForbidden   ErrorDetailCode = "forbidden"
-	ErrCodeInternal    ErrorDetailCode = "internal"
-	ErrCodeNotFound    ErrorDetailCode = "not_found"
-	ErrCodeUnknownUser ErrorDetailCode = "unknown_user"
-	ErrCodeValidation  ErrorDetailCode = "validation_error"
+	ErrCodeBadRequest      ErrorDetailCode = "bad_request"
+	ErrCodeConflict        ErrorDetailCode = "conflict"
+	ErrCodeConsentRequired ErrorDetailCode = "consent_required"
+	ErrCodeForbidden       ErrorDetailCode = "forbidden"
+	ErrCodeInternal        ErrorDetailCode = "internal"
+	ErrCodeNotFound        ErrorDetailCode = "not_found"
+	ErrCodeUnauthorized    ErrorDetailCode = "unauthorized"
+	ErrCodeValidation      ErrorDetailCode = "validation_error"
 )
 
 // Valid indicates whether the value is a known member of the ErrorDetailCode enum.
@@ -97,13 +116,15 @@ func (e ErrorDetailCode) Valid() bool {
 		return true
 	case ErrCodeConflict:
 		return true
+	case ErrCodeConsentRequired:
+		return true
 	case ErrCodeForbidden:
 		return true
 	case ErrCodeInternal:
 		return true
 	case ErrCodeNotFound:
 		return true
-	case ErrCodeUnknownUser:
+	case ErrCodeUnauthorized:
 		return true
 	case ErrCodeValidation:
 		return true
@@ -136,15 +157,55 @@ func (e InviteStatus) Valid() bool {
 	}
 }
 
+// Defines values for Kind.
+const (
+	KindExpense Kind = "expense"
+	KindIncome  Kind = "income"
+)
+
+// Valid indicates whether the value is a known member of the Kind enum.
+func (e Kind) Valid() bool {
+	switch e {
+	case KindExpense:
+		return true
+	case KindIncome:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SavikState.
+const (
+	SavikEmpty   SavikState = "empty"
+	SavikNeutral SavikState = "neutral"
+)
+
+// Valid indicates whether the value is a known member of the SavikState enum.
+func (e SavikState) Valid() bool {
+	switch e {
+	case SavikEmpty:
+		return true
+	case SavikNeutral:
+		return true
+	default:
+		return false
+	}
+}
+
 // Bucket Интервал; недели начинаются с понедельника
 type Bucket string
 
-// Category defines model for Category.
+// Category Категория; её вид (трата или доход) фиксирован.
 type Category string
 
 // CategoryInfo defines model for CategoryInfo.
 type CategoryInfo struct {
+	// Code Категория; её вид (трата или доход) фиксирован.
 	Code Category `json:"code"`
+
+	// Kind Трата или доход
+	Kind Kind `json:"kind"`
 
 	// Label Example: еда
 	Label string `json:"label"`
@@ -157,6 +218,7 @@ type CategoryList struct {
 
 // CategoryTotal defines model for CategoryTotal.
 type CategoryTotal struct {
+	// Category Категория; её вид (трата или доход) фиксирован.
 	Category Category `json:"category"`
 	Count    int      `json:"count"`
 
@@ -172,9 +234,9 @@ type CreatedInvite struct {
 	ExpiresAt time.Time `json:"expires_at"`
 	Id        int64     `json:"id"`
 
-	// Link Ссылка для члена семьи; открывает бота и добавляет в семью
+	// Link Ссылка для члена семьи; открывает бота и предлагает вступить
 	//
-	// Example: https://t.me/FamilyExpensesBot?start=Xk9q2LmPz0aB7cD1eF3gHw
+	// Example: https://t.me/SavepointBot?start=Xk9q2LmPz0aB7cD1eF3gHw
 	Link   string       `json:"link"`
 	Status InviteStatus `json:"status"`
 }
@@ -196,68 +258,19 @@ type ErrorDetail struct {
 // ErrorDetailCode defines model for ErrorDetail.Code.
 type ErrorDetailCode string
 
-// Expense defines model for Expense.
-type Expense struct {
-	// Amount Сумма в рублях, не более двух знаков после запятой.
-	//
-	// Example: 350.5
-	Amount   Money    `json:"amount"`
-	Category Category `json:"category"`
-
-	// Comment Example: кофе
-	Comment   *string   `json:"comment,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-
-	// Id Example: 42
+// Family defines model for Family.
+type Family struct {
 	Id int64 `json:"id"`
 
-	// SpentAt Example: 2026-10-15
-	SpentAt   openapi_types.Date `json:"spent_at"`
-	UpdatedAt time.Time          `json:"updated_at"`
-
-	// UserId Telegram ID владельца
-	//
-	// Example: 123456789
-	UserId int64 `json:"user_id"`
+	// Invites Приглашения за последний месяц, новые первыми; только для главы
+	Invites []Invite `json:"invites"`
+	Members []Member `json:"members"`
 }
 
-// ExpenseCreate defines model for ExpenseCreate.
-type ExpenseCreate struct {
-	// Amount Сумма в рублях, не более двух знаков после запятой.
-	//
-	// Example: 350.5
-	Amount   Money    `json:"amount"`
-	Category Category `json:"category"`
-	Comment  *string  `json:"comment,omitempty"`
-
-	// SpentAt По умолчанию — сегодня в таймзоне семьи.
-	SpentAt *openapi_types.Date `json:"spent_at,omitempty"`
-	UserId  int64               `json:"user_id"`
-}
-
-// ExpenseList defines model for ExpenseList.
-type ExpenseList struct {
-	Items []Expense `json:"items"`
-
-	// Sum Сумма в рублях, не более двух знаков после запятой.
-	//
-	// Example: 350.5
-	Sum Money `json:"sum"`
-
-	// Total Количество трат во всей выборке
-	Total int `json:"total"`
-}
-
-// ExpenseUpdate Передаются только изменяемые поля. Пустой `comment` удаляет комментарий.
-type ExpenseUpdate struct {
-	// Amount Сумма в рублях, не более двух знаков после запятой.
-	//
-	// Example: 350.5
-	Amount   *Money              `json:"amount,omitempty"`
-	Category *Category           `json:"category,omitempty"`
-	Comment  *string             `json:"comment,omitempty"`
-	SpentAt  *openapi_types.Date `json:"spent_at,omitempty"`
-	UserId   *int64              `json:"user_id,omitempty"`
+// HeadTransfer defines model for HeadTransfer.
+type HeadTransfer struct {
+	// TelegramId Участник
+	TelegramId int64 `json:"telegram_id"`
 }
 
 // Invite defines model for Invite.
@@ -272,30 +285,204 @@ type Invite struct {
 	UsedBy *int64 `json:"used_by,omitempty"`
 }
 
-// InviteList defines model for InviteList.
-type InviteList struct {
-	Items []Invite `json:"items"`
-}
-
 // InviteStatus defines model for InviteStatus.
 type InviteStatus string
+
+// Kind Трата или доход
+type Kind string
+
+// Me defines model for Me.
+type Me struct {
+	// Consented Принял политику обработки данных
+	Consented bool      `json:"consented"`
+	CreatedAt time.Time `json:"created_at"`
+
+	// EffectiveTimezone Пояс
+	//
+	// Example: Europe/Moscow
+	EffectiveTimezone string `json:"effective_timezone"`
+	FamilyId          int64  `json:"family_id"`
+
+	// FirstName Example: Данил
+	FirstName string `json:"first_name"`
+
+	// IsHead Глава семьи
+	IsHead bool `json:"is_head"`
+
+	// TelegramId Example: 123456789
+	TelegramId int64 `json:"telegram_id"`
+
+	// Timezone Выбранный часовой пояс; нет — пользователь не выбирал (mini app может подставить пояс устройства)
+	//
+	// Example: Asia/Novosibirsk
+	Timezone *string `json:"timezone,omitempty"`
+
+	// Username Example: rics69
+	Username *string `json:"username,omitempty"`
+
+	// WeeklyReport Присылать итоги недели в бот по понедельникам
+	WeeklyReport bool `json:"weekly_report"`
+}
+
+// MeUpdate Передаются только изменяемые поля.
+type MeUpdate struct {
+	// Consent `true` — принять политику данных; отозвать согласие можно только удалением аккаунта
+	Consent *bool `json:"consent,omitempty"`
+
+	// Timezone IANA-имя часового пояса
+	//
+	// Example: Asia/Novosibirsk
+	Timezone     *string `json:"timezone,omitempty"`
+	WeeklyReport *bool   `json:"weekly_report,omitempty"`
+}
+
+// Member defines model for Member.
+type Member struct {
+	CreatedAt time.Time `json:"created_at"`
+
+	// FirstName Example: Данил
+	FirstName string `json:"first_name"`
+
+	// IsHead Глава семьи
+	IsHead bool `json:"is_head"`
+
+	// TelegramId Example: 123456789
+	TelegramId int64 `json:"telegram_id"`
+
+	// Username Example: rics69
+	Username *string `json:"username,omitempty"`
+
+	// WeeklyReport Присылать итоги недели в бот по понедельникам
+	WeeklyReport bool `json:"weekly_report"`
+}
+
+// MemberUpdate defines model for MemberUpdate.
+type MemberUpdate struct {
+	WeeklyReport bool `json:"weekly_report"`
+}
 
 // Money Сумма в рублях, не более двух знаков после запятой.
 //
 // Example: 350.5
 type Money = decimal.Decimal
 
-// Summary defines model for Summary.
-type Summary struct {
-	Count int `json:"count"`
-
-	// Items Категории по убыванию суммы
-	Items []CategoryTotal `json:"items"`
-
-	// Sum Сумма в рублях, не более двух знаков после запятой.
+// Operation defines model for Operation.
+type Operation struct {
+	// Amount Сумма в рублях, не более двух знаков после запятой.
 	//
 	// Example: 350.5
-	Sum Money `json:"sum"`
+	Amount Money `json:"amount"`
+
+	// Category Категория; её вид (трата или доход) фиксирован.
+	Category Category `json:"category"`
+
+	// Comment Example: кофе
+	Comment   *string   `json:"comment,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+
+	// Date Example: 2026-10-15
+	Date openapi_types.Date `json:"date"`
+
+	// Id Example: 42
+	Id int64 `json:"id"`
+
+	// Kind Трата или доход
+	Kind      Kind      `json:"kind"`
+	UpdatedAt time.Time `json:"updated_at"`
+
+	// UserId Telegram ID владельца
+	//
+	// Example: 123456789
+	UserId int64 `json:"user_id"`
+}
+
+// OperationCreate defines model for OperationCreate.
+type OperationCreate struct {
+	// Amount Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	Amount Money `json:"amount"`
+
+	// Category Категория; её вид (трата или доход) фиксирован.
+	Category Category `json:"category"`
+	Comment  *string  `json:"comment,omitempty"`
+
+	// Date По умолчанию — сегодня в часовом поясе пользователя.
+	Date *openapi_types.Date `json:"date,omitempty"`
+}
+
+// OperationList defines model for OperationList.
+type OperationList struct {
+	// ExpenseSum Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	ExpenseSum Money `json:"expense_sum"`
+
+	// IncomeSum Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	IncomeSum Money       `json:"income_sum"`
+	Items     []Operation `json:"items"`
+
+	// Total Количество операций во всей выборке
+	Total int `json:"total"`
+}
+
+// OperationUpdate Передаются только изменяемые поля. Пустой `comment` удаляет комментарий.
+type OperationUpdate struct {
+	// Amount Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	Amount *Money `json:"amount,omitempty"`
+
+	// Category Категория; её вид (трата или доход) фиксирован.
+	Category *Category           `json:"category,omitempty"`
+	Comment  *string             `json:"comment,omitempty"`
+	Date     *openapi_types.Date `json:"date,omitempty"`
+}
+
+// Savik defines model for Savik.
+type Savik struct {
+	// Month Свои операции пользователя с начала месяца по сегодня
+	Month SavikMonth `json:"month"`
+
+	// State `neutral` — всё спокойно или данных мало; `empty` — траты месяца больше записанных доходов (без доходов не определить)
+	State SavikState `json:"state"`
+}
+
+// SavikMonth Свои операции пользователя с начала месяца по сегодня
+type SavikMonth struct {
+	// Balance Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	Balance Money `json:"balance"`
+
+	// Expense Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	Expense Money              `json:"expense"`
+	From    openapi_types.Date `json:"from"`
+
+	// Income Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	Income Money `json:"income"`
+
+	// To Сегодня
+	To openapi_types.Date `json:"to"`
+}
+
+// SavikState `neutral` — всё спокойно или данных мало; `empty` — траты месяца больше записанных доходов (без доходов не определить)
+type SavikState string
+
+// Summary defines model for Summary.
+type Summary struct {
+	// Balance Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	Balance Money  `json:"balance"`
+	Expense Totals `json:"expense"`
+	Income  Totals `json:"income"`
 }
 
 // TimePoint defines model for TimePoint.
@@ -318,43 +505,31 @@ type TimeSeries struct {
 	// Bucket Интервал; недели начинаются с понедельника
 	Bucket Bucket      `json:"bucket"`
 	Items  []TimePoint `json:"items"`
+
+	// Kind Трата или доход
+	Kind Kind `json:"kind"`
 }
 
-// User defines model for User.
-type User struct {
-	CreatedAt time.Time `json:"created_at"`
+// Totals defines model for Totals.
+type Totals struct {
+	// Categories Категории по убыванию суммы
+	Categories []CategoryTotal `json:"categories"`
+	Count      int             `json:"count"`
 
-	// FirstName Example: Данил
-	FirstName string `json:"first_name"`
-
-	// IsHead Глава семьи
-	IsHead bool `json:"is_head"`
-
-	// TelegramId Example: 123456789
-	TelegramId int64 `json:"telegram_id"`
-
-	// Username Example: rics69
-	Username *string `json:"username,omitempty"`
-
-	// WeeklyReport Присылать итоги недели в бот по понедельникам
-	WeeklyReport bool `json:"weekly_report"`
+	// Sum Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	Sum Money `json:"sum"`
 }
 
-// UserList defines model for UserList.
-type UserList struct {
-	Items []User `json:"items"`
-}
-
-// UserUpdate defines model for UserUpdate.
-type UserUpdate struct {
-	WeeklyReport bool `json:"weekly_report"`
-}
-
-// CategoryQuery defines model for CategoryQuery.
+// CategoryQuery Категория; её вид (трата или доход) фиксирован.
 type CategoryQuery = Category
 
 // FromQuery defines model for FromQuery.
 type FromQuery = openapi_types.Date
+
+// KindQuery Трата или доход
+type KindQuery = Kind
 
 // ToQuery defines model for ToQuery.
 type ToQuery = openapi_types.Date
@@ -368,12 +543,21 @@ type BadRequest = Error
 // Conflict defines model for Conflict.
 type Conflict = Error
 
+// Forbidden defines model for Forbidden.
+type Forbidden = Error
+
 // NotFound defines model for NotFound.
 type NotFound = Error
 
-// ListExpensesParams defines parameters for ListExpenses.
-type ListExpensesParams struct {
-	// UserId Telegram ID члена семьи.
+// Unauthorized defines model for Unauthorized.
+type Unauthorized = Error
+
+// ListOperationsParams defines parameters for ListOperations.
+type ListOperationsParams struct {
+	// Kind Только траты или только доходы; без параметра — и то и другое.
+	Kind *KindQuery `form:"kind,omitempty" json:"kind,omitempty"`
+
+	// UserId Telegram ID члена семьи; для участника имеет смысл только свой.
 	UserId   *UserIDQuery   `form:"user_id,omitempty" json:"user_id,omitempty"`
 	Category *CategoryQuery `form:"category,omitempty" json:"category,omitempty"`
 
@@ -389,9 +573,9 @@ type ListExpensesParams struct {
 	Offset *int    `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
-// GetExpenseSummaryParams defines parameters for GetExpenseSummary.
-type GetExpenseSummaryParams struct {
-	// UserId Telegram ID члена семьи.
+// GetSummaryParams defines parameters for GetSummary.
+type GetSummaryParams struct {
+	// UserId Telegram ID члена семьи; для участника имеет смысл только свой.
 	UserId   *UserIDQuery   `form:"user_id,omitempty" json:"user_id,omitempty"`
 	Category *CategoryQuery `form:"category,omitempty" json:"category,omitempty"`
 
@@ -402,11 +586,12 @@ type GetExpenseSummaryParams struct {
 	To *ToQuery `form:"to,omitempty" json:"to,omitempty"`
 }
 
-// GetExpenseTimeSeriesParams defines parameters for GetExpenseTimeSeries.
-type GetExpenseTimeSeriesParams struct {
+// GetTimeSeriesParams defines parameters for GetTimeSeries.
+type GetTimeSeriesParams struct {
 	Bucket Bucket `form:"bucket" json:"bucket"`
+	Kind   Kind   `form:"kind" json:"kind"`
 
-	// UserId Telegram ID члена семьи.
+	// UserId Telegram ID члена семьи; для участника имеет смысл только свой.
 	UserId   *UserIDQuery   `form:"user_id,omitempty" json:"user_id,omitempty"`
 	Category *CategoryQuery `form:"category,omitempty" json:"category,omitempty"`
 
@@ -417,59 +602,80 @@ type GetExpenseTimeSeriesParams struct {
 	To *ToQuery `form:"to,omitempty" json:"to,omitempty"`
 }
 
-// CreateExpenseJSONRequestBody defines body for CreateExpense for application/json ContentType.
-type CreateExpenseJSONRequestBody = ExpenseCreate
+// TransferHeadJSONRequestBody defines body for TransferHead for application/json ContentType.
+type TransferHeadJSONRequestBody = HeadTransfer
 
-// UpdateExpenseJSONRequestBody defines body for UpdateExpense for application/json ContentType.
-type UpdateExpenseJSONRequestBody = ExpenseUpdate
+// UpdateMemberJSONRequestBody defines body for UpdateMember for application/json ContentType.
+type UpdateMemberJSONRequestBody = MemberUpdate
 
-// UpdateUserJSONRequestBody defines body for UpdateUser for application/json ContentType.
-type UpdateUserJSONRequestBody = UserUpdate
+// UpdateMeJSONRequestBody defines body for UpdateMe for application/json ContentType.
+type UpdateMeJSONRequestBody = MeUpdate
+
+// CreateOperationJSONRequestBody defines body for CreateOperation for application/json ContentType.
+type CreateOperationJSONRequestBody = OperationCreate
+
+// UpdateOperationJSONRequestBody defines body for UpdateOperation for application/json ContentType.
+type UpdateOperationJSONRequestBody = OperationUpdate
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// ListCategories Справочник категорий
 	// (GET /categories)
 	ListCategories(w http.ResponseWriter, r *http.Request)
-	// ListExpenses Список трат с фильтрами
-	// (GET /expenses)
-	ListExpenses(w http.ResponseWriter, r *http.Request, params ListExpensesParams)
-	// CreateExpense Создать трату
-	// (POST /expenses)
-	CreateExpense(w http.ResponseWriter, r *http.Request)
-	// GetExpenseSummary Суммы по категориям
-	// (GET /expenses/summary)
-	GetExpenseSummary(w http.ResponseWriter, r *http.Request, params GetExpenseSummaryParams)
-	// GetExpenseTimeSeries Траты по дням, неделям или месяцам
-	// (GET /expenses/timeseries)
-	GetExpenseTimeSeries(w http.ResponseWriter, r *http.Request, params GetExpenseTimeSeriesParams)
-	// DeleteExpense Удалить трату
-	// (DELETE /expenses/{id})
-	DeleteExpense(w http.ResponseWriter, r *http.Request, id int64)
-	// GetExpense Получить трату
-	// (GET /expenses/{id})
-	GetExpense(w http.ResponseWriter, r *http.Request, id int64)
-	// UpdateExpense Изменить трату
-	// (PATCH /expenses/{id})
-	UpdateExpense(w http.ResponseWriter, r *http.Request, id int64)
-	// ListInvites Приглашения за последний месяц
-	// (GET /invites)
-	ListInvites(w http.ResponseWriter, r *http.Request)
-	// CreateInvite Создать приглашение
-	// (POST /invites)
+	// GetFamily Семья пользователя
+	// (GET /family)
+	GetFamily(w http.ResponseWriter, r *http.Request)
+	// TransferHead Передать роль главы участнику (глава)
+	// (PUT /family/head)
+	TransferHead(w http.ResponseWriter, r *http.Request)
+	// CreateInvite Создать приглашение (глава)
+	// (POST /family/invites)
 	CreateInvite(w http.ResponseWriter, r *http.Request)
-	// RevokeInvite Отозвать приглашение
-	// (DELETE /invites/{id})
+	// RevokeInvite Отозвать приглашение (глава)
+	// (DELETE /family/invites/{id})
 	RevokeInvite(w http.ResponseWriter, r *http.Request, id int64)
-	// ListUsers Члены семьи
-	// (GET /users)
-	ListUsers(w http.ResponseWriter, r *http.Request)
-	// RemoveUser Удалить из семьи
-	// (DELETE /users/{telegram_id})
-	RemoveUser(w http.ResponseWriter, r *http.Request, telegramId int64)
-	// UpdateUser Изменить настройки участника
-	// (PATCH /users/{telegram_id})
-	UpdateUser(w http.ResponseWriter, r *http.Request, telegramId int64)
+	// LeaveFamily Выйти из семьи (участник)
+	// (POST /family/leave)
+	LeaveFamily(w http.ResponseWriter, r *http.Request)
+	// RemoveMember Исключить из семьи (глава)
+	// (DELETE /family/members/{telegram_id})
+	RemoveMember(w http.ResponseWriter, r *http.Request, telegramId int64)
+	// UpdateMember Изменить настройки участника (глава или сам участник)
+	// (PATCH /family/members/{telegram_id})
+	UpdateMember(w http.ResponseWriter, r *http.Request, telegramId int64)
+	// DeleteMe Удалить аккаунт со всеми данными
+	// (DELETE /me)
+	DeleteMe(w http.ResponseWriter, r *http.Request)
+	// GetMe Текущий пользователь и его настройки
+	// (GET /me)
+	GetMe(w http.ResponseWriter, r *http.Request)
+	// UpdateMe Изменить настройки или принять политику данных
+	// (PATCH /me)
+	UpdateMe(w http.ResponseWriter, r *http.Request)
+	// ListOperations Траты и доходы с фильтрами
+	// (GET /operations)
+	ListOperations(w http.ResponseWriter, r *http.Request, params ListOperationsParams)
+	// CreateOperation Записать трату или доход
+	// (POST /operations)
+	CreateOperation(w http.ResponseWriter, r *http.Request)
+	// DeleteOperation Удалить свою операцию
+	// (DELETE /operations/{id})
+	DeleteOperation(w http.ResponseWriter, r *http.Request, id int64)
+	// GetOperation Получить операцию
+	// (GET /operations/{id})
+	GetOperation(w http.ResponseWriter, r *http.Request, id int64)
+	// UpdateOperation Изменить свою операцию
+	// (PATCH /operations/{id})
+	UpdateOperation(w http.ResponseWriter, r *http.Request, id int64)
+	// GetSavik Состояние Сейвика
+	// (GET /savik)
+	GetSavik(w http.ResponseWriter, r *http.Request)
+	// GetSummary Траты, доходы и баланс за период
+	// (GET /summary)
+	GetSummary(w http.ResponseWriter, r *http.Request, params GetSummaryParams)
+	// GetTimeSeries Траты или доходы по дням, неделям или месяцам
+	// (GET /timeseries)
+	GetTimeSeries(w http.ResponseWriter, r *http.Request, params GetTimeSeriesParams)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -495,14 +701,203 @@ func (siw *ServerInterfaceWrapper) ListCategories(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
-// ListExpenses operation middleware
-func (siw *ServerInterfaceWrapper) ListExpenses(w http.ResponseWriter, r *http.Request) {
+// GetFamily operation middleware
+func (siw *ServerInterfaceWrapper) GetFamily(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetFamily(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TransferHead operation middleware
+func (siw *ServerInterfaceWrapper) TransferHead(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TransferHead(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateInvite operation middleware
+func (siw *ServerInterfaceWrapper) CreateInvite(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateInvite(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeInvite operation middleware
+func (siw *ServerInterfaceWrapper) RevokeInvite(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeInvite(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// LeaveFamily operation middleware
+func (siw *ServerInterfaceWrapper) LeaveFamily(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.LeaveFamily(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RemoveMember operation middleware
+func (siw *ServerInterfaceWrapper) RemoveMember(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "telegram_id" -------------
+	var telegramId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "telegram_id", r.PathValue("telegram_id"), &telegramId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "telegram_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RemoveMember(w, r, telegramId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateMember operation middleware
+func (siw *ServerInterfaceWrapper) UpdateMember(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "telegram_id" -------------
+	var telegramId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "telegram_id", r.PathValue("telegram_id"), &telegramId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "telegram_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateMember(w, r, telegramId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteMe operation middleware
+func (siw *ServerInterfaceWrapper) DeleteMe(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteMe(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetMe operation middleware
+func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMe(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateMe operation middleware
+func (siw *ServerInterfaceWrapper) UpdateMe(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateMe(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListOperations operation middleware
+func (siw *ServerInterfaceWrapper) ListOperations(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
 
 	// Parameter object where we will unmarshal all parameters from the context
-	var params ListExpensesParams
+	var params ListOperationsParams
+
+	// ------------- Optional query parameter "kind" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "kind", r.URL.Query(), &params.Kind, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "kind"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "kind", Err: err})
+		}
+		return
+	}
 
 	// ------------- Optional query parameter "user_id" -------------
 
@@ -596,7 +991,7 @@ func (siw *ServerInterfaceWrapper) ListExpenses(w http.ResponseWriter, r *http.R
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListExpenses(w, r, params)
+		siw.Handler.ListOperations(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -606,11 +1001,11 @@ func (siw *ServerInterfaceWrapper) ListExpenses(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
-// CreateExpense operation middleware
-func (siw *ServerInterfaceWrapper) CreateExpense(w http.ResponseWriter, r *http.Request) {
+// CreateOperation operation middleware
+func (siw *ServerInterfaceWrapper) CreateOperation(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateExpense(w, r)
+		siw.Handler.CreateOperation(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -620,14 +1015,106 @@ func (siw *ServerInterfaceWrapper) CreateExpense(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
-// GetExpenseSummary operation middleware
-func (siw *ServerInterfaceWrapper) GetExpenseSummary(w http.ResponseWriter, r *http.Request) {
+// DeleteOperation operation middleware
+func (siw *ServerInterfaceWrapper) DeleteOperation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteOperation(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetOperation operation middleware
+func (siw *ServerInterfaceWrapper) GetOperation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetOperation(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateOperation operation middleware
+func (siw *ServerInterfaceWrapper) UpdateOperation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateOperation(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSavik operation middleware
+func (siw *ServerInterfaceWrapper) GetSavik(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSavik(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSummary operation middleware
+func (siw *ServerInterfaceWrapper) GetSummary(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
 
 	// Parameter object where we will unmarshal all parameters from the context
-	var params GetExpenseSummaryParams
+	var params GetSummaryParams
 
 	// ------------- Optional query parameter "user_id" -------------
 
@@ -682,7 +1169,7 @@ func (siw *ServerInterfaceWrapper) GetExpenseSummary(w http.ResponseWriter, r *h
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetExpenseSummary(w, r, params)
+		siw.Handler.GetSummary(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -692,14 +1179,14 @@ func (siw *ServerInterfaceWrapper) GetExpenseSummary(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
-// GetExpenseTimeSeries operation middleware
-func (siw *ServerInterfaceWrapper) GetExpenseTimeSeries(w http.ResponseWriter, r *http.Request) {
+// GetTimeSeries operation middleware
+func (siw *ServerInterfaceWrapper) GetTimeSeries(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
 
 	// Parameter object where we will unmarshal all parameters from the context
-	var params GetExpenseTimeSeriesParams
+	var params GetTimeSeriesParams
 
 	// ------------- Required query parameter "bucket" -------------
 
@@ -714,6 +1201,19 @@ func (siw *ServerInterfaceWrapper) GetExpenseTimeSeries(w http.ResponseWriter, r
 		return
 	}
 
+	// ------------- Required query parameter "kind" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "kind", r.URL.Query(), &params.Kind, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "kind"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "kind", Err: err})
+		}
+		return
+	}
+
 	// ------------- Optional query parameter "user_id" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "user_id", r.URL.Query(), &params.UserId, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
@@ -767,205 +1267,7 @@ func (siw *ServerInterfaceWrapper) GetExpenseTimeSeries(w http.ResponseWriter, r
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetExpenseTimeSeries(w, r, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// DeleteExpense operation middleware
-func (siw *ServerInterfaceWrapper) DeleteExpense(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id int64
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DeleteExpense(w, r, id)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetExpense operation middleware
-func (siw *ServerInterfaceWrapper) GetExpense(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id int64
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetExpense(w, r, id)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// UpdateExpense operation middleware
-func (siw *ServerInterfaceWrapper) UpdateExpense(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id int64
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UpdateExpense(w, r, id)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ListInvites operation middleware
-func (siw *ServerInterfaceWrapper) ListInvites(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListInvites(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// CreateInvite operation middleware
-func (siw *ServerInterfaceWrapper) CreateInvite(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateInvite(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// RevokeInvite operation middleware
-func (siw *ServerInterfaceWrapper) RevokeInvite(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id int64
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.RevokeInvite(w, r, id)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ListUsers operation middleware
-func (siw *ServerInterfaceWrapper) ListUsers(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListUsers(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// RemoveUser operation middleware
-func (siw *ServerInterfaceWrapper) RemoveUser(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "telegram_id" -------------
-	var telegramId int64
-
-	err = runtime.BindStyledParameterWithOptions("simple", "telegram_id", r.PathValue("telegram_id"), &telegramId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "telegram_id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.RemoveUser(w, r, telegramId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// UpdateUser operation middleware
-func (siw *ServerInterfaceWrapper) UpdateUser(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "telegram_id" -------------
-	var telegramId int64
-
-	err = runtime.BindStyledParameterWithOptions("simple", "telegram_id", r.PathValue("telegram_id"), &telegramId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "telegram_id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UpdateUser(w, r, telegramId)
+		siw.Handler.GetTimeSeries(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1095,19 +1397,24 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/expenses", wrapper.ListExpenses)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/expenses", wrapper.CreateExpense)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/expenses/summary", wrapper.GetExpenseSummary)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/expenses/timeseries", wrapper.GetExpenseTimeSeries)
-	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/expenses/{id}", wrapper.DeleteExpense)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/expenses/{id}", wrapper.GetExpense)
-	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/expenses/{id}", wrapper.UpdateExpense)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/users", wrapper.ListUsers)
-	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/users/{telegram_id}", wrapper.RemoveUser)
-	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/users/{telegram_id}", wrapper.UpdateUser)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/invites", wrapper.ListInvites)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/invites", wrapper.CreateInvite)
-	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/invites/{id}", wrapper.RevokeInvite)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/me", wrapper.DeleteMe)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/me", wrapper.GetMe)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/me", wrapper.UpdateMe)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/operations", wrapper.ListOperations)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/operations", wrapper.CreateOperation)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/operations/{id}", wrapper.DeleteOperation)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/operations/{id}", wrapper.GetOperation)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/operations/{id}", wrapper.UpdateOperation)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/summary", wrapper.GetSummary)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/timeseries", wrapper.GetTimeSeries)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/savik", wrapper.GetSavik)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/family", wrapper.GetFamily)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/family/invites", wrapper.CreateInvite)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/family/invites/{id}", wrapper.RevokeInvite)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/family/members/{telegram_id}", wrapper.RemoveMember)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/family/members/{telegram_id}", wrapper.UpdateMember)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/family/leave", wrapper.LeaveFamily)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/family/head", wrapper.TransferHead)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/categories", wrapper.ListCategories)
 
 	return m
@@ -1117,7 +1424,11 @@ type BadRequestJSONResponse Error
 
 type ConflictJSONResponse Error
 
+type ForbiddenJSONResponse Error
+
 type NotFoundJSONResponse Error
+
+type UnauthorizedJSONResponse Error
 
 type ListCategoriesRequestObject struct {
 }
@@ -1140,17 +1451,30 @@ func (response ListCategories200JSONResponse) VisitListCategoriesResponse(w http
 	return err
 }
 
-type ListExpensesRequestObject struct {
-	Params ListExpensesParams
+type ListCategories401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListCategories401JSONResponse) VisitListCategoriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
 }
 
-type ListExpensesResponseObject interface {
-	VisitListExpensesResponse(w http.ResponseWriter) error
+type GetFamilyRequestObject struct {
 }
 
-type ListExpenses200JSONResponse ExpenseList
+type GetFamilyResponseObject interface {
+	VisitGetFamilyResponse(w http.ResponseWriter) error
+}
 
-func (response ListExpenses200JSONResponse) VisitListExpensesResponse(w http.ResponseWriter) error {
+type GetFamily200JSONResponse Family
+
+func (response GetFamily200JSONResponse) VisitGetFamilyResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -1162,220 +1486,53 @@ func (response ListExpenses200JSONResponse) VisitListExpensesResponse(w http.Res
 	return err
 }
 
-type ListExpenses400JSONResponse struct{ BadRequestJSONResponse }
+type GetFamily401JSONResponse struct{ UnauthorizedJSONResponse }
 
-func (response ListExpenses400JSONResponse) VisitListExpensesResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type CreateExpenseRequestObject struct {
-	Body *CreateExpenseJSONRequestBody
-}
-
-type CreateExpenseResponseObject interface {
-	VisitCreateExpenseResponse(w http.ResponseWriter) error
-}
-
-type CreateExpense201JSONResponse Expense
-
-func (response CreateExpense201JSONResponse) VisitCreateExpenseResponse(w http.ResponseWriter) error {
+func (response GetFamily401JSONResponse) VisitGetFamilyResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(201)
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
 
-type CreateExpense400JSONResponse struct{ BadRequestJSONResponse }
+type GetFamily403JSONResponse struct{ ForbiddenJSONResponse }
 
-func (response CreateExpense400JSONResponse) VisitCreateExpenseResponse(w http.ResponseWriter) error {
+func (response GetFamily403JSONResponse) VisitGetFamilyResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
 
-type GetExpenseSummaryRequestObject struct {
-	Params GetExpenseSummaryParams
+type TransferHeadRequestObject struct {
+	Body *TransferHeadJSONRequestBody
 }
 
-type GetExpenseSummaryResponseObject interface {
-	VisitGetExpenseSummaryResponse(w http.ResponseWriter) error
+type TransferHeadResponseObject interface {
+	VisitTransferHeadResponse(w http.ResponseWriter) error
 }
 
-type GetExpenseSummary200JSONResponse Summary
-
-func (response GetExpenseSummary200JSONResponse) VisitGetExpenseSummaryResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
+type TransferHead204Response struct {
 }
 
-type GetExpenseSummary400JSONResponse struct{ BadRequestJSONResponse }
-
-func (response GetExpenseSummary400JSONResponse) VisitGetExpenseSummaryResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetExpenseTimeSeriesRequestObject struct {
-	Params GetExpenseTimeSeriesParams
-}
-
-type GetExpenseTimeSeriesResponseObject interface {
-	VisitGetExpenseTimeSeriesResponse(w http.ResponseWriter) error
-}
-
-type GetExpenseTimeSeries200JSONResponse TimeSeries
-
-func (response GetExpenseTimeSeries200JSONResponse) VisitGetExpenseTimeSeriesResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetExpenseTimeSeries400JSONResponse struct{ BadRequestJSONResponse }
-
-func (response GetExpenseTimeSeries400JSONResponse) VisitGetExpenseTimeSeriesResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type DeleteExpenseRequestObject struct {
-	Id int64 `json:"id"`
-}
-
-type DeleteExpenseResponseObject interface {
-	VisitDeleteExpenseResponse(w http.ResponseWriter) error
-}
-
-type DeleteExpense204Response struct {
-}
-
-func (response DeleteExpense204Response) VisitDeleteExpenseResponse(w http.ResponseWriter) error {
+func (response TransferHead204Response) VisitTransferHeadResponse(w http.ResponseWriter) error {
 	w.WriteHeader(204)
 	return nil
 }
 
-type DeleteExpense404JSONResponse struct{ NotFoundJSONResponse }
+type TransferHead400JSONResponse struct{ BadRequestJSONResponse }
 
-func (response DeleteExpense404JSONResponse) VisitDeleteExpenseResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetExpenseRequestObject struct {
-	Id int64 `json:"id"`
-}
-
-type GetExpenseResponseObject interface {
-	VisitGetExpenseResponse(w http.ResponseWriter) error
-}
-
-type GetExpense200JSONResponse Expense
-
-func (response GetExpense200JSONResponse) VisitGetExpenseResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetExpense404JSONResponse struct{ NotFoundJSONResponse }
-
-func (response GetExpense404JSONResponse) VisitGetExpenseResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type UpdateExpenseRequestObject struct {
-	Id   int64 `json:"id"`
-	Body *UpdateExpenseJSONRequestBody
-}
-
-type UpdateExpenseResponseObject interface {
-	VisitUpdateExpenseResponse(w http.ResponseWriter) error
-}
-
-type UpdateExpense200JSONResponse Expense
-
-func (response UpdateExpense200JSONResponse) VisitUpdateExpenseResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type UpdateExpense400JSONResponse struct{ BadRequestJSONResponse }
-
-func (response UpdateExpense400JSONResponse) VisitUpdateExpenseResponse(w http.ResponseWriter) error {
+func (response TransferHead400JSONResponse) VisitTransferHeadResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -1387,9 +1544,37 @@ func (response UpdateExpense400JSONResponse) VisitUpdateExpenseResponse(w http.R
 	return err
 }
 
-type UpdateExpense404JSONResponse struct{ NotFoundJSONResponse }
+type TransferHead401JSONResponse struct{ UnauthorizedJSONResponse }
 
-func (response UpdateExpense404JSONResponse) VisitUpdateExpenseResponse(w http.ResponseWriter) error {
+func (response TransferHead401JSONResponse) VisitTransferHeadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TransferHead403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response TransferHead403JSONResponse) VisitTransferHeadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TransferHead404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response TransferHead404JSONResponse) VisitTransferHeadResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -1397,27 +1582,6 @@ func (response UpdateExpense404JSONResponse) VisitUpdateExpenseResponse(w http.R
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(404)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ListInvitesRequestObject struct {
-}
-
-type ListInvitesResponseObject interface {
-	VisitListInvitesResponse(w http.ResponseWriter) error
-}
-
-type ListInvites200JSONResponse InviteList
-
-func (response ListInvites200JSONResponse) VisitListInvitesResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -1439,6 +1603,34 @@ func (response CreateInvite201JSONResponse) VisitCreateInviteResponse(w http.Res
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateInvite401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateInvite401JSONResponse) VisitCreateInviteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateInvite403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateInvite403JSONResponse) VisitCreateInviteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -1473,6 +1665,34 @@ func (response RevokeInvite204Response) VisitRevokeInviteResponse(w http.Respons
 	return nil
 }
 
+type RevokeInvite401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response RevokeInvite401JSONResponse) VisitRevokeInviteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeInvite403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RevokeInvite403JSONResponse) VisitRevokeInviteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type RevokeInvite404JSONResponse struct{ NotFoundJSONResponse }
 
 func (response RevokeInvite404JSONResponse) VisitRevokeInviteResponse(w http.ResponseWriter) error {
@@ -1487,60 +1707,52 @@ func (response RevokeInvite404JSONResponse) VisitRevokeInviteResponse(w http.Res
 	return err
 }
 
-type ListUsersRequestObject struct {
+type LeaveFamilyRequestObject struct {
 }
 
-type ListUsersResponseObject interface {
-	VisitListUsersResponse(w http.ResponseWriter) error
+type LeaveFamilyResponseObject interface {
+	VisitLeaveFamilyResponse(w http.ResponseWriter) error
 }
 
-type ListUsers200JSONResponse UserList
-
-func (response ListUsers200JSONResponse) VisitListUsersResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
+type LeaveFamily204Response struct {
 }
 
-type RemoveUserRequestObject struct {
-	TelegramId int64 `json:"telegram_id"`
-}
-
-type RemoveUserResponseObject interface {
-	VisitRemoveUserResponse(w http.ResponseWriter) error
-}
-
-type RemoveUser204Response struct {
-}
-
-func (response RemoveUser204Response) VisitRemoveUserResponse(w http.ResponseWriter) error {
+func (response LeaveFamily204Response) VisitLeaveFamilyResponse(w http.ResponseWriter) error {
 	w.WriteHeader(204)
 	return nil
 }
 
-type RemoveUser404JSONResponse struct{ NotFoundJSONResponse }
+type LeaveFamily401JSONResponse struct{ UnauthorizedJSONResponse }
 
-func (response RemoveUser404JSONResponse) VisitRemoveUserResponse(w http.ResponseWriter) error {
+func (response LeaveFamily401JSONResponse) VisitLeaveFamilyResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
 
-type RemoveUser409JSONResponse struct{ ConflictJSONResponse }
+type LeaveFamily403JSONResponse struct{ ForbiddenJSONResponse }
 
-func (response RemoveUser409JSONResponse) VisitRemoveUserResponse(w http.ResponseWriter) error {
+func (response LeaveFamily403JSONResponse) VisitLeaveFamilyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LeaveFamily409JSONResponse struct{ ConflictJSONResponse }
+
+func (response LeaveFamily409JSONResponse) VisitLeaveFamilyResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -1552,32 +1764,53 @@ func (response RemoveUser409JSONResponse) VisitRemoveUserResponse(w http.Respons
 	return err
 }
 
-type UpdateUserRequestObject struct {
+type RemoveMemberRequestObject struct {
 	TelegramId int64 `json:"telegram_id"`
-	Body       *UpdateUserJSONRequestBody
 }
 
-type UpdateUserResponseObject interface {
-	VisitUpdateUserResponse(w http.ResponseWriter) error
+type RemoveMemberResponseObject interface {
+	VisitRemoveMemberResponse(w http.ResponseWriter) error
 }
 
-type UpdateUser200JSONResponse User
+type RemoveMember204Response struct {
+}
 
-func (response UpdateUser200JSONResponse) VisitUpdateUserResponse(w http.ResponseWriter) error {
+func (response RemoveMember204Response) VisitRemoveMemberResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RemoveMember401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response RemoveMember401JSONResponse) VisitRemoveMemberResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
 
-type UpdateUser404JSONResponse struct{ NotFoundJSONResponse }
+type RemoveMember403JSONResponse struct{ ForbiddenJSONResponse }
 
-func (response UpdateUser404JSONResponse) VisitUpdateUserResponse(w http.ResponseWriter) error {
+func (response RemoveMember403JSONResponse) VisitRemoveMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveMember404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RemoveMember404JSONResponse) VisitRemoveMemberResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -1589,50 +1822,820 @@ func (response UpdateUser404JSONResponse) VisitUpdateUserResponse(w http.Respons
 	return err
 }
 
+type RemoveMember409JSONResponse struct{ ConflictJSONResponse }
+
+func (response RemoveMember409JSONResponse) VisitRemoveMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMemberRequestObject struct {
+	TelegramId int64 `json:"telegram_id"`
+	Body       *UpdateMemberJSONRequestBody
+}
+
+type UpdateMemberResponseObject interface {
+	VisitUpdateMemberResponse(w http.ResponseWriter) error
+}
+
+type UpdateMember200JSONResponse Member
+
+func (response UpdateMember200JSONResponse) VisitUpdateMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMember400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response UpdateMember400JSONResponse) VisitUpdateMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMember401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response UpdateMember401JSONResponse) VisitUpdateMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMember403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateMember403JSONResponse) VisitUpdateMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMember404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateMember404JSONResponse) VisitUpdateMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMeRequestObject struct {
+}
+
+type DeleteMeResponseObject interface {
+	VisitDeleteMeResponse(w http.ResponseWriter) error
+}
+
+type DeleteMe204Response struct {
+}
+
+func (response DeleteMe204Response) VisitDeleteMeResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteMe401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteMe401JSONResponse) VisitDeleteMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMe403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteMe403JSONResponse) VisitDeleteMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMeRequestObject struct {
+}
+
+type GetMeResponseObject interface {
+	VisitGetMeResponse(w http.ResponseWriter) error
+}
+
+type GetMe200JSONResponse Me
+
+func (response GetMe200JSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMe401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetMe401JSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMe403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetMe403JSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMeRequestObject struct {
+	Body *UpdateMeJSONRequestBody
+}
+
+type UpdateMeResponseObject interface {
+	VisitUpdateMeResponse(w http.ResponseWriter) error
+}
+
+type UpdateMe200JSONResponse Me
+
+func (response UpdateMe200JSONResponse) VisitUpdateMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMe400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response UpdateMe400JSONResponse) VisitUpdateMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMe401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response UpdateMe401JSONResponse) VisitUpdateMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMe403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateMe403JSONResponse) VisitUpdateMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListOperationsRequestObject struct {
+	Params ListOperationsParams
+}
+
+type ListOperationsResponseObject interface {
+	VisitListOperationsResponse(w http.ResponseWriter) error
+}
+
+type ListOperations200JSONResponse OperationList
+
+func (response ListOperations200JSONResponse) VisitListOperationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListOperations400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ListOperations400JSONResponse) VisitListOperationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListOperations401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListOperations401JSONResponse) VisitListOperationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListOperations403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListOperations403JSONResponse) VisitListOperationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateOperationRequestObject struct {
+	Body *CreateOperationJSONRequestBody
+}
+
+type CreateOperationResponseObject interface {
+	VisitCreateOperationResponse(w http.ResponseWriter) error
+}
+
+type CreateOperation201JSONResponse Operation
+
+func (response CreateOperation201JSONResponse) VisitCreateOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateOperation400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreateOperation400JSONResponse) VisitCreateOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateOperation401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateOperation401JSONResponse) VisitCreateOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateOperation403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateOperation403JSONResponse) VisitCreateOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteOperationRequestObject struct {
+	Id int64 `json:"id"`
+}
+
+type DeleteOperationResponseObject interface {
+	VisitDeleteOperationResponse(w http.ResponseWriter) error
+}
+
+type DeleteOperation204Response struct {
+}
+
+func (response DeleteOperation204Response) VisitDeleteOperationResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteOperation401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteOperation401JSONResponse) VisitDeleteOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteOperation403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteOperation403JSONResponse) VisitDeleteOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteOperation404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeleteOperation404JSONResponse) VisitDeleteOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetOperationRequestObject struct {
+	Id int64 `json:"id"`
+}
+
+type GetOperationResponseObject interface {
+	VisitGetOperationResponse(w http.ResponseWriter) error
+}
+
+type GetOperation200JSONResponse Operation
+
+func (response GetOperation200JSONResponse) VisitGetOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetOperation401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetOperation401JSONResponse) VisitGetOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetOperation403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetOperation403JSONResponse) VisitGetOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetOperation404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetOperation404JSONResponse) VisitGetOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateOperationRequestObject struct {
+	Id   int64 `json:"id"`
+	Body *UpdateOperationJSONRequestBody
+}
+
+type UpdateOperationResponseObject interface {
+	VisitUpdateOperationResponse(w http.ResponseWriter) error
+}
+
+type UpdateOperation200JSONResponse Operation
+
+func (response UpdateOperation200JSONResponse) VisitUpdateOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateOperation400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response UpdateOperation400JSONResponse) VisitUpdateOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateOperation401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response UpdateOperation401JSONResponse) VisitUpdateOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateOperation403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateOperation403JSONResponse) VisitUpdateOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateOperation404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateOperation404JSONResponse) VisitUpdateOperationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSavikRequestObject struct {
+}
+
+type GetSavikResponseObject interface {
+	VisitGetSavikResponse(w http.ResponseWriter) error
+}
+
+type GetSavik200JSONResponse Savik
+
+func (response GetSavik200JSONResponse) VisitGetSavikResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSavik401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetSavik401JSONResponse) VisitGetSavikResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSavik403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetSavik403JSONResponse) VisitGetSavikResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSummaryRequestObject struct {
+	Params GetSummaryParams
+}
+
+type GetSummaryResponseObject interface {
+	VisitGetSummaryResponse(w http.ResponseWriter) error
+}
+
+type GetSummary200JSONResponse Summary
+
+func (response GetSummary200JSONResponse) VisitGetSummaryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSummary400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response GetSummary400JSONResponse) VisitGetSummaryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSummary401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetSummary401JSONResponse) VisitGetSummaryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSummary403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetSummary403JSONResponse) VisitGetSummaryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTimeSeriesRequestObject struct {
+	Params GetTimeSeriesParams
+}
+
+type GetTimeSeriesResponseObject interface {
+	VisitGetTimeSeriesResponse(w http.ResponseWriter) error
+}
+
+type GetTimeSeries200JSONResponse TimeSeries
+
+func (response GetTimeSeries200JSONResponse) VisitGetTimeSeriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTimeSeries400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response GetTimeSeries400JSONResponse) VisitGetTimeSeriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTimeSeries401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetTimeSeries401JSONResponse) VisitGetTimeSeriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTimeSeries403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetTimeSeries403JSONResponse) VisitGetTimeSeriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// ListCategories Справочник категорий
 	// (GET /categories)
 	ListCategories(ctx context.Context, request ListCategoriesRequestObject) (ListCategoriesResponseObject, error)
-	// ListExpenses Список трат с фильтрами
-	// (GET /expenses)
-	ListExpenses(ctx context.Context, request ListExpensesRequestObject) (ListExpensesResponseObject, error)
-	// CreateExpense Создать трату
-	// (POST /expenses)
-	CreateExpense(ctx context.Context, request CreateExpenseRequestObject) (CreateExpenseResponseObject, error)
-	// GetExpenseSummary Суммы по категориям
-	// (GET /expenses/summary)
-	GetExpenseSummary(ctx context.Context, request GetExpenseSummaryRequestObject) (GetExpenseSummaryResponseObject, error)
-	// GetExpenseTimeSeries Траты по дням, неделям или месяцам
-	// (GET /expenses/timeseries)
-	GetExpenseTimeSeries(ctx context.Context, request GetExpenseTimeSeriesRequestObject) (GetExpenseTimeSeriesResponseObject, error)
-	// DeleteExpense Удалить трату
-	// (DELETE /expenses/{id})
-	DeleteExpense(ctx context.Context, request DeleteExpenseRequestObject) (DeleteExpenseResponseObject, error)
-	// GetExpense Получить трату
-	// (GET /expenses/{id})
-	GetExpense(ctx context.Context, request GetExpenseRequestObject) (GetExpenseResponseObject, error)
-	// UpdateExpense Изменить трату
-	// (PATCH /expenses/{id})
-	UpdateExpense(ctx context.Context, request UpdateExpenseRequestObject) (UpdateExpenseResponseObject, error)
-	// ListInvites Приглашения за последний месяц
-	// (GET /invites)
-	ListInvites(ctx context.Context, request ListInvitesRequestObject) (ListInvitesResponseObject, error)
-	// CreateInvite Создать приглашение
-	// (POST /invites)
+	// GetFamily Семья пользователя
+	// (GET /family)
+	GetFamily(ctx context.Context, request GetFamilyRequestObject) (GetFamilyResponseObject, error)
+	// TransferHead Передать роль главы участнику (глава)
+	// (PUT /family/head)
+	TransferHead(ctx context.Context, request TransferHeadRequestObject) (TransferHeadResponseObject, error)
+	// CreateInvite Создать приглашение (глава)
+	// (POST /family/invites)
 	CreateInvite(ctx context.Context, request CreateInviteRequestObject) (CreateInviteResponseObject, error)
-	// RevokeInvite Отозвать приглашение
-	// (DELETE /invites/{id})
+	// RevokeInvite Отозвать приглашение (глава)
+	// (DELETE /family/invites/{id})
 	RevokeInvite(ctx context.Context, request RevokeInviteRequestObject) (RevokeInviteResponseObject, error)
-	// ListUsers Члены семьи
-	// (GET /users)
-	ListUsers(ctx context.Context, request ListUsersRequestObject) (ListUsersResponseObject, error)
-	// RemoveUser Удалить из семьи
-	// (DELETE /users/{telegram_id})
-	RemoveUser(ctx context.Context, request RemoveUserRequestObject) (RemoveUserResponseObject, error)
-	// UpdateUser Изменить настройки участника
-	// (PATCH /users/{telegram_id})
-	UpdateUser(ctx context.Context, request UpdateUserRequestObject) (UpdateUserResponseObject, error)
+	// LeaveFamily Выйти из семьи (участник)
+	// (POST /family/leave)
+	LeaveFamily(ctx context.Context, request LeaveFamilyRequestObject) (LeaveFamilyResponseObject, error)
+	// RemoveMember Исключить из семьи (глава)
+	// (DELETE /family/members/{telegram_id})
+	RemoveMember(ctx context.Context, request RemoveMemberRequestObject) (RemoveMemberResponseObject, error)
+	// UpdateMember Изменить настройки участника (глава или сам участник)
+	// (PATCH /family/members/{telegram_id})
+	UpdateMember(ctx context.Context, request UpdateMemberRequestObject) (UpdateMemberResponseObject, error)
+	// DeleteMe Удалить аккаунт со всеми данными
+	// (DELETE /me)
+	DeleteMe(ctx context.Context, request DeleteMeRequestObject) (DeleteMeResponseObject, error)
+	// GetMe Текущий пользователь и его настройки
+	// (GET /me)
+	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
+	// UpdateMe Изменить настройки или принять политику данных
+	// (PATCH /me)
+	UpdateMe(ctx context.Context, request UpdateMeRequestObject) (UpdateMeResponseObject, error)
+	// ListOperations Траты и доходы с фильтрами
+	// (GET /operations)
+	ListOperations(ctx context.Context, request ListOperationsRequestObject) (ListOperationsResponseObject, error)
+	// CreateOperation Записать трату или доход
+	// (POST /operations)
+	CreateOperation(ctx context.Context, request CreateOperationRequestObject) (CreateOperationResponseObject, error)
+	// DeleteOperation Удалить свою операцию
+	// (DELETE /operations/{id})
+	DeleteOperation(ctx context.Context, request DeleteOperationRequestObject) (DeleteOperationResponseObject, error)
+	// GetOperation Получить операцию
+	// (GET /operations/{id})
+	GetOperation(ctx context.Context, request GetOperationRequestObject) (GetOperationResponseObject, error)
+	// UpdateOperation Изменить свою операцию
+	// (PATCH /operations/{id})
+	UpdateOperation(ctx context.Context, request UpdateOperationRequestObject) (UpdateOperationResponseObject, error)
+	// GetSavik Состояние Сейвика
+	// (GET /savik)
+	GetSavik(ctx context.Context, request GetSavikRequestObject) (GetSavikResponseObject, error)
+	// GetSummary Траты, доходы и баланс за период
+	// (GET /summary)
+	GetSummary(ctx context.Context, request GetSummaryRequestObject) (GetSummaryResponseObject, error)
+	// GetTimeSeries Траты или доходы по дням, неделям или месяцам
+	// (GET /timeseries)
+	GetTimeSeries(ctx context.Context, request GetTimeSeriesRequestObject) (GetTimeSeriesResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -1698,25 +2701,23 @@ func (sh *strictHandler) ListCategories(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-// ListExpenses operation middleware
-func (sh *strictHandler) ListExpenses(w http.ResponseWriter, r *http.Request, params ListExpensesParams) {
-	var request ListExpensesRequestObject
-
-	request.Params = params
+// GetFamily operation middleware
+func (sh *strictHandler) GetFamily(w http.ResponseWriter, r *http.Request) {
+	var request GetFamilyRequestObject
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.ListExpenses(ctx, request.(ListExpensesRequestObject))
+		return sh.ssi.GetFamily(ctx, request.(GetFamilyRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ListExpenses")
+		handler = middleware(handler, "GetFamily")
 	}
 
 	response, err := handler(r.Context(), w, r, request)
 
 	if err != nil {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(ListExpensesResponseObject); ok {
-		if err := validResponse.VisitListExpensesResponse(w); err != nil {
+	} else if validResponse, ok := response.(GetFamilyResponseObject); ok {
+		if err := validResponse.VisitGetFamilyResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -1724,11 +2725,11 @@ func (sh *strictHandler) ListExpenses(w http.ResponseWriter, r *http.Request, pa
 	}
 }
 
-// CreateExpense operation middleware
-func (sh *strictHandler) CreateExpense(w http.ResponseWriter, r *http.Request) {
-	var request CreateExpenseRequestObject
+// TransferHead operation middleware
+func (sh *strictHandler) TransferHead(w http.ResponseWriter, r *http.Request) {
+	var request TransferHeadRequestObject
 
-	var body CreateExpenseJSONRequestBody
+	var body TransferHeadJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
 		return
@@ -1736,179 +2737,18 @@ func (sh *strictHandler) CreateExpense(w http.ResponseWriter, r *http.Request) {
 	request.Body = &body
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.CreateExpense(ctx, request.(CreateExpenseRequestObject))
+		return sh.ssi.TransferHead(ctx, request.(TransferHeadRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "CreateExpense")
+		handler = middleware(handler, "TransferHead")
 	}
 
 	response, err := handler(r.Context(), w, r, request)
 
 	if err != nil {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(CreateExpenseResponseObject); ok {
-		if err := validResponse.VisitCreateExpenseResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// GetExpenseSummary operation middleware
-func (sh *strictHandler) GetExpenseSummary(w http.ResponseWriter, r *http.Request, params GetExpenseSummaryParams) {
-	var request GetExpenseSummaryRequestObject
-
-	request.Params = params
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.GetExpenseSummary(ctx, request.(GetExpenseSummaryRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetExpenseSummary")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(GetExpenseSummaryResponseObject); ok {
-		if err := validResponse.VisitGetExpenseSummaryResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// GetExpenseTimeSeries operation middleware
-func (sh *strictHandler) GetExpenseTimeSeries(w http.ResponseWriter, r *http.Request, params GetExpenseTimeSeriesParams) {
-	var request GetExpenseTimeSeriesRequestObject
-
-	request.Params = params
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.GetExpenseTimeSeries(ctx, request.(GetExpenseTimeSeriesRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetExpenseTimeSeries")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(GetExpenseTimeSeriesResponseObject); ok {
-		if err := validResponse.VisitGetExpenseTimeSeriesResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// DeleteExpense operation middleware
-func (sh *strictHandler) DeleteExpense(w http.ResponseWriter, r *http.Request, id int64) {
-	var request DeleteExpenseRequestObject
-
-	request.Id = id
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.DeleteExpense(ctx, request.(DeleteExpenseRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "DeleteExpense")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(DeleteExpenseResponseObject); ok {
-		if err := validResponse.VisitDeleteExpenseResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// GetExpense operation middleware
-func (sh *strictHandler) GetExpense(w http.ResponseWriter, r *http.Request, id int64) {
-	var request GetExpenseRequestObject
-
-	request.Id = id
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.GetExpense(ctx, request.(GetExpenseRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetExpense")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(GetExpenseResponseObject); ok {
-		if err := validResponse.VisitGetExpenseResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// UpdateExpense operation middleware
-func (sh *strictHandler) UpdateExpense(w http.ResponseWriter, r *http.Request, id int64) {
-	var request UpdateExpenseRequestObject
-
-	request.Id = id
-
-	var body UpdateExpenseJSONRequestBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.UpdateExpense(ctx, request.(UpdateExpenseRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "UpdateExpense")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(UpdateExpenseResponseObject); ok {
-		if err := validResponse.VisitUpdateExpenseResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// ListInvites operation middleware
-func (sh *strictHandler) ListInvites(w http.ResponseWriter, r *http.Request) {
-	var request ListInvitesRequestObject
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.ListInvites(ctx, request.(ListInvitesRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ListInvites")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(ListInvitesResponseObject); ok {
-		if err := validResponse.VisitListInvitesResponse(w); err != nil {
+	} else if validResponse, ok := response.(TransferHeadResponseObject); ok {
+		if err := validResponse.VisitTransferHeadResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -1966,23 +2806,23 @@ func (sh *strictHandler) RevokeInvite(w http.ResponseWriter, r *http.Request, id
 	}
 }
 
-// ListUsers operation middleware
-func (sh *strictHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
-	var request ListUsersRequestObject
+// LeaveFamily operation middleware
+func (sh *strictHandler) LeaveFamily(w http.ResponseWriter, r *http.Request) {
+	var request LeaveFamilyRequestObject
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.ListUsers(ctx, request.(ListUsersRequestObject))
+		return sh.ssi.LeaveFamily(ctx, request.(LeaveFamilyRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ListUsers")
+		handler = middleware(handler, "LeaveFamily")
 	}
 
 	response, err := handler(r.Context(), w, r, request)
 
 	if err != nil {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(ListUsersResponseObject); ok {
-		if err := validResponse.VisitListUsersResponse(w); err != nil {
+	} else if validResponse, ok := response.(LeaveFamilyResponseObject); ok {
+		if err := validResponse.VisitLeaveFamilyResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -1990,25 +2830,25 @@ func (sh *strictHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// RemoveUser operation middleware
-func (sh *strictHandler) RemoveUser(w http.ResponseWriter, r *http.Request, telegramId int64) {
-	var request RemoveUserRequestObject
+// RemoveMember operation middleware
+func (sh *strictHandler) RemoveMember(w http.ResponseWriter, r *http.Request, telegramId int64) {
+	var request RemoveMemberRequestObject
 
 	request.TelegramId = telegramId
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.RemoveUser(ctx, request.(RemoveUserRequestObject))
+		return sh.ssi.RemoveMember(ctx, request.(RemoveMemberRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "RemoveUser")
+		handler = middleware(handler, "RemoveMember")
 	}
 
 	response, err := handler(r.Context(), w, r, request)
 
 	if err != nil {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(RemoveUserResponseObject); ok {
-		if err := validResponse.VisitRemoveUserResponse(w); err != nil {
+	} else if validResponse, ok := response.(RemoveMemberResponseObject); ok {
+		if err := validResponse.VisitRemoveMemberResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -2016,13 +2856,13 @@ func (sh *strictHandler) RemoveUser(w http.ResponseWriter, r *http.Request, tele
 	}
 }
 
-// UpdateUser operation middleware
-func (sh *strictHandler) UpdateUser(w http.ResponseWriter, r *http.Request, telegramId int64) {
-	var request UpdateUserRequestObject
+// UpdateMember operation middleware
+func (sh *strictHandler) UpdateMember(w http.ResponseWriter, r *http.Request, telegramId int64) {
+	var request UpdateMemberRequestObject
 
 	request.TelegramId = telegramId
 
-	var body UpdateUserJSONRequestBody
+	var body UpdateMemberJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
 		return
@@ -2030,18 +2870,315 @@ func (sh *strictHandler) UpdateUser(w http.ResponseWriter, r *http.Request, tele
 	request.Body = &body
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.UpdateUser(ctx, request.(UpdateUserRequestObject))
+		return sh.ssi.UpdateMember(ctx, request.(UpdateMemberRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "UpdateUser")
+		handler = middleware(handler, "UpdateMember")
 	}
 
 	response, err := handler(r.Context(), w, r, request)
 
 	if err != nil {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(UpdateUserResponseObject); ok {
-		if err := validResponse.VisitUpdateUserResponse(w); err != nil {
+	} else if validResponse, ok := response.(UpdateMemberResponseObject); ok {
+		if err := validResponse.VisitUpdateMemberResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteMe operation middleware
+func (sh *strictHandler) DeleteMe(w http.ResponseWriter, r *http.Request) {
+	var request DeleteMeRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteMe(ctx, request.(DeleteMeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteMe")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteMeResponseObject); ok {
+		if err := validResponse.VisitDeleteMeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetMe operation middleware
+func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
+	var request GetMeRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetMe(ctx, request.(GetMeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetMe")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetMeResponseObject); ok {
+		if err := validResponse.VisitGetMeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateMe operation middleware
+func (sh *strictHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
+	var request UpdateMeRequestObject
+
+	var body UpdateMeJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateMe(ctx, request.(UpdateMeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateMe")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateMeResponseObject); ok {
+		if err := validResponse.VisitUpdateMeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListOperations operation middleware
+func (sh *strictHandler) ListOperations(w http.ResponseWriter, r *http.Request, params ListOperationsParams) {
+	var request ListOperationsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListOperations(ctx, request.(ListOperationsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListOperations")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListOperationsResponseObject); ok {
+		if err := validResponse.VisitListOperationsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateOperation operation middleware
+func (sh *strictHandler) CreateOperation(w http.ResponseWriter, r *http.Request) {
+	var request CreateOperationRequestObject
+
+	var body CreateOperationJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateOperation(ctx, request.(CreateOperationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateOperation")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateOperationResponseObject); ok {
+		if err := validResponse.VisitCreateOperationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteOperation operation middleware
+func (sh *strictHandler) DeleteOperation(w http.ResponseWriter, r *http.Request, id int64) {
+	var request DeleteOperationRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteOperation(ctx, request.(DeleteOperationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteOperation")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteOperationResponseObject); ok {
+		if err := validResponse.VisitDeleteOperationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetOperation operation middleware
+func (sh *strictHandler) GetOperation(w http.ResponseWriter, r *http.Request, id int64) {
+	var request GetOperationRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetOperation(ctx, request.(GetOperationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetOperation")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetOperationResponseObject); ok {
+		if err := validResponse.VisitGetOperationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateOperation operation middleware
+func (sh *strictHandler) UpdateOperation(w http.ResponseWriter, r *http.Request, id int64) {
+	var request UpdateOperationRequestObject
+
+	request.Id = id
+
+	var body UpdateOperationJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateOperation(ctx, request.(UpdateOperationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateOperation")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateOperationResponseObject); ok {
+		if err := validResponse.VisitUpdateOperationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSavik operation middleware
+func (sh *strictHandler) GetSavik(w http.ResponseWriter, r *http.Request) {
+	var request GetSavikRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSavik(ctx, request.(GetSavikRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSavik")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSavikResponseObject); ok {
+		if err := validResponse.VisitGetSavikResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSummary operation middleware
+func (sh *strictHandler) GetSummary(w http.ResponseWriter, r *http.Request, params GetSummaryParams) {
+	var request GetSummaryRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSummary(ctx, request.(GetSummaryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSummary")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSummaryResponseObject); ok {
+		if err := validResponse.VisitGetSummaryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetTimeSeries operation middleware
+func (sh *strictHandler) GetTimeSeries(w http.ResponseWriter, r *http.Request, params GetTimeSeriesParams) {
+	var request GetTimeSeriesRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetTimeSeries(ctx, request.(GetTimeSeriesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetTimeSeries")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetTimeSeriesResponseObject); ok {
+		if err := validResponse.VisitGetTimeSeriesResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -2054,67 +3191,102 @@ func (sh *strictHandler) UpdateUser(w http.ResponseWriter, r *http.Request, tele
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

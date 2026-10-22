@@ -21,24 +21,28 @@ func writeError(log *slog.Logger, w http.ResponseWriter, r *http.Request, err er
 	switch {
 	case errors.As(err, &verr):
 		status = http.StatusBadRequest
-		field := verr.Field
-		if field == "date" {
-			field = "spent_at" // the expenses API calls the date spent_at
-		}
-		detail = ErrorDetail{Code: ErrCodeValidation, Message: verr.Message, Field: &field}
+		detail = ErrorDetail{Code: ErrCodeValidation, Message: verr.Message, Field: &verr.Field}
+	case errors.Is(err, family.ErrBadTimezone):
+		field := "timezone"
+		status = http.StatusBadRequest
+		detail = ErrorDetail{Code: ErrCodeValidation, Message: err.Error(), Field: &field}
+	case errors.Is(err, ErrUnauthorized):
+		status = http.StatusUnauthorized
+		detail = ErrorDetail{Code: ErrCodeUnauthorized, Message: err.Error()}
+	case errors.Is(err, ErrConsentRequired):
+		status = http.StatusForbidden
+		detail = ErrorDetail{Code: ErrCodeConsentRequired, Message: err.Error()}
+	case errors.Is(err, family.ErrNotHead), errors.Is(err, family.ErrBlocked):
+		status = http.StatusForbidden
+		detail = ErrorDetail{Code: ErrCodeForbidden, Message: err.Error()}
 	case errors.Is(err, ledger.ErrNotFound), errors.Is(err, user.ErrNotFound), errors.Is(err, family.ErrInviteNotFound),
 		errors.Is(err, family.ErrNotMember):
 		status = http.StatusNotFound
 		detail = ErrorDetail{Code: ErrCodeNotFound, Message: err.Error()}
-	case errors.Is(err, family.ErrHeadRemoval), errors.Is(err, family.ErrBotUnknown):
+	case errors.Is(err, family.ErrHeadRemoval), errors.Is(err, family.ErrBotUnknown),
+		errors.Is(err, family.ErrAlone), errors.Is(err, family.ErrHeadHasMembers):
 		status = http.StatusConflict
 		detail = ErrorDetail{Code: ErrCodeConflict, Message: err.Error()}
-	case errors.Is(err, ErrNoViewer), errors.Is(err, family.ErrNotHead):
-		status = http.StatusForbidden
-		detail = ErrorDetail{Code: ErrCodeForbidden, Message: err.Error()}
-	case errors.Is(err, ledger.ErrUnknownUser):
-		status = http.StatusBadRequest
-		detail = ErrorDetail{Code: ErrCodeUnknownUser, Message: err.Error()}
 	default:
 		log.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "err", err)
 	}

@@ -176,7 +176,25 @@ func deleteEmptyFamily(ctx context.Context, tx pgx.Tx, familyID int64) error {
 	return nil
 }
 
-// Delete removes the user; expenses, dialog history, report runs and LLM
+func (r *UserRepository) SetHead(ctx context.Context, familyID, telegramID int64) error {
+	return pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+		// One head per family is a unique index: demote first, then promote.
+		if _, err := tx.Exec(ctx, `UPDATE users SET is_head = false, updated_at = now() WHERE family_id = $1 AND is_head`, familyID); err != nil {
+			return fmt.Errorf("demote head: %w", err)
+		}
+		tag, err := tx.Exec(ctx, `
+			UPDATE users SET is_head = true, updated_at = now() WHERE family_id = $1 AND telegram_id = $2`, familyID, telegramID)
+		if err != nil {
+			return fmt.Errorf("promote head: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return user.ErrNotFound // rolls the demotion back
+		}
+		return nil
+	})
+}
+
+// Delete removes the user; operations, dialog history, report runs and LLM
 // usage go with them (ON DELETE CASCADE).
 func (r *UserRepository) Delete(ctx context.Context, telegramID int64) error {
 	return pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {

@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
-import { ApiError, type Category, type CategoryInfo, type Expense, type User } from "@/api/client";
+import { ApiError, type Category, type CategoryInfo, type Expense } from "@/api/client";
 import { useCreateExpense, useUpdateExpense } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,10 +26,8 @@ import {
 import { formatMoney, toISODate } from "@/lib/format";
 
 import { capitalize } from "./filters-bar";
-import { memberName } from "./member";
 
 type Fields = {
-  userId: string;
   amount: string;
   category: Category | "";
   spentAt: string;
@@ -41,10 +39,9 @@ type Errors = Partial<Record<FieldName, string>>;
 
 // API field names (from the Error schema) mapped to form fields.
 const apiFields: Record<string, FieldName> = {
-  user_id: "userId",
   amount: "amount",
   category: "category",
-  spent_at: "spentAt",
+  date: "spentAt",
   comment: "comment",
 };
 
@@ -53,9 +50,6 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   /** The expense to edit; undefined creates a new one. */
   expense?: Expense;
-  /** Preselected member for a new expense (the one the panel is filtered by). */
-  defaultUserId?: number;
-  users: User[];
   categories: CategoryInfo[];
   /** Offered in edit mode: on phones the form is the only place to delete from. */
   onDelete?: (e: Expense) => void;
@@ -72,23 +66,17 @@ export function ExpenseFormDialog(props: Props) {
   );
 }
 
-function ExpenseForm({ onOpenChange, expense, defaultUserId, users, categories, onDelete }: Props) {
+function ExpenseForm({ onOpenChange, expense, categories, onDelete }: Props) {
   const today = toISODate(new Date());
   const [fields, setFields] = useState<Fields>(() =>
     expense
       ? {
-          userId: String(expense.user_id),
           amount: String(expense.amount),
           category: expense.category,
-          spentAt: expense.spent_at,
+          spentAt: expense.date,
           comment: expense.comment ?? "",
         }
       : {
-          userId: defaultUserId
-            ? String(defaultUserId)
-            : users.length === 1
-              ? String(users[0].telegram_id)
-              : "",
           amount: "",
           category: "",
           spentAt: today,
@@ -112,10 +100,9 @@ function ExpenseForm({ onOpenChange, expense, defaultUserId, users, categories, 
     if (Object.keys(found).length > 0) return;
 
     const body = {
-      user_id: Number(fields.userId),
       amount,
       category: fields.category as Category,
-      spent_at: fields.spentAt,
+      date: fields.spentAt,
       comment: fields.comment.trim(),
     };
     try {
@@ -131,8 +118,6 @@ function ExpenseForm({ onOpenChange, expense, defaultUserId, users, categories, 
       // Show server-side validation next to the field it concerns.
       if (err instanceof ApiError && err.field && apiFields[err.field]) {
         setErrors({ [apiFields[err.field]]: err.message });
-      } else if (err instanceof ApiError && err.body?.error.code === "unknown_user") {
-        setErrors({ userId: "Такого члена семьи нет" });
       } else {
         toast.error(err instanceof Error ? err.message : "Не удалось сохранить трату");
       }
@@ -146,26 +131,11 @@ function ExpenseForm({ onOpenChange, expense, defaultUserId, users, categories, 
         <DialogDescription>
           {expense
             ? "Поменяйте нужные поля и сохраните."
-            : "Трата появится у выбранного члена семьи."}
+            : "Трата запишется на вас: каждый ведёт свои траты сам."}
         </DialogDescription>
       </DialogHeader>
 
       <div className="flex flex-col gap-4">
-        <FormField label="Член семьи" id="expense-user" error={errors.userId}>
-          <Select value={fields.userId} onValueChange={set("userId")}>
-            <SelectTrigger id="expense-user" className="h-10 w-full" aria-invalid={!!errors.userId}>
-              <SelectValue placeholder="Выберите" />
-            </SelectTrigger>
-            <SelectContent>
-              {users.map((u) => (
-                <SelectItem key={u.telegram_id} value={String(u.telegram_id)}>
-                  {memberName(u)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </FormField>
-
         <div className="grid grid-cols-2 gap-4">
           <FormField label="Сумма, ₽" id="expense-amount" error={errors.amount}>
             <Input
@@ -259,7 +229,6 @@ function validate(f: Fields, today: string): { errors: Errors; amount: number } 
   const errors: Errors = {};
   const normalized = f.amount.replace(/\s/g, "").replace(",", ".");
   const amount = Number(normalized);
-  if (!f.userId) errors.userId = "Выберите члена семьи";
   if (!normalized) {
     errors.amount = "Укажите сумму";
   } else if (!/^\d+(\.\d{1,2})?$/.test(normalized) || amount <= 0) {

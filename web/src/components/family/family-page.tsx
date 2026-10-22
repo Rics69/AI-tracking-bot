@@ -2,15 +2,16 @@
 
 import { AlertCircleIcon } from "lucide-react";
 
-import { useInvites, useUsers } from "@/api/queries";
+import { useInvites, useMe, useUsers } from "@/api/queries";
 
 import { InvitesCard } from "./invites-card";
 import { MembersCard } from "./members-card";
 
 export function FamilyPage() {
+  const me = useMe();
   const users = useUsers();
   const invites = useInvites();
-  const error = users.error ?? invites.error;
+  const error = me.error ?? users.error ?? invites.error;
 
   if (error) {
     return (
@@ -29,8 +30,9 @@ export function FamilyPage() {
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:items-start">
-      <MembersCard users={users.data} />
-      <InvitesCard invites={invites.data} users={users.data ?? []} />
+      <MembersCard users={users.data} me={me.data} />
+      {/* Only the head invites people. */}
+      {me.data?.is_head && <InvitesCard invites={invites.data} users={users.data ?? []} />}
     </div>
   );
 }

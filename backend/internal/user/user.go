@@ -65,6 +65,9 @@ type Repository interface {
 	// Detach moves the user out of their family into a new family of their
 	// own, where they are the head. Their expenses go with them.
 	Detach(ctx context.Context, telegramID int64) (User, error)
+	// SetHead makes a member the head of their family; the old head becomes a
+	// member. ErrNotFound if the user is not in the family.
+	SetHead(ctx context.Context, familyID, telegramID int64) error
 	// Delete removes the user with all their data; a family left empty is
 	// deleted too.
 	Delete(ctx context.Context, telegramID int64) error

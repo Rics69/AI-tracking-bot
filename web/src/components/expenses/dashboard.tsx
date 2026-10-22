@@ -4,7 +4,7 @@ import { AlertCircleIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
 import type { Expense } from "@/api/client";
-import { useCategories, useExpenses, useSummary, useUsers } from "@/api/queries";
+import { useCategories, useExpenses, useMe, useSummary, useUsers } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import { PERIODS } from "@/lib/period";
 
@@ -22,6 +22,7 @@ const PAGE_SIZE = 20;
 export function Dashboard() {
   const { filters, setFilters, query } = useFilters();
 
+  const me = useMe();
   const users = useUsers();
   const categories = useCategories();
   const expenses = useExpenses(query, PAGE_SIZE, (filters.page - 1) * PAGE_SIZE);
@@ -59,12 +60,7 @@ export function Dashboard() {
         />
         <Button
           className="h-10 shrink-0 self-start lg:self-auto"
-          disabled={!(users.data ?? []).length}
-          title={
-            (users.data ?? []).length
-              ? undefined
-              : "В семье пока никого нет: пригласите участников в разделе «Семья»"
-          }
+          disabled={!me.data}
           onClick={() => setEditing("new")}
         >
           <PlusIcon />
@@ -108,6 +104,7 @@ export function Dashboard() {
             stale={expenses.isPlaceholderData}
             onEdit={setEditing}
             onDelete={setDeleting}
+            canEdit={(e) => e.user_id === me.data?.telegram_id}
           />
         </>
       )}
@@ -116,8 +113,6 @@ export function Dashboard() {
         open={editing !== null}
         onOpenChange={(open) => !open && setEditing(null)}
         expense={editing === "new" ? undefined : (editing ?? undefined)}
-        defaultUserId={filters.userId}
-        users={users.data ?? []}
         categories={categories.data ?? []}
         onDelete={setDeleting}
       />

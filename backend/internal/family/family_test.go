@@ -257,3 +257,33 @@ func TestInviteStatus(t *testing.T) {
 		}
 	}
 }
+
+func TestTransferHead(t *testing.T) {
+	s, _ := newTestService(t)
+	ctx := context.Background()
+	head := admit(t, s, anna)
+	admit(t, s, boris)
+	stranger := admit(t, s, vera)
+	if _, err := s.Join(ctx, invite(t, s, head), boris.TelegramID); err != nil {
+		t.Fatal(err)
+	}
+	member, _ := s.Get(ctx, boris.TelegramID)
+	if err := s.TransferHead(ctx, member, anna.TelegramID); !errors.Is(err, family.ErrNotHead) {
+		t.Errorf("member transfers: err = %v", err)
+	}
+	if err := s.TransferHead(ctx, head, stranger.TelegramID); !errors.Is(err, family.ErrNotMember) {
+		t.Errorf("transfer to a stranger: err = %v", err)
+	}
+	if err := s.TransferHead(ctx, head, boris.TelegramID); err != nil {
+		t.Fatal(err)
+	}
+	a, _ := s.Get(ctx, anna.TelegramID)
+	b, _ := s.Get(ctx, boris.TelegramID)
+	if a.IsHead || !b.IsHead || a.FamilyID != b.FamilyID {
+		t.Errorf("after transfer: anna = %+v, boris = %+v", a, b)
+	}
+	// Now Anna is a member and may leave.
+	if _, err := s.Leave(ctx, anna.TelegramID); err != nil {
+		t.Errorf("former head leaves: %v", err)
+	}
+}

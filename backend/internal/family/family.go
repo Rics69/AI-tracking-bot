@@ -204,6 +204,25 @@ func (s *Service) Remove(ctx context.Context, head user.User, telegramID int64) 
 	return err
 }
 
+// TransferHead gives the head role to another member of the head's family.
+func (s *Service) TransferHead(ctx context.Context, head user.User, telegramID int64) error {
+	if !head.IsHead {
+		return ErrNotHead
+	}
+	if telegramID == head.TelegramID {
+		return nil
+	}
+	if _, err := s.Member(ctx, head.FamilyID, telegramID); err != nil {
+		return err
+	}
+	if err := s.users.SetHead(ctx, head.FamilyID, telegramID); errors.Is(err, user.ErrNotFound) {
+		return ErrNotMember // left the family meanwhile
+	} else if err != nil {
+		return err
+	}
+	return nil
+}
+
 // Member returns a member of the family; ErrNotMember if the user is in another one.
 func (s *Service) Member(ctx context.Context, familyID, telegramID int64) (user.User, error) {
 	u, err := s.users.Get(ctx, telegramID)

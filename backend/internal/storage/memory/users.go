@@ -148,6 +148,24 @@ func (r *Users) Detach(_ context.Context, id int64) (user.User, error) {
 	return u, nil
 }
 
+func (r *Users) SetHead(_ context.Context, familyID, id int64) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	next, ok := r.users[id]
+	if !ok || next.FamilyID != familyID {
+		return user.ErrNotFound
+	}
+	for _, u := range r.users {
+		if u.FamilyID == familyID && u.IsHead {
+			u.IsHead = false
+			r.store(u)
+		}
+	}
+	next.IsHead = true
+	r.store(next)
+	return nil
+}
+
 func (r *Users) Delete(_ context.Context, id int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
