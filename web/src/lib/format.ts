@@ -68,3 +68,33 @@ export function plural(n: number, forms: [string, string, string]): string {
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return forms[1];
   return forms[2];
 }
+
+const dayMonthLong = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long" });
+const dayMonthYearLong = new Intl.DateTimeFormat("ru-RU", {
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+});
+
+/** A day header of a list: "Сегодня", "Вчера", "16 октября", "3 марта 2025". */
+export function formatDayHeader(s: string, now = new Date()): string {
+  const today = toISODate(now);
+  const yesterday = toISODate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+  if (s === today) return "Сегодня";
+  if (s === yesterday) return "Вчера";
+  const d = parseDate(s);
+  return (d.getFullYear() === now.getFullYear() ? dayMonthLong : dayMonthYearLong).format(d);
+}
+
+/** An amount with its direction: "+80 000 ₽" for an income, "−350 ₽" for an expense. */
+export function formatSigned(amount: number, kind: "expense" | "income"): string {
+  return (kind === "income" ? "+" : "−") + formatMoney(amount);
+}
+
+const monthName = new Intl.DateTimeFormat("ru-RU", { month: "long" });
+
+/** "октябрь" → "Октябрь" for the current month header. */
+export function formatMonth(d = new Date()): string {
+  const m = monthName.format(d);
+  return m.charAt(0).toUpperCase() + m.slice(1);
+}

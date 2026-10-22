@@ -1,183 +1,227 @@
 "use client";
 
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 
 import {
   api,
   unwrap,
   type Bucket,
   type Category,
-  type ExpenseCreate,
-  type ExpenseUpdate,
-  type Summary,
+  type Kind,
+  type MeUpdate,
+  type OperationCreate,
+  type OperationUpdate,
 } from "./client";
 
-export type ExpenseQuery = {
+/** What the history and charts show. */
+export type OperationQuery = {
+  kind?: Kind;
   userId?: number;
   category?: Category;
   from?: string;
   to?: string;
 };
 
-export const queryKeys = {
+// Every query about money starts with "money": a new or changed operation
+// invalidates them all at once (lists, totals, charts, Savik).
+export const keys = {
   me: ["me"] as const,
   family: ["family"] as const,
   categories: ["categories"] as const,
-  // Prefix shared by lists and summaries: invalidated together after a change.
-  expenses: ["expenses"] as const,
-  expenseList: (q: ExpenseQuery, limit: number, offset: number) =>
-    ["expenses", "list", q, limit, offset] as const,
-  expenseSummary: (q: ExpenseQuery) => ["expenses", "summary", q] as const,
-  expenseSeries: (q: ExpenseQuery, bucket: Bucket) => ["expenses", "series", q, bucket] as const,
+  money: ["money"] as const,
+  operations: (q: OperationQuery) => ["money", "operations", q] as const,
+  recent: ["money", "recent"] as const,
+  summary: (q: OperationQuery) => ["money", "summary", q] as const,
+  series: (q: OperationQuery, bucket: Bucket) => ["money", "series", q, bucket] as const,
+  savik: ["money", "savik"] as const,
 };
 
-function toParams(q: ExpenseQuery) {
-  return { user_id: q.userId, category: q.category, from: q.from, to: q.to };
+function toParams(q: OperationQuery) {
+  return { kind: q.kind, user_id: q.userId, category: q.category, from: q.from, to: q.to };
 }
+
+// Me.
 
 export function useMe() {
   return useQuery({
-    queryKey: queryKeys.me,
+    queryKey: keys.me,
     queryFn: async () => unwrap(await api.GET("/me")),
     staleTime: 60_000,
+    retry: false, // 401 outside Telegram is an answer, not a glitch
   });
 }
 
-function useFamily<T>(select: (f: Awaited<ReturnType<typeof fetchFamily>>) => T) {
-  return useQuery({ queryKey: queryKeys.family, queryFn: fetchFamily, staleTime: 60_000, select });
+export function useUpdateMe() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: MeUpdate) => unwrap(await api.PATCH("/me", { body })),
+    onSuccess: (me) => qc.setQueryData(keys.me, me),
+  });
 }
 
-async function fetchFamily() {
-  return unwrap(await api.GET("/family"));
+export function useDeleteMe() {
+  return useMutation({ mutationFn: async () => unwrap(await api.DELETE("/me")) });
 }
 
-/** Family members, the head first. */
-export function useUsers() {
-  return useFamily((f) => f.members);
-}
-
-/** Invites of the last month: the head sees them, a member gets none. */
-export function useInvites() {
-  return useFamily((f) => f.invites);
-}
-
-/** Expense categories: the panel does not show incomes. */
 export function useCategories() {
   return useQuery({
-    queryKey: queryKeys.categories,
+    queryKey: keys.categories,
     queryFn: async () => unwrap(await api.GET("/categories")).items,
     staleTime: Infinity, // a fixed list
-    select: (items) => items.filter((c) => c.kind === "expense"),
   });
 }
 
-export function useExpenses(q: ExpenseQuery, limit: number, offset: number) {
-  return useQuery({
-    queryKey: queryKeys.expenseList(q, limit, offset),
-    queryFn: async () =>
+// Money.
+
+const PAGE = 30;
+
+/** Operations, newest first, loaded page by page as the list scrolls. */
+export function useOperations(q: OperationQuery) {
+  return useInfiniteQuery({
+    queryKey: keys.operations(q),
+    initialPageParam: 0,
+    queryFn: async ({ pageParam }) =>
       unwrap(
         await api.GET("/operations", {
-          params: { query: { ...toParams(q), kind: "expense", limit, offset } },
+          params: { query: { ...toParams(q), limit: PAGE, offset: pageParam } },
         }),
       ),
-    // Keep showing the previous page while the next one loads: no table flicker.
-    placeholderData: keepPreviousData,
-  });
-}
-
-export function useSummary(q: ExpenseQuery) {
-  return useQuery({
-    queryKey: queryKeys.expenseSummary(q),
-    queryFn: async (): Promise<Summary> => {
-      const s = unwrap(await api.GET("/summary", { params: { query: toParams(q) } }));
-      return { items: s.expense.categories, sum: s.expense.sum, count: s.expense.count };
+    getNextPageParam: (last, pages) => {
+      const loaded = pages.reduce((n, p) => n + p.items.length, 0);
+      return loaded < last.total ? loaded : undefined;
     },
     placeholderData: keepPreviousData,
   });
 }
 
-// Mutations invalidate every expenses query: lists and summaries for any
-// filter may include the changed expense.
-
-export function useCreateExpense() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (body: ExpenseCreate) => unwrap(await api.POST("/operations", { body })),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.expenses }),
-  });
-}
-
-export function useUpdateExpense() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ id, body }: { id: number; body: ExpenseUpdate }) =>
-      unwrap(await api.PATCH("/operations/{id}", { params: { path: { id } }, body })),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.expenses }),
-  });
-}
-
-export function useDeleteExpense() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: number) =>
-      unwrap(await api.DELETE("/operations/{id}", { params: { path: { id } } })),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.expenses }),
-  });
-}
-
-export function useTimeSeries(q: ExpenseQuery, bucket: Bucket) {
+export function useRecentOperations(limit = 5) {
   return useQuery({
-    queryKey: queryKeys.expenseSeries(q, bucket),
+    queryKey: keys.recent,
+    queryFn: async () =>
+      unwrap(await api.GET("/operations", { params: { query: { limit } } })).items,
+  });
+}
+
+export function useSummary(q: OperationQuery) {
+  return useQuery({
+    queryKey: keys.summary(q),
+    queryFn: async () => unwrap(await api.GET("/summary", { params: { query: toParams(q) } })),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useTimeSeries(q: OperationQuery & { kind: Kind }, bucket: Bucket) {
+  return useQuery({
+    queryKey: keys.series(q, bucket),
     queryFn: async () =>
       unwrap(
         await api.GET("/timeseries", {
-          params: { query: { ...toParams(q), bucket, kind: "expense" } },
+          params: { query: { ...toParams(q), kind: q.kind, bucket } },
         }),
       ),
     placeholderData: keepPreviousData,
   });
 }
 
-export function useCreateInvite() {
+export function useSavik() {
+  return useQuery({
+    queryKey: keys.savik,
+    queryFn: async () => unwrap(await api.GET("/savik")),
+  });
+}
+
+function useMoneyMutation<T, R>(fn: (arg: T) => Promise<R>) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async () => unwrap(await api.POST("/family/invites")),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.family }),
+    mutationFn: fn,
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.money }),
   });
+}
+
+export function useCreateOperation() {
+  return useMoneyMutation(async (body: OperationCreate) =>
+    unwrap(await api.POST("/operations", { body })),
+  );
+}
+
+export function useUpdateOperation() {
+  return useMoneyMutation(async ({ id, body }: { id: number; body: OperationUpdate }) =>
+    unwrap(await api.PATCH("/operations/{id}", { params: { path: { id } }, body })),
+  );
+}
+
+export function useDeleteOperation() {
+  return useMoneyMutation(async (id: number) =>
+    unwrap(await api.DELETE("/operations/{id}", { params: { path: { id } } })),
+  );
+}
+
+// Family.
+
+export function useFamily() {
+  return useQuery({
+    queryKey: keys.family,
+    queryFn: async () => unwrap(await api.GET("/family")),
+  });
+}
+
+/** A family change can change roles (me) and whose money the head sees. */
+function useFamilyMutation<T, R>(fn: (arg: T) => Promise<R>) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: keys.family }),
+        qc.invalidateQueries({ queryKey: keys.me }),
+        qc.invalidateQueries({ queryKey: keys.money }),
+      ]),
+  });
+}
+
+export function useCreateInvite() {
+  return useFamilyMutation(async () => unwrap(await api.POST("/family/invites")));
 }
 
 export function useRevokeInvite() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: number) =>
-      unwrap(await api.DELETE("/family/invites/{id}", { params: { path: { id } } })),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.family }),
-  });
-}
-
-export function useSetWeeklyReport() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ telegramId, on }: { telegramId: number; on: boolean }) =>
-      unwrap(
-        await api.PATCH("/family/members/{telegram_id}", {
-          params: { path: { telegram_id: telegramId } },
-          body: { weekly_report: on },
-        }),
-      ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.family }),
-  });
+  return useFamilyMutation(async (id: number) =>
+    unwrap(await api.DELETE("/family/invites/{id}", { params: { path: { id } } })),
+  );
 }
 
 export function useRemoveMember() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (telegramId: number) =>
-      unwrap(
-        await api.DELETE("/family/members/{telegram_id}", {
-          params: { path: { telegram_id: telegramId } },
-        }),
-      ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.family }),
-  });
+  return useFamilyMutation(async (telegramId: number) =>
+    unwrap(
+      await api.DELETE("/family/members/{telegram_id}", {
+        params: { path: { telegram_id: telegramId } },
+      }),
+    ),
+  );
+}
+
+export function useSetMemberWeeklyReport() {
+  return useFamilyMutation(async ({ telegramId, on }: { telegramId: number; on: boolean }) =>
+    unwrap(
+      await api.PATCH("/family/members/{telegram_id}", {
+        params: { path: { telegram_id: telegramId } },
+        body: { weekly_report: on },
+      }),
+    ),
+  );
+}
+
+export function useLeaveFamily() {
+  return useFamilyMutation(async () => unwrap(await api.POST("/family/leave")));
+}
+
+export function useTransferHead() {
+  return useFamilyMutation(async (telegramId: number) =>
+    unwrap(await api.PUT("/family/head", { body: { telegram_id: telegramId } })),
+  );
 }

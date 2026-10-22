@@ -1,12 +1,12 @@
 # CLAUDE.md
 
-Сервис учёта расходов «Сейвпоинт»: Telegram-бот с ИИ-агентом (GigaChat) + веб-панель главы семьи. Бот открыт всем, каждый пользователь живёт в своей семье (сначала из одного человека).
+Сервис учёта расходов «Сейвпоинт»: Telegram-бот с ИИ-агентом (GigaChat) + mini app в Telegram. Бот открыт всем, каждый пользователь живёт в своей семье (сначала из одного человека).
 ТЗ — `test-task-expenses.md`.
 
 ## Структура
 
 - `backend/` — Go-модуль, бинари в `cmd/`:
-  - `cmd/api` — REST API для веб-панели.
+  - `cmd/api` — REST API для mini app.
   - `cmd/bot` — Telegram-бот с агентом (long polling).
   - `cmd/chat` — консольный чат с агентом без Telegram, для отладки промпта.
   - `cmd/eval` — eval агента на настоящем LLM: сценарии в `backend/eval/cases.yaml`, каждый на чистом in-memory хранилище.
@@ -24,11 +24,15 @@
 - `backend/internal/httpapi` — REST для mini app: `api.gen.go` генерируется из `backend/api/openapi.yaml`, руками пишутся `server.go`, `family.go`, `auth.go` (вход по `initData`).
 - `backend/internal/initdata` — проверка подписи Telegram Mini App `initData`.
 - `backend/internal/savik` — состояние маскота Сейвика по деньгам месяца (считается кодом).
-- `web/` — Next.js 16 панель главы семьи (App Router, TanStack Query, shadcn/ui). Перед правками читай `web/AGENTS.md`: API Next 16 отличаются от привычных.
+- `web/` — Next.js 16 mini app для Telegram (App Router, TanStack Query, shadcn/ui, motion). Перед правками читай `web/AGENTS.md`: API Next 16 отличаются от привычных.
+  - Экраны: `/` главная, `/history`, `/analytics`, `/profile`; нижнее меню и общая шторка «＋» (`operations/sheet-context.tsx`). Всё за `shell/gate.tsx`: вне Telegram — экран «откройте из Telegram», без согласия — экран согласия.
+  - Данные пользователя грузятся только в браузере: страницы с `export const instant = false`, никакого `Math.random()`/`Date` при пререндере (фразы Сейвика выбираются через `useSyncExternalStore`).
+  - Тема — из Telegram (`--tg-theme-*` → токены в `globals.css`, класс `html.tg`), акцент `--primary` свой. `lib/telegram.ts` — обёртка над `telegram-web-app.js` (хаптик, BackButton, share, confirm).
+  - Тексты и фразы Сейвика — `src/content/` (правит владелец), позы — `src/content/savik.ts`.
   - `web/src/api/schema.d.ts` генерируется из `openapi.yaml` (`npm run gen:api`), руками не править.
-  - Фильтры живут в URL (`use-filters.ts`); `/api/*` проксируется на Go API через rewrites в `next.config.ts`.
+  - `/api/*` проксируется на Go API через rewrites в `next.config.ts`.
   - Позы Сейвика: исходники в `poses/*.png` (не в git), `npm run poses` собирает `web/public/savik/{512,256}/*.webp`. Руками webp не править.
-  - График (`spending-chart.tsx`, Recharts через shadcn chart): цвет закреплён за категорией и берётся из проверенной палитры — не перекрашивать по рангу и не добавлять цвета без проверки.
+  - Аналитика (`analytics-screen.tsx`, Recharts через shadcn chart): цвет закреплён за видом операции (расход/доход, слоты 1–2 проверенной палитры) — не перекрашивать и не добавлять цвета без проверки валидатором.
 
 ## Команды
 
@@ -41,8 +45,9 @@ make lint        # go vet + golangci-lint в Docker
 make eval        # eval агента на GigaChat (RUNS=3 для оценки стабильности)
 
 # web/
-npm run dev        # панель на :3000, API ожидается на :8080
+npm run dev        # mini app на :3000, API ожидается на :8080
 npm run gen:api    # TS-типы из backend/api/openapi.yaml
+npm run poses      # позы Сейвика из poses/*.png
 npm run typecheck && npm run lint
 ```
 
@@ -54,7 +59,6 @@ npm run typecheck && npm run lint
 - **Деньги — `decimal.Decimal` / `NUMERIC(12,2)`**, никаких float.
 - **Даты трат — календарные** (`time.Time` в полночь UTC), «сегодня» считается в часовом поясе пользователя (`user.Location`, по умолчанию `APP_TIMEZONE`).
 - **Пользователь API — только из `initData`** (`httpapi.Auth`, пакет `initdata`): заголовок `Authorization: tma <initData>`, проверка HMAC токеном бота. `AUTH_DEV_USER_ID` работает только при `APP_ENV=dev` (`config.API.DevUser`). Хендлеры берут пользователя через `caller`/`consented`/`head`, никогда из параметров.
-- Текущая desktop-панель показывает только траты (`kind=expense`); доходы — в mini app (этап 4).
 - Доменные ошибки (`ValidationError`, `ErrNotFound`, `ErrUnknownUser`) превращаются в HTTP-ответы только в `httpapi/errors.go`.
 - Комментарии и сообщения в коде — на английском, документация для людей — на русском.
 - После изменений: `make lint && make test`. После правок промпта, тулов или модели — `make eval` и сравнить с прошлым `report.md`.

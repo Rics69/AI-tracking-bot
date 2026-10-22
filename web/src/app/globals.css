@@ -7,9 +7,11 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-heading:
+    -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, system-ui, sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -49,7 +51,8 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
+  /* Grouped-list look outside Telegram too: grey page, white cards. */
+  --background: oklch(0.965 0.003 264);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
@@ -117,6 +120,37 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+/*
+ * Inside Telegram the app wears the user's Telegram theme: telegram-web-app.js
+ * puts --tg-theme-* on <html>, and TelegramSetup adds the "tg" class. The
+ * brand accent (--primary, Savik's teal gem) stays the same everywhere.
+ */
+:root {
+  /* Space under the bottom nav: the phone's home indicator, in or out of Telegram. */
+  --safe-bottom: max(env(safe-area-inset-bottom), var(--tg-safe-area-inset-bottom, 0px));
+}
+
+html.tg {
+  --background: var(--tg-theme-secondary-bg-color);
+  --foreground: var(--tg-theme-text-color);
+  --card: var(--tg-theme-section-bg-color, var(--tg-theme-bg-color));
+  --card-foreground: var(--tg-theme-text-color);
+  --popover: var(--tg-theme-bg-color);
+  --popover-foreground: var(--tg-theme-text-color);
+  --secondary: var(--tg-theme-secondary-bg-color);
+  --secondary-foreground: var(--tg-theme-text-color);
+  --muted: var(--tg-theme-secondary-bg-color);
+  --muted-foreground: var(--tg-theme-hint-color);
+  --accent: var(--tg-theme-secondary-bg-color);
+  --accent-foreground: var(--tg-theme-text-color);
+  --destructive: var(--tg-theme-destructive-text-color);
+  --border: var(
+    --tg-theme-section-separator-color,
+    color-mix(in oklab, var(--tg-theme-hint-color) 25%, transparent)
+  );
+  --input: color-mix(in oklab, var(--tg-theme-hint-color) 30%, transparent);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -130,5 +164,8 @@
   }
   html {
     @apply font-sans;
+    /* The app scrolls inside itself: no rubber-band of the whole page. */
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
   }
 }
