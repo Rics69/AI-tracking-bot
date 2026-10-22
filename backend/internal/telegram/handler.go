@@ -79,6 +79,7 @@ type Config struct {
 	Location     *time.Location // timezone of users who have not chosen one
 	AdminID      int64          // receives /feedback; 0: feedback is only logged
 	PrivacyURL   string         // full data policy; empty: /privacy shows the summary only
+	MiniAppURL   string         // HTTPS address of the mini app; empty: not deployed yet
 	Texts        texts.Bot
 }
 
@@ -171,6 +172,9 @@ func (h *Handler) handleMessage(ctx context.Context, s Sender, msg *models.Messa
 	case isCommand(text, "/help"):
 		h.agent.Reset(ctx, u.TelegramID)
 		h.send(ctx, s, chatID, h.t.Help)
+		return
+	case isCommand(text, "/app"):
+		h.reply(ctx, s, chatID, 0, h.appView())
 		return
 	case isCommand(text, "/family"):
 		h.showFamily(ctx, s, chatID, u)

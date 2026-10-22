@@ -343,8 +343,8 @@ func TestFamilyEndpoints(t *testing.T) {
 		t.Errorf("own setting = %v", m)
 	}
 	e.ok(t, anna, 404, http.MethodPatch, "/api/v1/family/members/3", `{"weekly_report":false}`) // a stranger
-	e.ok(t, anna, 409, http.MethodDelete, "/api/v1/family/members/1", "")                        // the head themself
-	e.ok(t, anna, 409, http.MethodPost, "/api/v1/family/leave", "")                              // head with members
+	e.ok(t, anna, 409, http.MethodDelete, "/api/v1/family/members/1", "")                       // the head themself
+	e.ok(t, anna, 409, http.MethodPost, "/api/v1/family/leave", "")                             // head with members
 
 	// Hand over the head role, then the former head leaves.
 	e.ok(t, anna, 204, http.MethodPut, "/api/v1/family/head", `{"telegram_id":2}`)

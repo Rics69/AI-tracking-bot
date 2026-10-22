@@ -84,6 +84,7 @@ func run() error {
 		Location:     cfg.Location,
 		AdminID:      cfg.AdminID,
 		PrivacyURL:   cfg.PrivacyURL,
+		MiniAppURL:   cfg.MiniAppURL,
 		Texts:        botTexts,
 	}, log.With("component", "telegram"))
 
@@ -102,8 +103,15 @@ func run() error {
 	if err := members.SetBotUsername(ctx, me.Username); err != nil {
 		return err
 	}
-	if _, err := b.SetMyCommands(ctx, &bot.SetMyCommandsParams{Commands: telegram.Commands(botTexts)}); err != nil {
+	if _, err := b.SetMyCommands(ctx, &bot.SetMyCommandsParams{Commands: telegram.Commands(botTexts, cfg.MiniAppURL != "")}); err != nil {
 		log.Warn("set bot commands", "err", err) // the bot works without the menu
+	}
+	if menu := telegram.MenuButton(botTexts, cfg.MiniAppURL); menu != nil {
+		if _, err := b.SetChatMenuButton(ctx, &bot.SetChatMenuButtonParams{MenuButton: menu}); err != nil {
+			log.Warn("set menu button", "err", err)
+		}
+	} else {
+		log.Info("MINI_APP_URL is not set: no mini app button in the bot")
 	}
 
 	// Monday reports go to private chats, whose ID equals the user's Telegram ID.

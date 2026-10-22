@@ -473,15 +473,44 @@ func (h *Handler) feedback(ctx context.Context, s Sender, chatID int64, u user.U
 	h.send(ctx, s, chatID, h.t.FeedbackThanks)
 }
 
+// appView is a button that opens the mini app, or a note that it is coming.
+func (h *Handler) appView() view {
+	if h.cfg.MiniAppURL == "" {
+		return view{text: h.t.AppMissing}
+	}
+	return view{
+		text: h.t.AppOpen,
+		buttons: [][]models.InlineKeyboardButton{{
+			{Text: h.t.AppButton, WebApp: &models.WebAppInfo{URL: h.cfg.MiniAppURL}},
+		}},
+	}
+}
+
+// MenuButton opens the mini app from the button left of the input field;
+// nil when there is no mini app to open.
+func MenuButton(t texts.Bot, miniAppURL string) models.InputMenuButton {
+	if miniAppURL == "" {
+		return nil
+	}
+	return models.MenuButtonWebApp{
+		Type:   models.MenuButtonTypeWebApp,
+		Text:   t.AppButton,
+		WebApp: models.WebAppInfo{URL: miniAppURL},
+	}
+}
+
 // Commands returns the command menu shown by Telegram next to the input field.
-func Commands(t texts.Bot) []models.BotCommand {
-	return []models.BotCommand{
-		{Command: "start", Description: t.CommandStart},
+func Commands(t texts.Bot, withApp bool) []models.BotCommand {
+	commands := []models.BotCommand{{Command: "start", Description: t.CommandStart}}
+	if withApp {
+		commands = append(commands, models.BotCommand{Command: "app", Description: t.CommandApp})
+	}
+	return append(commands, []models.BotCommand{
 		{Command: "family", Description: t.CommandFamily},
 		{Command: "settings", Description: t.CommandSettings},
 		{Command: "privacy", Description: t.CommandPrivacy},
 		{Command: "feedback", Description: t.CommandFeedback},
 		{Command: "delete_me", Description: t.CommandDeleteMe},
 		{Command: "help", Description: t.CommandHelp},
-	}
+	}...)
 }

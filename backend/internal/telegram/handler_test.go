@@ -79,6 +79,10 @@ func callbacks(m models.ReplyMarkup) []string {
 	var data []string
 	for _, r := range kb.InlineKeyboard {
 		for _, b := range r {
+			if b.WebApp != nil {
+				data = append(data, "webapp:"+b.WebApp.URL)
+				continue
+			}
 			data = append(data, b.CallbackData)
 		}
 	}
@@ -513,5 +517,26 @@ func TestTimezoneLabels(t *testing.T) {
 	kolkata, _ := time.LoadLocation("Asia/Kolkata")
 	if got := timezoneName(kolkata); got != "Asia/Kolkata, UTC+5:30" {
 		t.Errorf("Kolkata = %q", got)
+	}
+}
+
+func TestAppCommand(t *testing.T) {
+	e := setup(t)
+	e.onboard(t, anna)
+	e.message(anna, "/app")
+	if got := e.s.last(t, anna); got.text != e.t.AppMissing || len(got.buttons) != 0 {
+		t.Errorf("without a mini app: %+v", got)
+	}
+
+	e.h.cfg.MiniAppURL = "https://app.example.com"
+	e.message(anna, "/app")
+	if got := e.s.last(t, anna); got.text != e.t.AppOpen || !slices.Equal(got.buttons, []string{"webapp:https://app.example.com"}) {
+		t.Errorf("with a mini app: %+v", got)
+	}
+	if MenuButton(e.t, "") != nil || MenuButton(e.t, "https://app.example.com") == nil {
+		t.Error("the menu button must exist only with a mini app")
+	}
+	if len(Commands(e.t, true)) != len(Commands(e.t, false))+1 {
+		t.Error("/app must be in the command menu only with a mini app")
 	}
 }

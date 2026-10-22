@@ -348,4 +348,3 @@ func filterFrom(userID *int64, category *Category, from, to *openapi_types.Date)
 	}
 	return f
 }
-

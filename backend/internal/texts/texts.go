@@ -74,11 +74,16 @@ type Bot struct {
 	DeleteYes         string `yaml:"delete_yes"`
 	Deleted           string `yaml:"deleted"`
 
+	AppButton  string `yaml:"app_button"`
+	AppOpen    string `yaml:"app_open"`
+	AppMissing string `yaml:"app_missing"`
+
 	FeedbackUsage   string `yaml:"feedback_usage"`
 	FeedbackThanks  string `yaml:"feedback_thanks"`
 	FeedbackToAdmin string `yaml:"feedback_to_admin"`
 
 	CommandStart    string `yaml:"command_start"`
+	CommandApp      string `yaml:"command_app"`
 	CommandFamily   string `yaml:"command_family"`
 	CommandSettings string `yaml:"command_settings"`
 	CommandPrivacy  string `yaml:"command_privacy"`

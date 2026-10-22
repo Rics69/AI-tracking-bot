@@ -85,6 +85,8 @@ type Bot struct {
 	ReplyTimeout  time.Duration `env:"REPLY_TIMEOUT" envDefault:"90s"`
 	// PrivacyURL is the full data policy; empty: /privacy shows the summary only.
 	PrivacyURL string `env:"PRIVACY_URL"`
+	// MiniAppURL is the HTTPS address of the mini app; empty: no menu button and /app says it is coming.
+	MiniAppURL string `env:"MINI_APP_URL"`
 	// Daily limits per user, so nobody spends the whole token budget; 0: unlimited.
 	UserDailyMessages int   `env:"USER_DAILY_MESSAGES" envDefault:"150"`
 	UserDailyTokens   int64 `env:"USER_DAILY_TOKENS" envDefault:"200000"`
