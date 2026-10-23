@@ -7,11 +7,19 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, system-ui, sans-serif;
+  --font-sans: "Onest Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono);
-  --font-heading:
-    -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, system-ui, sans-serif;
+  --font-heading: "Onest Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+  --color-hero: var(--hero);
+  --color-hero-foreground: var(--hero-foreground);
+  --color-soft: var(--soft);
+  --color-soft-foreground: var(--soft-foreground);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger-soft: var(--danger-soft);
+  --color-nav: var(--nav);
+  --color-nav-foreground: var(--nav-foreground);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -51,104 +59,98 @@
 }
 
 :root {
-  /* Grouped-list look outside Telegram too: grey page, white cards. */
-  --background: oklch(0.965 0.003 264);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.6 0.118 184.7);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.6 0.118 184.7);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-}
-
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.704 0.14 182.5);
-  --primary-foreground: oklch(0.145 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.704 0.14 182.5);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
-}
-
-/*
- * Inside Telegram the app wears the user's Telegram theme: telegram-web-app.js
- * puts --tg-theme-* on <html>, and TelegramSetup adds the "tg" class. The
- * brand accent (--primary, Savik's teal gem) stays the same everywhere.
- */
-:root {
+  /*
+   * The Cadra look: warm milky page, white cards, ink for emphasis, one
+   * pastel blue. "hero" is the inverted card (black on light, white on dark).
+   */
+  --background: #f1f0ec;
+  --foreground: #121212;
+  --card: #ffffff;
+  --card-foreground: #121212;
+  --popover: #ffffff;
+  --popover-foreground: #121212;
+  --primary: #121212;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f0ec;
+  --secondary-foreground: #121212;
+  --muted: #f1f0ec;
+  --muted-foreground: #6f6e69;
+  --accent: #ecebe6;
+  --accent-foreground: #121212;
+  --destructive: #c8372d;
+  --border: rgb(18 18 18 / 0.07);
+  --input: rgb(18 18 18 / 0.12);
+  --ring: rgb(18 18 18 / 0.35);
+  --hero: #111111;
+  --hero-foreground: #ffffff;
+  --soft: #c3d7ef;
+  --soft-foreground: #0f2238;
+  --success: #1d7a46;
+  --success-soft: #dcefe2;
+  --warning-soft: #f4e7b8;
+  --danger-soft: #f7dcd7;
+  --nav: #111111;
+  --nav-foreground: #ffffff;
+  --chart-1: #121212;
+  --chart-2: #6f6e69;
+  --chart-3: #a8a7a1;
+  --chart-4: #c3d7ef;
+  --chart-5: #ecebe6;
+  --radius: 0.75rem;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #121212;
+  --sidebar-primary: #121212;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f1f0ec;
+  --sidebar-accent-foreground: #121212;
+  --sidebar-border: rgb(18 18 18 / 0.07);
+  --sidebar-ring: rgb(18 18 18 / 0.35);
   /* Space under the bottom nav: the phone's home indicator, in or out of Telegram. */
   --safe-bottom: max(env(safe-area-inset-bottom), var(--tg-safe-area-inset-bottom, 0px));
 }
 
-html.tg {
-  --background: var(--tg-theme-secondary-bg-color);
-  --foreground: var(--tg-theme-text-color);
-  --card: var(--tg-theme-section-bg-color, var(--tg-theme-bg-color));
-  --card-foreground: var(--tg-theme-text-color);
-  --popover: var(--tg-theme-bg-color);
-  --popover-foreground: var(--tg-theme-text-color);
-  --secondary: var(--tg-theme-secondary-bg-color);
-  --secondary-foreground: var(--tg-theme-text-color);
-  --muted: var(--tg-theme-secondary-bg-color);
-  --muted-foreground: var(--tg-theme-hint-color);
-  --accent: var(--tg-theme-secondary-bg-color);
-  --accent-foreground: var(--tg-theme-text-color);
-  --destructive: var(--tg-theme-destructive-text-color);
-  --border: var(
-    --tg-theme-section-separator-color,
-    color-mix(in oklab, var(--tg-theme-hint-color) 25%, transparent)
-  );
-  --input: color-mix(in oklab, var(--tg-theme-hint-color) 30%, transparent);
+.dark {
+  --background: #0b0b0b;
+  --foreground: #f2f2ef;
+  --card: #161616;
+  --card-foreground: #f2f2ef;
+  --popover: #1b1b1b;
+  --popover-foreground: #f2f2ef;
+  --primary: #f2f2ef;
+  --primary-foreground: #121212;
+  --secondary: #1f1f1f;
+  --secondary-foreground: #f2f2ef;
+  --muted: #1f1f1f;
+  --muted-foreground: #9b9a95;
+  --accent: #242424;
+  --accent-foreground: #f2f2ef;
+  --destructive: #ef6a5e;
+  --border: rgb(255 255 255 / 0.08);
+  --input: rgb(255 255 255 / 0.14);
+  --ring: rgb(255 255 255 / 0.4);
+  --hero: #ecebe7;
+  --hero-foreground: #121212;
+  --soft: #1d3a5e;
+  --soft-foreground: #dce9f8;
+  --success: #6fcf97;
+  --success-soft: #173826;
+  --warning-soft: #3a3214;
+  --danger-soft: #3d1c18;
+  --nav: #ecebe7;
+  --nav-foreground: #121212;
+  --chart-1: #f2f2ef;
+  --chart-2: #9b9a95;
+  --chart-3: #5c5b57;
+  --chart-4: #1d3a5e;
+  --chart-5: #242424;
+  --sidebar: #161616;
+  --sidebar-foreground: #f2f2ef;
+  --sidebar-primary: #f2f2ef;
+  --sidebar-primary-foreground: #121212;
+  --sidebar-accent: #1f1f1f;
+  --sidebar-accent-foreground: #f2f2ef;
+  --sidebar-border: rgb(255 255 255 / 0.08);
+  --sidebar-ring: rgb(255 255 255 / 0.4);
 }
 
 @layer base {

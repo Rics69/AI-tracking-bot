@@ -91,7 +91,7 @@ function Bubble({ text, mood, reduce }: { text?: string; mood: Mood; reduce: boo
         <motion.p
           key={shown}
           role="status"
-          className="relative max-w-72 rounded-2xl bg-card px-4 py-3 text-center text-[15px] leading-snug text-card-foreground shadow-sm"
+          className="relative max-w-72 rounded-[18px] border border-border bg-card px-4 py-3 text-center text-[15px] leading-snug text-card-foreground"
           initial={reduce ? false : { opacity: 0, y: 6, scale: 0.97 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={reduce ? undefined : { opacity: 0, y: -4 }}
@@ -99,6 +99,28 @@ function Bubble({ text, mood, reduce }: { text?: string; mood: Mood; reduce: boo
         >
           {shown}
         </motion.p>
+      )}
+    </AnimatePresence>
+  );
+}
+
+/** Savik's line as plain text, for layouts that draw their own bubble. */
+export function PhraseText({ mood }: { mood: Mood }) {
+  const text = useRandomPhrase(mood);
+  const reduce = useReducedMotion();
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      {text && (
+        <motion.span
+          key={text}
+          className="block"
+          initial={reduce ? false : { opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={reduce ? undefined : { opacity: 0 }}
+          transition={{ duration: 0.25 }}
+        >
+          {text}
+        </motion.span>
       )}
     </AnimatePresence>
   );

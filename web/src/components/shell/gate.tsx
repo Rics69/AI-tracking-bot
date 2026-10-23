@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { ApiError } from "@/api/client";
 import { useMe, useUpdateMe } from "@/api/queries";
 import { Savik, usePreloadPoses } from "@/components/savik/savik";
-import { Button } from "@/components/ui/button";
+import { Card, PillButton } from "@/components/kit";
 import { texts } from "@/content/texts";
 import { haptic } from "@/lib/telegram";
 
@@ -39,9 +39,9 @@ export function Gate({ children }: { children: ReactNode }) {
           <p className="text-muted-foreground">{outside ? texts.outsideBody : me.error.message}</p>
         </div>
         {!outside && (
-          <Button size="lg" className="h-11 px-6" onClick={() => void me.refetch()}>
+          <PillButton onClick={() => void me.refetch()}>
             Повторить
-          </Button>
+          </PillButton>
         )}
       </Centered>
     );
@@ -55,13 +55,12 @@ function Consent() {
   return (
     <Centered>
       <Savik mood="welcome" size={168} />
-      <section className="flex flex-col gap-3 rounded-2xl bg-card p-5 text-card-foreground">
+      <Card className="flex flex-col gap-3 p-5">
         <h1 className="text-lg font-semibold">{texts.consentTitle}</h1>
         <p className="text-[15px] leading-relaxed text-muted-foreground">{texts.consentBody}</p>
-      </section>
-      <Button
-        size="lg"
-        className="h-12 w-full text-base"
+      </Card>
+      <PillButton
+        className="h-12 w-full"
         disabled={update.isPending}
         onClick={() =>
           update.mutate(
@@ -74,7 +73,7 @@ function Consent() {
         }
       >
         {texts.consentButton}
-      </Button>
+      </PillButton>
     </Centered>
   );
 }

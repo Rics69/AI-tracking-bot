@@ -28,7 +28,7 @@ export function Sheet({ open, onOpenChange, title, description, children, classN
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
         <DialogPrimitive.Content
           className={cn(
-            "fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[92dvh] w-full max-w-lg flex-col rounded-t-3xl bg-popover text-popover-foreground shadow-lg outline-none",
+            "fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[92dvh] w-full max-w-lg flex-col rounded-t-[28px] bg-card text-card-foreground shadow-[0_-10px_40px_rgb(0_0_0/0.12)] outline-none",
             "pb-[calc(1rem+var(--safe-bottom))] data-[state=closed]:animate-out data-[state=closed]:slide-out-to-bottom data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom data-[state=open]:duration-300",
             className,
           )}

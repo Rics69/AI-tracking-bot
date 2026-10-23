@@ -13,6 +13,7 @@
     "poses": "node scripts/build-poses.mjs"
   },
   "dependencies": {
+    "@fontsource-variable/onest": "5.3.1",
     "@tanstack/react-query": "^5.104.3",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.4.0",

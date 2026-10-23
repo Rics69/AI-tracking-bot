@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  ChartPieIcon,
-  CircleUserIcon,
-  HouseIcon,
-  ListIcon,
-  PlusIcon,
-  type LucideIcon,
-} from "lucide-react";
+import { ChartPieIcon, CircleUserIcon, HouseIcon, ListIcon, PlusIcon, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -22,7 +15,7 @@ const tabs: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/profile", label: "Профиль", icon: CircleUserIcon },
 ];
 
-/** The app's bottom navigation with the "+" button in the middle. */
+/** A floating capsule at the bottom: four sections and the "+" in the middle. */
 export function BottomNav() {
   const pathname = usePathname();
   const sheet = useOperationSheet();
@@ -32,15 +25,15 @@ export function BottomNav() {
       <Link
         key={t.href}
         href={t.href}
-        onClick={() => !active && haptic.select()}
+        aria-label={t.label}
         aria-current={active ? "page" : undefined}
+        onClick={() => !active && haptic.select()}
         className={cn(
-          "flex min-h-12 flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors",
-          active ? "text-primary" : "text-muted-foreground",
+          "flex size-12 items-center justify-center rounded-full transition-colors",
+          active ? "bg-nav-foreground text-nav" : "text-nav-foreground/60",
         )}
       >
-        <t.icon className="size-6" strokeWidth={active ? 2.25 : 1.75} />
-        {t.label}
+        <t.icon className="size-[22px]" strokeWidth={active ? 2 : 1.75} />
       </Link>
     );
   };
@@ -48,23 +41,21 @@ export function BottomNav() {
   return (
     <nav
       aria-label="Разделы"
-      className="fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 pb-[var(--safe-bottom)] backdrop-blur"
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 pb-[calc(0.75rem+var(--safe-bottom))]"
     >
-      <div className="mx-auto flex h-16 max-w-lg items-center px-2">
+      <div className="pointer-events-auto flex items-center gap-1 rounded-full bg-nav p-1.5 text-nav-foreground shadow-[0_10px_30px_rgb(0_0_0/0.18)]">
         {tabs.slice(0, 2).map(tab)}
-        <div className="flex flex-1 justify-center">
-          <button
-            type="button"
-            aria-label="Добавить трату или доход"
-            onClick={() => {
-              haptic.tap();
-              sheet.openNew();
-            }}
-            className="-mt-6 flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md transition-transform active:scale-95"
-          >
-            <PlusIcon className="size-7" strokeWidth={2.5} />
-          </button>
-        </div>
+        <button
+          type="button"
+          aria-label="Добавить трату или доход"
+          onClick={() => {
+            haptic.tap();
+            sheet.openNew();
+          }}
+          className="mx-1 flex size-12 items-center justify-center rounded-full bg-soft text-soft-foreground transition-transform active:scale-95"
+        >
+          <PlusIcon className="size-6" strokeWidth={2.25} />
+        </button>
         {tabs.slice(2).map(tab)}
       </div>
     </nav>

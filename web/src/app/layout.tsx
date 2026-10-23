@@ -9,6 +9,8 @@ import { Toaster } from "@/components/ui/sonner";
 import { texts } from "@/content/texts";
 
 import { Providers } from "./providers";
+// Self-hosted, not Google Fonts: no build-time download, no slow third-party CDN.
+import "@fontsource-variable/onest";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -32,7 +34,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <TelegramSetup />
           <Gate>
             <OperationSheetProvider>
-              <main className="mx-auto flex w-full max-w-lg flex-col gap-6 px-4 pt-4 pb-[calc(6rem+var(--safe-bottom))]">
+              <main className="mx-auto flex w-full max-w-lg flex-col gap-5 px-4 pt-5 pb-[calc(7rem+var(--safe-bottom))]">
                 {children}
               </main>
               <BottomNav />

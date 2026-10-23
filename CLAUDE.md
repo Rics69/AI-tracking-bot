@@ -27,12 +27,12 @@
 - `web/` — Next.js 16 mini app для Telegram (App Router, TanStack Query, shadcn/ui, motion). Перед правками читай `web/AGENTS.md`: API Next 16 отличаются от привычных.
   - Экраны: `/` главная, `/history`, `/analytics`, `/profile`; нижнее меню и общая шторка «＋» (`operations/sheet-context.tsx`). Всё за `shell/gate.tsx`: вне Telegram — экран «откройте из Telegram», без согласия — экран согласия.
   - Данные пользователя грузятся только в браузере: страницы с `export const instant = false`, никакого `Math.random()`/`Date` при пререндере (фразы Сейвика выбираются через `useSyncExternalStore`).
-  - Тема — из Telegram (`--tg-theme-*` → токены в `globals.css`, класс `html.tg`), акцент `--primary` свой. `lib/telegram.ts` — обёртка над `telegram-web-app.js` (хаптик, BackButton, share, confirm).
+  - Дизайн — в духе Cadra: молочный фон, белые карточки, чёрная «hero»-карточка, пастельно-голубая «soft», плавающая капсула меню. Токены (`--hero`, `--soft`, `--nav`, `--success` …) в `globals.css`, светлая и тёмная тема своя; из Telegram берётся только `colorScheme` (`shell/telegram-setup.tsx` красит под фон шапку и низ). Шрифт Onest — локально (`@fontsource-variable/onest`), без Google Fonts. Общие блоки — `components/kit.tsx` (`Card`, `Panel`, `StatCard`, `Segmented`, `Pill`, `PillButton`, `PageHeader`). `lib/telegram.ts` — обёртка над `telegram-web-app.js` (хаптик, BackButton, share, confirm).
   - Тексты и фразы Сейвика — `src/content/` (правит владелец), позы — `src/content/savik.ts`.
   - `web/src/api/schema.d.ts` генерируется из `openapi.yaml` (`npm run gen:api`), руками не править.
   - `/api/*` проксируется на Go API через rewrites в `next.config.ts`.
   - Позы Сейвика: исходники в `poses/*.png` (не в git), `npm run poses` собирает `web/public/savik/{512,256}/*.webp`. Руками webp не править.
-  - Аналитика (`analytics-screen.tsx`, Recharts через shadcn chart): цвет закреплён за видом операции (расход/доход, слоты 1–2 проверенной палитры) — не перекрашивать и не добавлять цвета без проверки валидатором.
+  - Графики (`components/money/`): у категорий своя проверенная палитра из 7 цветов (`distribution.tsx`, светлая и тёмная), цвет закреплён за категорией, рядом всегда подпись и сумма. Динамика (`flow-chart.tsx`) — одна серия цветом текста, без категориальных цветов. Новые цвета — только после проверки валидатором.
 
 ## Команды
 

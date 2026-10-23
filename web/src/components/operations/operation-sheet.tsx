@@ -5,7 +5,7 @@ import { toast } from "sonner";
 
 import { ApiError, type Category, type Kind } from "@/api/client";
 import { useCreateOperation, useDeleteOperation, useUpdateOperation } from "@/api/queries";
-import { Button } from "@/components/ui/button";
+import { PillButton } from "@/components/kit";
 import { Input } from "@/components/ui/input";
 import { Sheet } from "@/components/ui/sheet";
 import { capitalize, categoryIcons, useCategoryInfo } from "@/lib/categories";
@@ -163,7 +163,7 @@ function OperationForm({
       <div
         role="radiogroup"
         aria-label="Что записываем"
-        className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1"
+        className="grid grid-cols-2 gap-1 rounded-full bg-accent p-1"
       >
         {(["expense", "income"] as const).map((k) => (
           <button
@@ -173,7 +173,7 @@ function OperationForm({
             aria-checked={f.kind === k}
             onClick={() => switchKind(k)}
             className={cn(
-              "h-10 rounded-lg text-[15px] font-medium transition-colors",
+              "h-10 rounded-full text-[15px] font-medium transition-colors",
               f.kind === k ? "bg-card text-foreground shadow-sm" : "text-muted-foreground",
             )}
           >
@@ -219,12 +219,12 @@ function OperationForm({
                   set("category", c.code);
                 }}
                 className={cn(
-                  "flex min-h-[72px] flex-col items-center justify-center gap-1.5 rounded-xl px-1 py-2 text-[13px] leading-tight transition-colors",
+                  "flex min-h-[76px] flex-col items-center justify-center gap-1.5 rounded-2xl min-w-0 px-0.5 py-2 text-[12px] leading-tight transition-colors",
                   selected ? "bg-primary text-primary-foreground" : "bg-muted text-foreground",
                 )}
               >
                 <Icon className="size-5" />
-                <span className="line-clamp-2 text-center">{capitalize(c.label)}</span>
+                <span className="line-clamp-2 max-w-full text-center hyphens-auto">{capitalize(c.label)}</span>
               </button>
             );
           })}
@@ -266,25 +266,24 @@ function OperationForm({
           maxLength={500}
           value={f.comment}
           onChange={(e) => set("comment", e.target.value)}
-          className="h-11 text-[15px]"
+          className="h-11 rounded-full px-4 text-[15px]"
         />
         <FieldError text={errors.comment} />
       </div>
 
       <div className="flex flex-col gap-2 pb-2">
-        <Button type="submit" size="lg" className="h-12 text-base" disabled={pending}>
+        <PillButton type="submit" className="h-12 w-full" disabled={pending}>
           {pending ? "Сохранение…" : op ? "Сохранить" : "Записать"}
-        </Button>
+        </PillButton>
         {op && (
-          <Button
-            type="button"
-            variant="ghost"
-            className="h-11 text-destructive"
+          <PillButton
+            variant="outline"
+            className="h-12 w-full text-destructive"
             disabled={pending}
             onClick={() => void onDelete()}
           >
             Удалить
-          </Button>
+          </PillButton>
         )}
       </div>
     </form>

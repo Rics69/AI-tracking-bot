@@ -4,9 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Kind } from "@/api/client";
 import { useFamily, useMe, useOperations, type OperationQuery } from "@/api/queries";
+import { Card, PageHeader, PillButton, Segmented } from "@/components/kit";
 import { OperationList } from "@/components/operations/operation-list";
-import { Chips } from "@/components/shell/chips";
-import { Button } from "@/components/ui/button";
 import { texts } from "@/content/texts";
 import { formatMoney } from "@/lib/format";
 import { periodRange, PERIODS, type Period } from "@/lib/period";
@@ -20,9 +19,7 @@ const kinds: { value: KindFilter; label: string }[] = [
   { value: "income", label: "Доходы" },
 ];
 
-const periods = (
-  ["this-month", "last-month", "this-week", "last-30", "this-year", "all"] as const
-).map((p) => ({
+const periods = (["this-month", "last-month", "this-week", "last-30", "this-year", "all"] as const).map((p) => ({
   value: p,
   label: PERIODS[p],
 }));
@@ -49,21 +46,18 @@ export function HistoryScreen() {
   const totals = pages?.[0];
 
   const members = useMemo(() => family.data?.members ?? [], [family.data]);
-  const names = useMemo(
-    () => new Map(members.map((m) => [m.telegram_id, m.first_name])),
-    [members],
-  );
+  const names = useMemo(() => new Map(members.map((m) => [m.telegram_id, m.first_name])), [members]);
   const showMembers = me.data?.is_head && members.length > 1;
 
   return (
     <>
-      <h1 className="px-1 text-2xl font-semibold tracking-tight">История</h1>
+      <PageHeader title="История" />
 
       <div className="flex flex-col gap-2">
-        <Chips label="Что показать" options={kinds} value={kind} onChange={setKind} />
-        <Chips label="Период" options={periods} value={period} onChange={setPeriod} />
+        <Segmented label="Что показать" options={kinds} value={kind} onChange={setKind} />
+        <Segmented label="Период" options={periods} value={period} onChange={setPeriod} />
         {showMembers && (
-          <Chips
+          <Segmented
             label="Член семьи"
             options={[
               { value: "all", label: "Вся семья" },
@@ -79,38 +73,21 @@ export function HistoryScreen() {
       </div>
 
       {totals && (
-        <p className="px-1 text-[15px] text-muted-foreground">
-          {kind !== "income" && (
-            <>
-              Потрачено{" "}
-              <span className="font-semibold text-foreground tabular-nums">
-                {formatMoney(totals.expense_sum)}
-              </span>
-            </>
-          )}
-          {kind === "all" && " · "}
-          {kind !== "expense" && (
-            <>
-              Получено{" "}
-              <span className="font-semibold text-primary tabular-nums">
-                {formatMoney(totals.income_sum)}
-              </span>
-            </>
-          )}
-        </p>
+        <div className="grid grid-cols-2 gap-3">
+          {kind !== "income" && <Total label="Потрачено" value={totals.expense_sum} />}
+          {kind !== "expense" && <Total label="Получено" value={totals.income_sum} soft />}
+        </div>
       )}
 
       {ops.error ? (
-        <div className="flex flex-col items-center gap-3 rounded-2xl bg-card p-6 text-center">
+        <Card className="flex flex-col items-center gap-3 p-6 text-center">
           <p className="text-[15px] text-muted-foreground">{ops.error.message}</p>
-          <Button variant="secondary" className="h-11" onClick={() => void ops.refetch()}>
+          <PillButton variant="outline" onClick={() => void ops.refetch()}>
             Повторить
-          </Button>
-        </div>
+          </PillButton>
+        </Card>
       ) : items?.length === 0 ? (
-        <p className="rounded-2xl bg-card px-5 py-6 text-center text-[15px] text-muted-foreground">
-          {texts.historyEmpty}
-        </p>
+        <Card className="px-5 py-6 text-center text-[15px] text-muted-foreground">{texts.historyEmpty}</Card>
       ) : (
         <OperationList
           items={items}
@@ -120,11 +97,17 @@ export function HistoryScreen() {
         />
       )}
 
-      <LoadMore
-        active={!!ops.hasNextPage && !ops.isFetchingNextPage}
-        onVisible={() => void ops.fetchNextPage()}
-      />
+      <LoadMore active={!!ops.hasNextPage && !ops.isFetchingNextPage} onVisible={() => void ops.fetchNextPage()} />
     </>
+  );
+}
+
+function Total({ label, value, soft }: { label: string; value: number; soft?: boolean }) {
+  return (
+    <div className={soft ? "rounded-[22px] bg-soft p-4 text-soft-foreground" : "rounded-[22px] border border-border bg-card p-4"}>
+      <p className={soft ? "text-[13px]" : "text-[13px] text-muted-foreground"}>{label}</p>
+      <p className="pt-1 text-[22px] font-medium tracking-tight tabular-nums">{formatMoney(value)}</p>
+    </div>
   );
 }
 
@@ -134,12 +117,9 @@ function LoadMore({ active, onVisible }: { active: boolean; onVisible: () => voi
   useEffect(() => {
     const el = ref.current;
     if (!el || !active) return;
-    const observer = new IntersectionObserver(
-      (entries) => entries[0].isIntersecting && onVisible(),
-      {
-        rootMargin: "400px",
-      },
-    );
+    const observer = new IntersectionObserver((entries) => entries[0].isIntersecting && onVisible(), {
+      rootMargin: "400px",
+    });
     observer.observe(el);
     return () => observer.disconnect();
   }, [active, onVisible]);

@@ -1,7 +1,17 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { CrownIcon, LogOutIcon, SendIcon, UserMinusIcon, XIcon } from "lucide-react";
+import {
+  type LucideIcon,
+  CrownIcon,
+  LogOutIcon,
+  SendIcon,
+  SettingsIcon,
+  ShieldIcon,
+  UserMinusIcon,
+  UsersIcon,
+  XIcon,
+} from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -17,8 +27,8 @@ import {
   useTransferHead,
   useUpdateMe,
 } from "@/api/queries";
+import { Card, PageHeader, Pill, PillButton } from "@/components/kit";
 import { confirm } from "@/components/operations/operation-sheet";
-import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
@@ -34,15 +44,17 @@ export function ProfileScreen() {
   const u = me.data;
   return (
     <>
-      <header className="flex items-center gap-4 px-1">
+      <PageHeader title="Профиль" />
+      <Card className="flex items-center gap-4 p-4">
         <Avatar name={u.first_name} size="lg" />
-        <div className="flex min-w-0 flex-col">
-          <h1 className="truncate text-2xl font-semibold tracking-tight">{u.first_name}</h1>
-          {u.username && (
-            <span className="truncate text-[15px] text-muted-foreground">@{u.username}</span>
-          )}
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="truncate text-[20px] font-medium tracking-tight">{u.first_name}</span>
+          <span className="flex flex-wrap items-center gap-2">
+            {u.username && <span className="truncate text-[14px] text-muted-foreground">@{u.username}</span>}
+            <Pill tone={u.is_head ? "soft" : "neutral"}>{u.is_head ? "глава семьи" : "участник"}</Pill>
+          </span>
         </div>
-      </header>
+      </Card>
       <FamilySection me={u} />
       <SettingsSection me={u} />
       <PrivacySection />
@@ -60,7 +72,7 @@ function FamilySection({ me }: { me: Me }) {
   const alone = members?.length === 1;
 
   return (
-    <Section title="Семья">
+    <Section icon={UsersIcon} title="Семья">
       {!members ? (
         <Skeleton className="h-24 w-full" />
       ) : (
@@ -124,9 +136,7 @@ function FamilySection({ me }: { me: Me }) {
 function InviteButton() {
   const create = useCreateInvite();
   return (
-    <Button
-      size="lg"
-      className="h-12 text-base"
+    <PillButton className="h-12 w-full"
       disabled={create.isPending}
       onClick={() =>
         create.mutate(undefined, {
@@ -144,7 +154,7 @@ function InviteButton() {
     >
       <SendIcon className="size-5" />
       Пригласить в семью
-    </Button>
+    </PillButton>
   );
 }
 
@@ -182,10 +192,7 @@ function ActiveInvites({
 function LeaveButton() {
   const leave = useLeaveFamily();
   return (
-    <Button
-      variant="secondary"
-      size="lg"
-      className="h-12 text-base"
+    <PillButton variant="outline" className="h-12 w-full"
       disabled={leave.isPending}
       onClick={async () => {
         if (
@@ -205,7 +212,7 @@ function LeaveButton() {
     >
       <LogOutIcon className="size-5" />
       Выйти из семьи
-    </Button>
+    </PillButton>
   );
 }
 
@@ -219,10 +226,7 @@ function MemberSheet({ member, onClose }: { member: Member | null; onClose: () =
     <Sheet open={member !== null} onOpenChange={(open) => !open && onClose()} title={name}>
       {member && (
         <div className="flex flex-col gap-2 pb-2">
-          <Button
-            variant="secondary"
-            size="lg"
-            className="h-12 justify-start text-base"
+          <PillButton variant="outline" className="h-12 w-full justify-start"
             disabled={pending}
             onClick={async () => {
               if (
@@ -243,11 +247,8 @@ function MemberSheet({ member, onClose }: { member: Member | null; onClose: () =
           >
             <CrownIcon className="size-5" />
             Сделать главой семьи
-          </Button>
-          <Button
-            variant="destructive"
-            size="lg"
-            className="h-12 justify-start text-base"
+          </PillButton>
+          <PillButton variant="outline" className="h-12 w-full justify-start text-destructive"
             disabled={pending}
             onClick={async () => {
               if (
@@ -268,7 +269,7 @@ function MemberSheet({ member, onClose }: { member: Member | null; onClose: () =
           >
             <UserMinusIcon className="size-5" />
             Исключить из семьи
-          </Button>
+          </PillButton>
         </div>
       )}
     </Sheet>
@@ -286,7 +287,7 @@ function SettingsSection({ me }: { me: Me }) {
       onError: (err) => toast.error(err.message),
     });
   return (
-    <Section title="Настройки">
+    <Section icon={SettingsIcon} title="Настройки">
       <label className="flex min-h-14 items-center justify-between gap-4 px-4 py-2">
         <span className="flex flex-col">
           <span className="text-[15px]">Итоги недели</span>
@@ -326,7 +327,7 @@ function SettingsSection({ me }: { me: Me }) {
 
 function PrivacySection() {
   return (
-    <Section title="Данные">
+    <Section icon={ShieldIcon} title="Данные">
       <details className="group px-4 py-3">
         <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between text-[15px]">
           Как хранятся данные
@@ -349,9 +350,7 @@ function DeleteAccount({ me }: { me: Me }) {
   const headWithMembers = me.is_head && (family.data?.members.length ?? 0) > 1;
   return (
     <div className="flex flex-col gap-2 px-1 pb-4">
-      <Button
-        variant="ghost"
-        className="h-11 text-destructive"
+      <PillButton variant="outline" className="h-12 w-full text-destructive"
         disabled={del.isPending}
         onClick={async () => {
           const warning =
@@ -369,19 +368,24 @@ function DeleteAccount({ me }: { me: Me }) {
         }}
       >
         Удалить аккаунт
-      </Button>
+      </PillButton>
     </div>
   );
 }
 
 // Pieces.
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ icon: Icon, title, children }: { icon: LucideIcon; title: string; children: React.ReactNode }) {
   return (
-    <section className="flex flex-col gap-2">
-      <h2 className="px-1 text-sm font-medium text-muted-foreground">{title}</h2>
-      <div className="flex flex-col overflow-hidden rounded-2xl bg-card">{children}</div>
-    </section>
+    <Card className="flex flex-col overflow-hidden">
+      <header className="flex items-center gap-3 px-4 pt-4 pb-1">
+        <span className="flex size-9 items-center justify-center rounded-full bg-muted" aria-hidden>
+          <Icon className="size-[18px]" strokeWidth={1.75} />
+        </span>
+        <h2 className="text-[17px] font-medium">{title}</h2>
+      </header>
+      {children}
+    </Card>
   );
 }
 
@@ -390,7 +394,7 @@ function Avatar({ name, size = "md" }: { name: string; size?: "md" | "lg" }) {
     <span
       aria-hidden
       className={cn(
-        "flex shrink-0 items-center justify-center rounded-full bg-primary/15 font-semibold text-primary",
+        "flex shrink-0 items-center justify-center rounded-full bg-soft font-medium text-soft-foreground",
         size === "lg" ? "size-16 text-2xl" : "size-10 text-base",
       )}
     >
