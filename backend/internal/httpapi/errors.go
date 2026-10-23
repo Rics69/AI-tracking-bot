@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
@@ -36,7 +37,7 @@ func writeError(log *slog.Logger, w http.ResponseWriter, r *http.Request, err er
 		status = http.StatusForbidden
 		detail = ErrorDetail{Code: ErrCodeForbidden, Message: err.Error()}
 	case errors.Is(err, ledger.ErrNotFound), errors.Is(err, user.ErrNotFound), errors.Is(err, family.ErrInviteNotFound),
-		errors.Is(err, family.ErrNotMember):
+		errors.Is(err, family.ErrNotMember), errors.Is(err, budget.ErrNotFound):
 		status = http.StatusNotFound
 		detail = ErrorDetail{Code: ErrCodeNotFound, Message: err.Error()}
 	case errors.Is(err, family.ErrHeadRemoval), errors.Is(err, family.ErrBotUnknown),

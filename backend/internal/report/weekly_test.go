@@ -54,8 +54,8 @@ type fakeRuns struct {
 	claimed map[string]bool
 }
 
-func (f *fakeRuns) Claim(_ context.Context, week time.Time, id int64) (bool, error) {
-	k := week.Format(time.DateOnly) + string(rune(id))
+func (f *fakeRuns) Claim(_ context.Context, kind, period string, id int64) (bool, error) {
+	k := fmt.Sprintf("%s/%s/%d", kind, period, id)
 	if f.claimed[k] {
 		return false, nil
 	}
@@ -63,8 +63,8 @@ func (f *fakeRuns) Claim(_ context.Context, week time.Time, id int64) (bool, err
 	return true, nil
 }
 
-func (f *fakeRuns) Release(_ context.Context, week time.Time, id int64) error {
-	delete(f.claimed, week.Format(time.DateOnly)+string(rune(id)))
+func (f *fakeRuns) Release(_ context.Context, kind, period string, id int64) error {
+	delete(f.claimed, fmt.Sprintf("%s/%s/%d", kind, period, id))
 	return nil
 }
 

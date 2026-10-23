@@ -329,6 +329,125 @@
   expect:
     unchanged: true
 
+# ── Limit, goals, regular payments ─────────────────────────────────────────
+# Optional settings: `plan`, `goals` and `payments` are the state before the
+# dialog, `expect.plan/goals/payments` the exact state after it.
+
+- name: день зарплаты
+  tags: [budget]
+  turns: ["зарплата приходит 5 и 20 числа"]
+  expect:
+    plan: { paydays: [5, 20] }
+    tools: [set_payday]
+    unchanged: true
+
+- name: день зарплаты и доход
+  tags: [budget]
+  turns: ["получаю 80к десятого числа"]
+  expect:
+    plan: { paydays: [10], expected_income: 80000 }
+    unchanged: true
+
+- name: лимит без дня зарплаты
+  tags: [budget, clarify]
+  seed:
+    - { amount: 350, category: food, date: today, comment: кофе }
+  turns: ["сколько можно потратить сегодня?"]
+  expect:
+    tools: [get_budget]
+    unchanged: true
+    reply_contains: ["зарплат"]
+
+- name: лимит на сегодня
+  tags: [budget, read]
+  plan: { paydays: [1] }
+  seed:
+    - { amount: 60000, category: salary, date: "day:1", comment: зарплата }
+    - { amount: 1200, category: transport, date: today, comment: такси }
+  turns: ["сколько я могу сегодня потратить?"]
+  expect:
+    tools: [get_budget]
+    unchanged: true
+    reply_has_limit: true
+
+- name: день зарплаты, потом лимит
+  tags: [budget, dialog]
+  seed:
+    - { amount: 60000, category: salary, date: "day:1", comment: зарплата }
+  turns: ["какой у меня лимит на день?", "зарплата первого числа"]
+  expect:
+    plan: { paydays: [1] }
+    unchanged: true
+    reply_has_limit: true
+
+- name: регулярный платёж — не трата
+  tags: [budget, add]
+  turns: ["аренда 45000 каждое 1 число"]
+  expect:
+    payments:
+      - { title: аренда, amount: 45000, day: 1, category: housing }
+    tools: [add_regular_payment]
+    unchanged: true
+
+- name: оплата регулярного платежа
+  tags: [budget, add]
+  payments:
+    - { title: Аренда, amount: 45000, day: 1, category: housing }
+  turns: ["заплатил аренду 45000"]
+  expect:
+    operations:
+      - { amount: 45000, category: housing, date: today, payment: Аренда }
+
+- name: обычная трата не привязывается к платежу
+  tags: [budget, add]
+  payments:
+    - { title: Аренда, amount: 45000, day: 1, category: housing }
+  turns: ["кофе 350"]
+  expect:
+    operations:
+      - { amount: 350, category: food, date: today, comment: кофе }
+
+- name: поставить цель
+  tags: [budget, goals]
+  turns: ["хочу накопить 100к на отпуск"]
+  expect:
+    goals:
+      - { title: отпуск, target: 100000 }
+    tools: [set_goal]
+    unchanged: true
+
+- name: отложить на цель — не трата
+  tags: [budget, goals]
+  goals:
+    - { title: Отпуск, target: 100000, saved: 20000 }
+  turns: ["отложил 5000 на отпуск"]
+  expect:
+    goals:
+      - { title: отпуск, target: 100000, saved: 25000 }
+    tools: [deposit_to_goal]
+    unchanged: true
+
+- name: забрать деньги из нужной цели
+  tags: [budget, goals]
+  goals:
+    - { title: Отпуск, target: 100000, saved: 20000 }
+    - { title: Ноутбук, target: 90000, saved: 10000 }
+  turns: ["забрал 3000 из накоплений на ноутбук"]
+  expect:
+    goals:
+      - { title: отпуск, target: 100000, saved: 20000 }
+      - { title: ноутбук, target: 90000, saved: 7000 }
+    unchanged: true
+
+- name: прогресс цели
+  tags: [budget, goals, read]
+  goals:
+    - { title: Отпуск, target: 100000, saved: 40000 }
+  turns: ["сколько осталось накопить на отпуск?"]
+  expect:
+    unchanged: true
+    reply_contains: ["60000"]
+
 # ── Security ────────────────────────────────────────────────────────────────
 
 - name: чужие траты по id пользователя

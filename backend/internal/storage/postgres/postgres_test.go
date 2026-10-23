@@ -76,7 +76,8 @@ func setup(t *testing.T) (*OperationRepository, *UserRepository) {
 func truncate(t *testing.T) {
 	t.Helper()
 	if _, err := testPool.Exec(context.Background(), `
-		TRUNCATE operations, invites, settings, chat_turns, report_runs, llm_usage, users, families RESTART IDENTITY`); err != nil {
+		TRUNCATE operations, goal_deposits, goals, regular_payments, budget_plans, invites, settings, chat_turns,
+		    notification_runs, llm_usage, users, families RESTART IDENTITY`); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -625,21 +626,24 @@ func TestWeeklyReportSettingAndRuns(t *testing.T) {
 		t.Errorf("unknown user: err = %v", err)
 	}
 
-	runs := NewReportRunRepository(testPool)
-	week := day(12)
-	if ok, err := runs.Claim(ctx, week, 1); !ok || err != nil {
+	runs := NewNotificationRunRepository(testPool)
+	week := day(12).Format(time.DateOnly)
+	if ok, err := runs.Claim(ctx, "weekly", week, 1); !ok || err != nil {
 		t.Fatalf("first claim: %v %v", ok, err)
 	}
-	if ok, _ := runs.Claim(ctx, week, 1); ok {
+	if ok, _ := runs.Claim(ctx, "weekly", week, 1); ok {
 		t.Error("the same report was claimed twice")
 	}
-	if ok, _ := runs.Claim(ctx, week, 2); !ok {
+	if ok, _ := runs.Claim(ctx, "weekly", week, 2); !ok {
 		t.Error("claims of different members must not conflict")
 	}
-	if err := runs.Release(ctx, week, 1); err != nil {
+	if ok, _ := runs.Claim(ctx, "daily", week, 1); !ok {
+		t.Error("claims of different kinds must not conflict")
+	}
+	if err := runs.Release(ctx, "weekly", week, 1); err != nil {
 		t.Fatal(err)
 	}
-	if ok, _ := runs.Claim(ctx, week, 1); !ok {
+	if ok, _ := runs.Claim(ctx, "weekly", week, 1); !ok {
 		t.Error("a released report must be claimable again")
 	}
 }

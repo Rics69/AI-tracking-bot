@@ -4,1114 +4,1748 @@
  */
 
 export interface paths {
-  "/me": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Текущий пользователь и его настройки */
+        get: operations["getMe"];
+        put?: never;
+        post?: never;
+        /**
+         * Удалить аккаунт со всеми данными
+         * @description Удаляет пользователя, его операции, историю диалога и настройки. Семья главы
+         *     распускается: участники продолжают вести расходы сами, со своими операциями.
+         */
+        delete: operations["deleteMe"];
+        options?: never;
+        head?: never;
+        /**
+         * Изменить настройки или принять политику данных
+         * @description Меняет только переданные поля.
+         */
+        patch: operations["updateMe"];
+        trace?: never;
     };
-    /** Текущий пользователь и его настройки */
-    get: operations["getMe"];
-    put?: never;
-    post?: never;
-    /**
-     * Удалить аккаунт со всеми данными
-     * @description Удаляет пользователя, его операции, историю диалога и настройки. Семья главы
-     *     распускается: участники продолжают вести расходы сами, со своими операциями.
-     */
-    delete: operations["deleteMe"];
-    options?: never;
-    head?: never;
-    /**
-     * Изменить настройки или принять политику данных
-     * @description Меняет только переданные поля.
-     */
-    patch: operations["updateMe"];
-    trace?: never;
-  };
-  "/operations": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/operations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Траты и доходы с фильтрами
+         * @description Страница операций, новые первыми, и итоги по всей выборке. Глава видит
+         *     операции всей семьи, участник — только свои.
+         */
+        get: operations["listOperations"];
+        put?: never;
+        /**
+         * Записать трату или доход
+         * @description Операция записывается на текущего пользователя; вид следует из категории.
+         */
+        post: operations["createOperation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /**
-     * Траты и доходы с фильтрами
-     * @description Страница операций, новые первыми, и итоги по всей выборке. Глава видит
-     *     операции всей семьи, участник — только свои.
-     */
-    get: operations["listOperations"];
-    put?: never;
-    /**
-     * Записать трату или доход
-     * @description Операция записывается на текущего пользователя; вид следует из категории.
-     */
-    post: operations["createOperation"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/operations/{id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        id: number;
-      };
-      cookie?: never;
+    "/operations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** Получить операцию */
+        get: operations["getOperation"];
+        put?: never;
+        post?: never;
+        /** Удалить свою операцию */
+        delete: operations["deleteOperation"];
+        options?: never;
+        head?: never;
+        /**
+         * Изменить свою операцию
+         * @description Меняет только переданные поля. Чужие операции, в том числе для главы, — 404.
+         */
+        patch: operations["updateOperation"];
+        trace?: never;
     };
-    /** Получить операцию */
-    get: operations["getOperation"];
-    put?: never;
-    post?: never;
-    /** Удалить свою операцию */
-    delete: operations["deleteOperation"];
-    options?: never;
-    head?: never;
-    /**
-     * Изменить свою операцию
-     * @description Меняет только переданные поля. Чужие операции, в том числе для главы, — 404.
-     */
-    patch: operations["updateOperation"];
-    trace?: never;
-  };
-  "/summary": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Траты, доходы и баланс за период */
+        get: operations["getSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Траты, доходы и баланс за период */
-    get: operations["getSummary"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/timeseries": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/timeseries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Траты или доходы по дням, неделям или месяцам
+         * @description Сумма за каждый интервал с разбивкой по категориям. Интервалы без операций
+         *     присутствуют с нулём. Без `from` ряд начинается с первой подходящей операции,
+         *     без `to` — заканчивается сегодня. Не больше 400 точек.
+         */
+        get: operations["getTimeSeries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /**
-     * Траты или доходы по дням, неделям или месяцам
-     * @description Сумма за каждый интервал с разбивкой по категориям. Интервалы без операций
-     *     присутствуют с нулём. Без `from` ряд начинается с первой подходящей операции,
-     *     без `to` — заканчивается сегодня. Не больше 400 точек.
-     */
-    get: operations["getTimeSeries"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/savik": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/savik": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Состояние Сейвика
+         * @description Состояние маскота считается кодом по деньгам пользователя: целям, дневному
+         *     лимиту и операциям текущего месяца. Без целей и лимита состояний два:
+         *     `neutral` и `empty` (траты месяца больше записанных доходов). Фразы и позы
+         *     для состояний живут в mini app.
+         */
+        get: operations["getSavik"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /**
-     * Состояние Сейвика
-     * @description Состояние маскота считается кодом по деньгам пользователя за текущий месяц.
-     *     Пока нет целей и лимита, состояний два: `neutral` и `empty` (траты месяца
-     *     больше записанных доходов). Фразы и позы для состояний живут в mini app.
-     */
-    get: operations["getSavik"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/family": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/budget": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * План и лимит на сегодня
+         * @description Без плана (дней зарплаты) лимита нет: `plan` и `today` не приходят.
+         *     Лимит считается кодом от состояния на начало дня: доход периода минус
+         *     регулярные платежи, взнос в цели и траты до сегодня, поделённые на дни
+         *     до зарплаты. Перерасход сегодня уменьшает лимит следующих дней.
+         */
+        get: operations["getBudget"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /**
-     * Семья пользователя
-     * @description Участники, глава первым. Приглашения за последний месяц видит только глава,
-     *     участнику приходит пустой список.
-     */
-    get: operations["getFamily"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/family/invites": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/budget/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Задать дни зарплаты и ожидаемый доход
+         * @description Заменяет план целиком.
+         */
+        put: operations["setPlan"];
+        post?: never;
+        /**
+         * Выключить лимит
+         * @description Цели и регулярные платежи остаются.
+         */
+        delete: operations["deletePlan"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /**
-     * Создать приглашение (глава)
-     * @description Одноразовая ссылка на бота на 7 дней. Ссылка возвращается только здесь:
-     *     в базе хранится лишь хэш кода.
-     */
-    post: operations["createInvite"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/family/invites/{id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/goals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Цели пользователя */
+        get: operations["listGoals"];
+        put?: never;
+        /** Поставить цель */
+        post: operations["createGoal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    post?: never;
-    /** Отозвать приглашение (глава) */
-    delete: operations["revokeInvite"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/family/members/{telegram_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        telegram_id: number;
-      };
-      cookie?: never;
+    "/goals/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Удалить цель
+         * @description Пополнения цели удаляются вместе с ней — деньги снова свободны.
+         */
+        delete: operations["deleteGoal"];
+        options?: never;
+        head?: never;
+        /** Изменить цель */
+        patch: operations["updateGoal"];
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    post?: never;
-    /**
-     * Исключить из семьи (глава)
-     * @description Человек продолжает вести расходы сам и забирает свои операции: глава перестаёт их видеть.
-     *     Вернуть можно новым приглашением. Себя глава исключить не может.
-     */
-    delete: operations["removeMember"];
-    options?: never;
-    head?: never;
-    /** Изменить настройки участника (глава или сам участник) */
-    patch: operations["updateMember"];
-    trace?: never;
-  };
-  "/family/leave": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/goals/{id}/deposits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Отложить деньги на цель или забрать их */
+        post: operations["depositToGoal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /**
-     * Выйти из семьи (участник)
-     * @description Участник уходит в собственную семью вместе со своими операциями. Глава семьи
-     *     с участниками выйти не может — сначала передаёт роль главы или исключает всех.
-     */
-    post: operations["leaveFamily"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/family/head": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/regular-payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Регулярные платежи */
+        get: operations["listRegularPayments"];
+        put?: never;
+        /** Добавить регулярный платёж */
+        post: operations["createRegularPayment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    /** Передать роль главы участнику (глава) */
-    put: operations["transferHead"];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/categories": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/regular-payments/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Удалить регулярный платёж
+         * @description Траты, которыми он был оплачен, остаются.
+         */
+        delete: operations["deleteRegularPayment"];
+        options?: never;
+        head?: never;
+        /** Изменить регулярный платёж */
+        patch: operations["updateRegularPayment"];
+        trace?: never;
     };
-    /**
-     * Справочник категорий
-     * @description Сначала категории трат, затем доходов, в порядке показа.
-     */
-    get: operations["listCategories"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
+    "/regular-payments/{id}/pay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Отметить платёж оплаченным
+         * @description Записывает сегодняшнюю трату на сумму платежа, связанную с ним.
+         */
+        post: operations["payRegularPayment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/family": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Семья пользователя
+         * @description Участники, глава первым. Приглашения за последний месяц видит только глава,
+         *     участнику приходит пустой список.
+         */
+        get: operations["getFamily"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/family/invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Создать приглашение (глава)
+         * @description Одноразовая ссылка на бота на 7 дней. Ссылка возвращается только здесь:
+         *     в базе хранится лишь хэш кода.
+         */
+        post: operations["createInvite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/family/invites/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Отозвать приглашение (глава) */
+        delete: operations["revokeInvite"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/family/members/{telegram_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                telegram_id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Исключить из семьи (глава)
+         * @description Человек продолжает вести расходы сам и забирает свои операции: глава перестаёт их видеть.
+         *     Вернуть можно новым приглашением. Себя глава исключить не может.
+         */
+        delete: operations["removeMember"];
+        options?: never;
+        head?: never;
+        /** Изменить настройки участника (глава или сам участник) */
+        patch: operations["updateMember"];
+        trace?: never;
+    };
+    "/family/leave": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Выйти из семьи (участник)
+         * @description Участник уходит в собственную семью вместе со своими операциями. Глава семьи
+         *     с участниками выйти не может — сначала передаёт роль главы или исключает всех.
+         */
+        post: operations["leaveFamily"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/family/head": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Передать роль главы участнику (глава) */
+        put: operations["transferHead"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Справочник категорий
+         * @description Сначала категории трат, затем доходов, в порядке показа.
+         */
+        get: operations["listCategories"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
-  schemas: {
-    /**
-     * @description Сумма в рублях, не более двух знаков после запятой.
-     * @example 350.5
-     */
-    Money: number;
-    /**
-     * @description Трата или доход
-     * @enum {string}
-     */
-    Kind: "expense" | "income";
-    /**
-     * @description Категория; её вид (трата или доход) фиксирован.
-     * @enum {string}
-     */
-    Category:
-      | "food"
-      | "transport"
-      | "housing"
-      | "entertainment"
-      | "health"
-      | "shopping"
-      | "other"
-      | "salary"
-      | "freelance"
-      | "gift"
-      | "interest"
-      | "refund"
-      | "other_income";
-    Me: {
-      /**
-       * Format: int64
-       * @example 123456789
-       */
-      telegram_id: number;
-      /** @example Данил */
-      first_name: string;
-      /** @example rics69 */
-      username?: string;
-      /** Format: int64 */
-      family_id: number;
-      /** @description Глава семьи */
-      is_head: boolean;
-      /** @description Присылать итоги недели в бот по понедельникам */
-      weekly_report: boolean;
-      /**
-       * @description Выбранный часовой пояс; нет — пользователь не выбирал (mini app может подставить пояс устройства)
-       * @example Asia/Novosibirsk
-       */
-      timezone?: string;
-      /**
-       * @description Пояс
-       * @example Europe/Moscow
-       */
-      effective_timezone: string;
-      /** @description Принял политику обработки данных */
-      consented: boolean;
-      /** Format: date-time */
-      created_at: string;
+    schemas: {
+        /**
+         * @description Сумма в рублях, не более двух знаков после запятой.
+         * @example 350.5
+         */
+        Money: number;
+        /**
+         * @description Трата или доход
+         * @enum {string}
+         */
+        Kind: "expense" | "income";
+        /**
+         * @description Категория; её вид (трата или доход) фиксирован.
+         * @enum {string}
+         */
+        Category: "food" | "transport" | "housing" | "entertainment" | "health" | "shopping" | "other" | "salary" | "freelance" | "gift" | "interest" | "refund" | "other_income";
+        Me: {
+            /**
+             * Format: int64
+             * @example 123456789
+             */
+            telegram_id: number;
+            /** @example Данил */
+            first_name: string;
+            /** @example rics69 */
+            username?: string;
+            /** Format: int64 */
+            family_id: number;
+            /** @description Глава семьи */
+            is_head: boolean;
+            /** @description Присылать итоги недели в бот по понедельникам */
+            weekly_report: boolean;
+            /**
+             * @description Выбранный часовой пояс; нет — пользователь не выбирал (mini app может подставить пояс устройства)
+             * @example Asia/Novosibirsk
+             */
+            timezone?: string;
+            /**
+             * @description Пояс, по которому считается «сегодня»
+             * @example Europe/Moscow
+             */
+            effective_timezone: string;
+            /** @description Принял политику обработки данных */
+            consented: boolean;
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @description Передаются только изменяемые поля. */
+        MeUpdate: {
+            /**
+             * @description IANA-имя часового пояса
+             * @example Asia/Novosibirsk
+             */
+            timezone?: string;
+            weekly_report?: boolean;
+            /** @description `true` — принять политику данных; отозвать согласие можно только удалением аккаунта */
+            consent?: boolean;
+        };
+        Operation: {
+            /**
+             * Format: int64
+             * @example 42
+             */
+            id: number;
+            /**
+             * Format: int64
+             * @description Telegram ID владельца
+             * @example 123456789
+             */
+            user_id: number;
+            kind: components["schemas"]["Kind"];
+            amount: components["schemas"]["Money"];
+            category: components["schemas"]["Category"];
+            /**
+             * Format: date
+             * @example 2026-10-15
+             */
+            date: string;
+            /** @example кофе */
+            comment?: string;
+            /**
+             * Format: int64
+             * @description Регулярный платёж, который оплачен этой тратой
+             */
+            regular_payment_id?: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        OperationCreate: {
+            amount: components["schemas"]["Money"];
+            category: components["schemas"]["Category"];
+            /**
+             * Format: date
+             * @description По умолчанию — сегодня в часовом поясе пользователя.
+             */
+            date?: string;
+            comment?: string;
+        };
+        /** @description Передаются только изменяемые поля. Пустой `comment` удаляет комментарий. */
+        OperationUpdate: {
+            amount?: components["schemas"]["Money"];
+            category?: components["schemas"]["Category"];
+            /** Format: date */
+            date?: string;
+            comment?: string;
+        };
+        OperationList: {
+            items: components["schemas"]["Operation"][];
+            /** @description Количество операций во всей выборке */
+            total: number;
+            expense_sum: components["schemas"]["Money"];
+            income_sum: components["schemas"]["Money"];
+        };
+        CategoryTotal: {
+            category: components["schemas"]["Category"];
+            sum: components["schemas"]["Money"];
+            count: number;
+        };
+        Totals: {
+            sum: components["schemas"]["Money"];
+            count: number;
+            /** @description Категории по убыванию суммы */
+            categories: components["schemas"]["CategoryTotal"][];
+        };
+        Summary: {
+            expense: components["schemas"]["Totals"];
+            income: components["schemas"]["Totals"];
+            balance: components["schemas"]["Money"];
+        };
+        /**
+         * @description Интервал; недели начинаются с понедельника
+         * @enum {string}
+         */
+        Bucket: "day" | "week" | "month";
+        TimePoint: {
+            /**
+             * Format: date
+             * @description Первый день интервала
+             */
+            start: string;
+            sum: components["schemas"]["Money"];
+            count: number;
+            /** @description Категории по убыванию суммы */
+            categories: components["schemas"]["CategoryTotal"][];
+        };
+        TimeSeries: {
+            bucket: components["schemas"]["Bucket"];
+            kind: components["schemas"]["Kind"];
+            items: components["schemas"]["TimePoint"][];
+        };
+        /**
+         * @description Проверяются по порядку: `full` — цель достигнута за последние 7 дней;
+         *     `empty` — до зарплаты ничего не осталось (без плана — траты месяца больше
+         *     записанных доходов); `hungry` — сегодня потрачено больше лимита; `fed` —
+         *     какая-то цель накоплена на 80%; `neutral` — всё остальное.
+         * @enum {string}
+         */
+        SavikState: "neutral" | "full" | "empty" | "hungry" | "fed";
+        Savik: {
+            state: components["schemas"]["SavikState"];
+            month: components["schemas"]["SavikMonth"];
+        };
+        /** @description Свои операции пользователя с начала месяца по сегодня */
+        SavikMonth: {
+            /** Format: date */
+            from: string;
+            /**
+             * Format: date
+             * @description Сегодня
+             */
+            to: string;
+            expense: components["schemas"]["Money"];
+            income: components["schemas"]["Money"];
+            balance: components["schemas"]["Money"];
+        };
+        Plan: {
+            /**
+             * @description Один или два дня месяца по возрастанию; 31 в коротком месяце — последний день
+             * @example [
+             *       5,
+             *       20
+             *     ]
+             */
+            paydays: number[];
+            expected_income?: components["schemas"]["Money"];
+            goal_contribution?: components["schemas"]["Money"];
+            /** @description Час ежедневного напоминания по поясу пользователя */
+            reminder_hour: number;
+            /** @description Присылать ежедневное напоминание о лимите */
+            reminders: boolean;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        PlanInput: {
+            paydays: number[];
+            /** @description Доход за период; без него считаются только записанные доходы */
+            expected_income?: components["schemas"]["Money"];
+            /** @description Сколько откладывать на цели за период */
+            goal_contribution?: components["schemas"]["Money"];
+            /** @default 9 */
+            reminder_hour: number;
+            /** @default true */
+            reminders: boolean;
+        };
+        BudgetOverview: {
+            plan?: components["schemas"]["Plan"];
+            today?: components["schemas"]["BudgetToday"];
+        };
+        BudgetToday: {
+            /** @description Нет записанного или ожидаемого дохода — лимит не посчитать */
+            ready: boolean;
+            /**
+             * Format: date
+             * @description Последний день зарплаты
+             */
+            period_start: string;
+            /** Format: date */
+            next_payday: string;
+            /** @description Дней до зарплаты, включая сегодня */
+            days_left: number;
+            income: components["schemas"]["Money"];
+            /** @description Доход взят из плана: записано меньше */
+            income_expected: boolean;
+            payments: components["schemas"]["Money"];
+            savings: components["schemas"]["Money"];
+            spent: components["schemas"]["Money"];
+            spent_today: components["schemas"]["Money"];
+            available: components["schemas"]["Money"];
+            remaining: components["schemas"]["Money"];
+            limit: components["schemas"]["Money"];
+            left: components["schemas"]["Money"];
+            /** @description Неоплаченные регулярные платежи до зарплаты */
+            upcoming: components["schemas"]["UpcomingPayment"][];
+        };
+        UpcomingPayment: {
+            /** Format: int64 */
+            id: number;
+            /** @example Аренда */
+            title: string;
+            amount: components["schemas"]["Money"];
+            /** Format: date */
+            date: string;
+        };
+        Goal: {
+            /** Format: int64 */
+            id: number;
+            /** @example Отпуск */
+            title: string;
+            target: components["schemas"]["Money"];
+            saved: components["schemas"]["Money"];
+            left: components["schemas"]["Money"];
+            /** Format: date */
+            deadline?: string;
+            /**
+             * Format: date
+             * @description Когда накоплена вся сумма
+             */
+            achieved_on?: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        GoalList: {
+            items: components["schemas"]["Goal"][];
+        };
+        GoalCreate: {
+            title: string;
+            target: components["schemas"]["Money"];
+            /** Format: date */
+            deadline?: string;
+        };
+        /** @description Передаются только изменяемые поля. */
+        GoalUpdate: {
+            title?: string;
+            target?: components["schemas"]["Money"];
+            /** Format: date */
+            deadline?: string;
+            /** @description `true` — убрать срок */
+            clear_deadline?: boolean;
+        };
+        DepositCreate: {
+            /** @description Сколько отложить; отрицательная сумма забирает деньги из цели */
+            amount: components["schemas"]["Money"];
+            /**
+             * Format: date
+             * @description По умолчанию — сегодня
+             */
+            date?: string;
+        };
+        RegularPayment: {
+            /** Format: int64 */
+            id: number;
+            /** @example Аренда */
+            title: string;
+            amount: components["schemas"]["Money"];
+            day: number;
+            category: components["schemas"]["Category"];
+            /**
+             * Format: date
+             * @description Ближайшая дата оплаты; в прошлом — платёж просрочен
+             */
+            due_date: string;
+            /** Format: date */
+            last_paid_on?: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        RegularPaymentList: {
+            items: components["schemas"]["RegularPayment"][];
+        };
+        RegularPaymentCreate: {
+            title: string;
+            amount: components["schemas"]["Money"];
+            day: number;
+            /** @description Категория трат; по умолчанию other */
+            category?: components["schemas"]["Category"];
+        };
+        /** @description Передаются только изменяемые поля. */
+        RegularPaymentUpdate: {
+            title?: string;
+            amount?: components["schemas"]["Money"];
+            day?: number;
+            category?: components["schemas"]["Category"];
+        };
+        Member: {
+            /**
+             * Format: int64
+             * @example 123456789
+             */
+            telegram_id: number;
+            /** @example Данил */
+            first_name: string;
+            /** @example rics69 */
+            username?: string;
+            /** @description Глава семьи */
+            is_head: boolean;
+            /** @description Присылать итоги недели в бот по понедельникам */
+            weekly_report: boolean;
+            /** Format: date-time */
+            created_at: string;
+        };
+        MemberUpdate: {
+            weekly_report: boolean;
+        };
+        Family: {
+            /** Format: int64 */
+            id: number;
+            members: components["schemas"]["Member"][];
+            /** @description Приглашения за последний месяц, новые первыми; только для главы */
+            invites: components["schemas"]["Invite"][];
+        };
+        HeadTransfer: {
+            /**
+             * Format: int64
+             * @description Участник, который станет главой
+             */
+            telegram_id: number;
+        };
+        /** @enum {string} */
+        InviteStatus: "active" | "used" | "expired" | "revoked";
+        Invite: {
+            /** Format: int64 */
+            id: number;
+            status: components["schemas"]["InviteStatus"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: date-time */
+            used_at?: string;
+            /**
+             * Format: int64
+             * @description Telegram ID присоединившегося
+             */
+            used_by?: number;
+        };
+        CreatedInvite: {
+            /** Format: int64 */
+            id: number;
+            status: components["schemas"]["InviteStatus"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at: string;
+            /**
+             * @description Ссылка для члена семьи; открывает бота и предлагает вступить
+             * @example https://t.me/SavepointBot?start=Xk9q2LmPz0aB7cD1eF3gHw
+             */
+            link: string;
+        };
+        CategoryInfo: {
+            code: components["schemas"]["Category"];
+            kind: components["schemas"]["Kind"];
+            /** @example еда */
+            label: string;
+        };
+        CategoryList: {
+            items: components["schemas"]["CategoryInfo"][];
+        };
+        Error: {
+            error: components["schemas"]["ErrorDetail"];
+        };
+        ErrorDetail: {
+            /** @enum {string} */
+            code: "bad_request" | "validation_error" | "not_found" | "unauthorized" | "consent_required" | "forbidden" | "conflict" | "internal";
+            message: string;
+            /** @description Поле с ошибкой валидации */
+            field?: string;
+        };
     };
-    /** @description Передаются только изменяемые поля. */
-    MeUpdate: {
-      /**
-       * @description IANA-имя часового пояса
-       * @example Asia/Novosibirsk
-       */
-      timezone?: string;
-      weekly_report?: boolean;
-      /** @description `true` — принять политику данных; отозвать согласие можно только удалением аккаунта */
-      consent?: boolean;
+    responses: {
+        /** @description Некорректный запрос */
+        BadRequest: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Нет подписи Telegram, она неверна или устарела — откройте приложение из Telegram заново */
+        Unauthorized: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description Действие недоступно: `consent_required` — сначала принять политику данных,
+         *     `forbidden` — нужна роль главы или пользователь заблокирован.
+         */
+        Forbidden: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Не найдено */
+        NotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Действие невозможно в текущем состоянии */
+        Conflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
     };
-    Operation: {
-      /**
-       * Format: int64
-       * @example 42
-       */
-      id: number;
-      /**
-       * Format: int64
-       * @description Telegram ID владельца
-       * @example 123456789
-       */
-      user_id: number;
-      kind: components["schemas"]["Kind"];
-      amount: components["schemas"]["Money"];
-      category: components["schemas"]["Category"];
-      /**
-       * Format: date
-       * @example 2026-10-15
-       */
-      date: string;
-      /** @example кофе */
-      comment?: string;
-      /** Format: date-time */
-      created_at: string;
-      /** Format: date-time */
-      updated_at: string;
+    parameters: {
+        /** @description Только траты или только доходы; без параметра — и то и другое. */
+        KindQuery: components["schemas"]["Kind"];
+        /** @description Telegram ID члена семьи; для участника имеет смысл только свой. */
+        UserIDQuery: number;
+        CategoryQuery: components["schemas"]["Category"];
+        /** @description Начало периода включительно. */
+        FromQuery: string;
+        /** @description Конец периода включительно. */
+        ToQuery: string;
     };
-    OperationCreate: {
-      amount: components["schemas"]["Money"];
-      category: components["schemas"]["Category"];
-      /**
-       * Format: date
-       * @description По умолчанию — сегодня в часовом поясе пользователя.
-       */
-      date?: string;
-      comment?: string;
-    };
-    /** @description Передаются только изменяемые поля. Пустой `comment` удаляет комментарий. */
-    OperationUpdate: {
-      amount?: components["schemas"]["Money"];
-      category?: components["schemas"]["Category"];
-      /** Format: date */
-      date?: string;
-      comment?: string;
-    };
-    OperationList: {
-      items: components["schemas"]["Operation"][];
-      /** @description Количество операций во всей выборке */
-      total: number;
-      expense_sum: components["schemas"]["Money"];
-      income_sum: components["schemas"]["Money"];
-    };
-    CategoryTotal: {
-      category: components["schemas"]["Category"];
-      sum: components["schemas"]["Money"];
-      count: number;
-    };
-    Totals: {
-      sum: components["schemas"]["Money"];
-      count: number;
-      /** @description Категории по убыванию суммы */
-      categories: components["schemas"]["CategoryTotal"][];
-    };
-    Summary: {
-      expense: components["schemas"]["Totals"];
-      income: components["schemas"]["Totals"];
-      balance: components["schemas"]["Money"];
-    };
-    /**
-     * @description Интервал; недели начинаются с понедельника
-     * @enum {string}
-     */
-    Bucket: "day" | "week" | "month";
-    TimePoint: {
-      /**
-       * Format: date
-       * @description Первый день интервала
-       */
-      start: string;
-      sum: components["schemas"]["Money"];
-      count: number;
-      /** @description Категории по убыванию суммы */
-      categories: components["schemas"]["CategoryTotal"][];
-    };
-    TimeSeries: {
-      bucket: components["schemas"]["Bucket"];
-      kind: components["schemas"]["Kind"];
-      items: components["schemas"]["TimePoint"][];
-    };
-    /**
-     * @description `neutral` — всё спокойно или данных мало; `empty` — траты месяца больше записанных доходов (без доходов не определить)
-     * @enum {string}
-     */
-    SavikState: "neutral" | "empty";
-    Savik: {
-      state: components["schemas"]["SavikState"];
-      month: components["schemas"]["SavikMonth"];
-    };
-    /** @description Свои операции пользователя с начала месяца по сегодня */
-    SavikMonth: {
-      /** Format: date */
-      from: string;
-      /**
-       * Format: date
-       * @description Сегодня
-       */
-      to: string;
-      expense: components["schemas"]["Money"];
-      income: components["schemas"]["Money"];
-      balance: components["schemas"]["Money"];
-    };
-    Member: {
-      /**
-       * Format: int64
-       * @example 123456789
-       */
-      telegram_id: number;
-      /** @example Данил */
-      first_name: string;
-      /** @example rics69 */
-      username?: string;
-      /** @description Глава семьи */
-      is_head: boolean;
-      /** @description Присылать итоги недели в бот по понедельникам */
-      weekly_report: boolean;
-      /** Format: date-time */
-      created_at: string;
-    };
-    MemberUpdate: {
-      weekly_report: boolean;
-    };
-    Family: {
-      /** Format: int64 */
-      id: number;
-      members: components["schemas"]["Member"][];
-      /** @description Приглашения за последний месяц, новые первыми; только для главы */
-      invites: components["schemas"]["Invite"][];
-    };
-    HeadTransfer: {
-      /**
-       * Format: int64
-       * @description Участник
-       */
-      telegram_id: number;
-    };
-    /** @enum {string} */
-    InviteStatus: "active" | "used" | "expired" | "revoked";
-    Invite: {
-      /** Format: int64 */
-      id: number;
-      status: components["schemas"]["InviteStatus"];
-      /** Format: date-time */
-      created_at: string;
-      /** Format: date-time */
-      expires_at: string;
-      /** Format: date-time */
-      used_at?: string;
-      /**
-       * Format: int64
-       * @description Telegram ID присоединившегося
-       */
-      used_by?: number;
-    };
-    CreatedInvite: {
-      /** Format: int64 */
-      id: number;
-      status: components["schemas"]["InviteStatus"];
-      /** Format: date-time */
-      created_at: string;
-      /** Format: date-time */
-      expires_at: string;
-      /**
-       * @description Ссылка для члена семьи; открывает бота и предлагает вступить
-       * @example https://t.me/SavepointBot?start=Xk9q2LmPz0aB7cD1eF3gHw
-       */
-      link: string;
-    };
-    CategoryInfo: {
-      code: components["schemas"]["Category"];
-      kind: components["schemas"]["Kind"];
-      /** @example еда */
-      label: string;
-    };
-    CategoryList: {
-      items: components["schemas"]["CategoryInfo"][];
-    };
-    Error: {
-      error: components["schemas"]["ErrorDetail"];
-    };
-    ErrorDetail: {
-      /** @enum {string} */
-      code:
-        | "bad_request"
-        | "validation_error"
-        | "not_found"
-        | "unauthorized"
-        | "consent_required"
-        | "forbidden"
-        | "conflict"
-        | "internal";
-      message: string;
-      /** @description Поле с ошибкой валидации */
-      field?: string;
-    };
-  };
-  responses: {
-    /** @description Некорректный запрос */
-    BadRequest: {
-      headers: {
-        [name: string]: unknown;
-      };
-      content: {
-        "application/json": components["schemas"]["Error"];
-      };
-    };
-    /** @description Нет подписи Telegram, она неверна или устарела — откройте приложение из Telegram заново */
-    Unauthorized: {
-      headers: {
-        [name: string]: unknown;
-      };
-      content: {
-        "application/json": components["schemas"]["Error"];
-      };
-    };
-    /**
-     * @description Действие недоступно: `consent_required` — сначала принять политику данных,
-     *     `forbidden` — нужна роль главы или пользователь заблокирован.
-     */
-    Forbidden: {
-      headers: {
-        [name: string]: unknown;
-      };
-      content: {
-        "application/json": components["schemas"]["Error"];
-      };
-    };
-    /** @description Не найдено */
-    NotFound: {
-      headers: {
-        [name: string]: unknown;
-      };
-      content: {
-        "application/json": components["schemas"]["Error"];
-      };
-    };
-    /** @description Действие невозможно в текущем состоянии */
-    Conflict: {
-      headers: {
-        [name: string]: unknown;
-      };
-      content: {
-        "application/json": components["schemas"]["Error"];
-      };
-    };
-  };
-  parameters: {
-    /** @description Только траты или только доходы; без параметра — и то и другое. */
-    KindQuery: components["schemas"]["Kind"];
-    /** @description Telegram ID члена семьи; для участника имеет смысл только свой. */
-    UserIDQuery: number;
-    CategoryQuery: components["schemas"]["Category"];
-    /** @description Начало периода включительно. */
-    FromQuery: string;
-    /** @description Конец периода включительно. */
-    ToQuery: string;
-  };
-  requestBodies: never;
-  headers: never;
-  pathItems: never;
+    requestBodies: never;
+    headers: never;
+    pathItems: never;
 }
 export type $defs = Record<string, never>;
 export interface operations {
-  getMe: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Пользователь */
-      200: {
-        headers: {
-          [name: string]: unknown;
+    getMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
-        content: {
-          "application/json": components["schemas"]["Me"];
+        requestBody?: never;
+        responses: {
+            /** @description Пользователь */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
-      };
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
     };
-  };
-  deleteMe: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Аккаунт удалён */
-      204: {
-        headers: {
-          [name: string]: unknown;
+    deleteMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
-        content?: never;
-      };
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-    };
-  };
-  updateMe: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["MeUpdate"];
-      };
-    };
-    responses: {
-      /** @description Пользователь после изменения */
-      200: {
-        headers: {
-          [name: string]: unknown;
+        requestBody?: never;
+        responses: {
+            /** @description Аккаунт удалён */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
-        content: {
-          "application/json": components["schemas"]["Me"];
+    };
+    updateMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
-      };
-      400: components["responses"]["BadRequest"];
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-    };
-  };
-  listOperations: {
-    parameters: {
-      query?: {
-        /** @description Только траты или только доходы; без параметра — и то и другое. */
-        kind?: components["parameters"]["KindQuery"];
-        /** @description Telegram ID члена семьи; для участника имеет смысл только свой. */
-        user_id?: components["parameters"]["UserIDQuery"];
-        category?: components["parameters"]["CategoryQuery"];
-        /** @description Начало периода включительно. */
-        from?: components["parameters"]["FromQuery"];
-        /** @description Конец периода включительно. */
-        to?: components["parameters"]["ToQuery"];
-        /** @description Поиск по подстроке комментария (без учёта регистра). */
-        q?: string;
-        limit?: number;
-        offset?: number;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Страница операций */
-      200: {
-        headers: {
-          [name: string]: unknown;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MeUpdate"];
+            };
         };
-        content: {
-          "application/json": components["schemas"]["OperationList"];
+        responses: {
+            /** @description Пользователь после изменения */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
-      };
-      400: components["responses"]["BadRequest"];
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
     };
-  };
-  createOperation: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["OperationCreate"];
-      };
-    };
-    responses: {
-      /** @description Созданная операция */
-      201: {
-        headers: {
-          [name: string]: unknown;
+    listOperations: {
+        parameters: {
+            query?: {
+                /** @description Только траты или только доходы; без параметра — и то и другое. */
+                kind?: components["parameters"]["KindQuery"];
+                /** @description Telegram ID члена семьи; для участника имеет смысл только свой. */
+                user_id?: components["parameters"]["UserIDQuery"];
+                category?: components["parameters"]["CategoryQuery"];
+                /** @description Начало периода включительно. */
+                from?: components["parameters"]["FromQuery"];
+                /** @description Конец периода включительно. */
+                to?: components["parameters"]["ToQuery"];
+                /** @description Поиск по подстроке комментария (без учёта регистра). */
+                q?: string;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
-        content: {
-          "application/json": components["schemas"]["Operation"];
+        requestBody?: never;
+        responses: {
+            /** @description Страница операций */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
-      };
-      400: components["responses"]["BadRequest"];
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
     };
-  };
-  getOperation: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Операция */
-      200: {
-        headers: {
-          [name: string]: unknown;
+    createOperation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
-        content: {
-          "application/json": components["schemas"]["Operation"];
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperationCreate"];
+            };
         };
-      };
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
-    };
-  };
-  deleteOperation: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Операция удалена */
-      204: {
-        headers: {
-          [name: string]: unknown;
+        responses: {
+            /** @description Созданная операция */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Operation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
-        content?: never;
-      };
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
     };
-  };
-  updateOperation: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        id: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["OperationUpdate"];
-      };
-    };
-    responses: {
-      /** @description Изменённая операция */
-      200: {
-        headers: {
-          [name: string]: unknown;
+    getOperation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
         };
-        content: {
-          "application/json": components["schemas"]["Operation"];
+        requestBody?: never;
+        responses: {
+            /** @description Операция */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Operation"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
-      };
-      400: components["responses"]["BadRequest"];
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
     };
-  };
-  getSummary: {
-    parameters: {
-      query?: {
-        /** @description Telegram ID члена семьи; для участника имеет смысл только свой. */
-        user_id?: components["parameters"]["UserIDQuery"];
-        category?: components["parameters"]["CategoryQuery"];
-        /** @description Начало периода включительно. */
-        from?: components["parameters"]["FromQuery"];
-        /** @description Конец периода включительно. */
-        to?: components["parameters"]["ToQuery"];
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Итоги по видам и категориям */
-      200: {
-        headers: {
-          [name: string]: unknown;
+    deleteOperation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
         };
-        content: {
-          "application/json": components["schemas"]["Summary"];
+        requestBody?: never;
+        responses: {
+            /** @description Операция удалена */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
-      };
-      400: components["responses"]["BadRequest"];
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
     };
-  };
-  getTimeSeries: {
-    parameters: {
-      query: {
-        bucket: components["schemas"]["Bucket"];
-        kind: components["schemas"]["Kind"];
-        /** @description Telegram ID члена семьи; для участника имеет смысл только свой. */
-        user_id?: components["parameters"]["UserIDQuery"];
-        category?: components["parameters"]["CategoryQuery"];
-        /** @description Начало периода включительно. */
-        from?: components["parameters"]["FromQuery"];
-        /** @description Конец периода включительно. */
-        to?: components["parameters"]["ToQuery"];
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Ряд по интервалам */
-      200: {
-        headers: {
-          [name: string]: unknown;
+    updateOperation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
         };
-        content: {
-          "application/json": components["schemas"]["TimeSeries"];
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperationUpdate"];
+            };
         };
-      };
-      400: components["responses"]["BadRequest"];
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-    };
-  };
-  getSavik: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Состояние и цифры месяца, из которых оно получилось */
-      200: {
-        headers: {
-          [name: string]: unknown;
+        responses: {
+            /** @description Изменённая операция */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Operation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
-        content: {
-          "application/json": components["schemas"]["Savik"];
+    };
+    getSummary: {
+        parameters: {
+            query?: {
+                /** @description Telegram ID члена семьи; для участника имеет смысл только свой. */
+                user_id?: components["parameters"]["UserIDQuery"];
+                category?: components["parameters"]["CategoryQuery"];
+                /** @description Начало периода включительно. */
+                from?: components["parameters"]["FromQuery"];
+                /** @description Конец периода включительно. */
+                to?: components["parameters"]["ToQuery"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
-      };
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-    };
-  };
-  getFamily: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Семья */
-      200: {
-        headers: {
-          [name: string]: unknown;
+        requestBody?: never;
+        responses: {
+            /** @description Итоги по видам и категориям */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Summary"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
-        content: {
-          "application/json": components["schemas"]["Family"];
+    };
+    getTimeSeries: {
+        parameters: {
+            query: {
+                bucket: components["schemas"]["Bucket"];
+                kind: components["schemas"]["Kind"];
+                /** @description Telegram ID члена семьи; для участника имеет смысл только свой. */
+                user_id?: components["parameters"]["UserIDQuery"];
+                category?: components["parameters"]["CategoryQuery"];
+                /** @description Начало периода включительно. */
+                from?: components["parameters"]["FromQuery"];
+                /** @description Конец периода включительно. */
+                to?: components["parameters"]["ToQuery"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
-      };
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-    };
-  };
-  createInvite: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Приглашение со ссылкой */
-      201: {
-        headers: {
-          [name: string]: unknown;
+        requestBody?: never;
+        responses: {
+            /** @description Ряд по интервалам */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimeSeries"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
-        content: {
-          "application/json": components["schemas"]["CreatedInvite"];
+    };
+    getSavik: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
-      };
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      409: components["responses"]["Conflict"];
-    };
-  };
-  revokeInvite: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Отозвано */
-      204: {
-        headers: {
-          [name: string]: unknown;
+        requestBody?: never;
+        responses: {
+            /** @description Состояние и цифры месяца, из которых оно получилось */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Savik"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
-        content?: never;
-      };
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
     };
-  };
-  removeMember: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        telegram_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Исключён */
-      204: {
-        headers: {
-          [name: string]: unknown;
+    getBudget: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
-        content?: never;
-      };
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
-      409: components["responses"]["Conflict"];
-    };
-  };
-  updateMember: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        telegram_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["MemberUpdate"];
-      };
-    };
-    responses: {
-      /** @description Участник после изменения */
-      200: {
-        headers: {
-          [name: string]: unknown;
+        requestBody?: never;
+        responses: {
+            /** @description План и деньги текущего периода */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BudgetOverview"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
-        content: {
-          "application/json": components["schemas"]["Member"];
+    };
+    setPlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
-      };
-      400: components["responses"]["BadRequest"];
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
-    };
-  };
-  leaveFamily: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Вышел */
-      204: {
-        headers: {
-          [name: string]: unknown;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanInput"];
+            };
         };
-        content?: never;
-      };
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      409: components["responses"]["Conflict"];
-    };
-  };
-  transferHead: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["HeadTransfer"];
-      };
-    };
-    responses: {
-      /** @description Роль главы передана */
-      204: {
-        headers: {
-          [name: string]: unknown;
+        responses: {
+            /** @description Сохранённый план */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Plan"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
-        content?: never;
-      };
-      400: components["responses"]["BadRequest"];
-      401: components["responses"]["Unauthorized"];
-      403: components["responses"]["Forbidden"];
-      404: components["responses"]["NotFound"];
     };
-  };
-  listCategories: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Категории с русскими названиями */
-      200: {
-        headers: {
-          [name: string]: unknown;
+    deletePlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
-        content: {
-          "application/json": components["schemas"]["CategoryList"];
+        requestBody?: never;
+        responses: {
+            /** @description План удалён */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
-      };
-      401: components["responses"]["Unauthorized"];
     };
-  };
+    listGoals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Цели, старые первыми */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoalList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createGoal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoalCreate"];
+            };
+        };
+        responses: {
+            /** @description Новая цель */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Goal"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    deleteGoal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Цель удалена */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateGoal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoalUpdate"];
+            };
+        };
+        responses: {
+            /** @description Изменённая цель */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Goal"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    depositToGoal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepositCreate"];
+            };
+        };
+        responses: {
+            /** @description Цель после пополнения */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Goal"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listRegularPayments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Платежи по дню месяца */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegularPaymentList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createRegularPayment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegularPaymentCreate"];
+            };
+        };
+        responses: {
+            /** @description Новый платёж */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegularPayment"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    deleteRegularPayment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Платёж удалён */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateRegularPayment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegularPaymentUpdate"];
+            };
+        };
+        responses: {
+            /** @description Изменённый платёж */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegularPayment"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    payRegularPayment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Записанная трата */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Operation"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getFamily: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Семья */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Family"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Приглашение со ссылкой */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedInvite"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    revokeInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Отозвано */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    removeMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                telegram_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Исключён */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    updateMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                telegram_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemberUpdate"];
+            };
+        };
+        responses: {
+            /** @description Участник после изменения */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Member"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    leaveFamily: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Вышел */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    transferHead: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HeadTransfer"];
+            };
+        };
+        responses: {
+            /** @description Роль главы передана */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listCategories: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Категории с русскими названиями */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
 }

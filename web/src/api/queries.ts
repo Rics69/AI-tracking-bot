@@ -13,10 +13,14 @@ import {
   unwrap,
   type Bucket,
   type Category,
+  type GoalCreate,
+  type GoalUpdate,
   type Kind,
   type MeUpdate,
   type OperationCreate,
   type OperationUpdate,
+  type PlanInput,
+  type RegularPaymentCreate,
 } from "./client";
 
 /** What the history and charts show. */
@@ -40,6 +44,10 @@ export const keys = {
   summary: (q: OperationQuery) => ["money", "summary", q] as const,
   series: (q: OperationQuery, bucket: Bucket) => ["money", "series", q, bucket] as const,
   savik: ["money", "savik"] as const,
+  // The limit, goals and payments depend on operations too: also under "money".
+  budget: ["money", "budget"] as const,
+  goals: ["money", "goals"] as const,
+  payments: ["money", "payments"] as const,
 };
 
 function toParams(q: OperationQuery) {
@@ -159,6 +167,79 @@ export function useUpdateOperation() {
 export function useDeleteOperation() {
   return useMoneyMutation(async (id: number) =>
     unwrap(await api.DELETE("/operations/{id}", { params: { path: { id } } })),
+  );
+}
+
+// Limit, goals and regular payments: personal, even for a family head.
+
+export function useBudget() {
+  return useQuery({
+    queryKey: keys.budget,
+    queryFn: async () => unwrap(await api.GET("/budget")),
+  });
+}
+
+export function useGoals() {
+  return useQuery({
+    queryKey: keys.goals,
+    queryFn: async () => unwrap(await api.GET("/goals")).items,
+  });
+}
+
+export function useRegularPayments() {
+  return useQuery({
+    queryKey: keys.payments,
+    queryFn: async () => unwrap(await api.GET("/regular-payments")).items,
+  });
+}
+
+export function useSetPlan() {
+  return useMoneyMutation(async (body: PlanInput) => unwrap(await api.PUT("/budget/plan", { body })));
+}
+
+export function useDeletePlan() {
+  return useMoneyMutation(async () => unwrap(await api.DELETE("/budget/plan")));
+}
+
+export function useCreateGoal() {
+  return useMoneyMutation(async (body: GoalCreate) => unwrap(await api.POST("/goals", { body })));
+}
+
+export function useUpdateGoal() {
+  return useMoneyMutation(async ({ id, body }: { id: number; body: GoalUpdate }) =>
+    unwrap(await api.PATCH("/goals/{id}", { params: { path: { id } }, body })),
+  );
+}
+
+export function useDeleteGoal() {
+  return useMoneyMutation(async (id: number) =>
+    unwrap(await api.DELETE("/goals/{id}", { params: { path: { id } } })),
+  );
+}
+
+/** Puts money aside for a goal; a negative amount takes it back. */
+export function useDeposit() {
+  return useMoneyMutation(async ({ id, amount }: { id: number; amount: number }) =>
+    unwrap(await api.POST("/goals/{id}/deposits", { params: { path: { id } }, body: { amount } })),
+  );
+}
+
+export function useCreatePayment() {
+  return useMoneyMutation(async (body: RegularPaymentCreate) =>
+    unwrap(await api.POST("/regular-payments", { body })),
+  );
+}
+
+export function useDeletePayment() {
+  return useMoneyMutation(async (id: number) =>
+    unwrap(await api.DELETE("/regular-payments/{id}", { params: { path: { id } } })),
+  );
+}
+
+/** Records today's expense for a regular payment. */
+export function usePayPayment() {
+  return useMoneyMutation(async (id: number) =>
+    unwrap(await api.POST("/regular-payments/{id}/pay", { params: { path: { id } } })),
   );
 }
 

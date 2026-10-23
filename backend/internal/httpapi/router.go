@@ -14,6 +14,7 @@ const basePath = "/api/v1"
 type Deps struct {
 	Ledger LedgerService
 	Family FamilyService
+	Budget BudgetService
 	// Auth identifies the user of every API request.
 	Auth *Auth
 	// Location is the timezone of users who have not chosen one.
@@ -28,7 +29,7 @@ type Deps struct {
 func NewHandler(d Deps) http.Handler {
 	mux := http.NewServeMux()
 
-	strict := NewStrictHandlerWithOptions(NewServer(d.Ledger, d.Family, d.Location), nil, StrictHTTPServerOptions{
+	strict := NewStrictHandlerWithOptions(NewServer(d.Ledger, d.Family, d.Budget, d.Location), nil, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) { writeBadRequest(w, err) },
 		ResponseErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 			writeError(d.Log, w, r, err)

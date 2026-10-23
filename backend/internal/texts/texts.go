@@ -78,6 +78,10 @@ type Bot struct {
 	AppOpen    string `yaml:"app_open"`
 	AppMissing string `yaml:"app_missing"`
 
+	Reminders        Reminders `yaml:"reminders"`
+	ReminderNoIncome string    `yaml:"reminder_no_income"`
+	ReminderPayment  string    `yaml:"reminder_payment"`
+
 	FeedbackUsage   string `yaml:"feedback_usage"`
 	FeedbackThanks  string `yaml:"feedback_thanks"`
 	FeedbackToAdmin string `yaml:"feedback_to_admin"`
@@ -92,6 +96,16 @@ type Bot struct {
 	CommandHelp     string `yaml:"command_help"`
 }
 
+// Reminders are the phrases of the morning reminder by Savik's state; one is
+// picked at random.
+type Reminders struct {
+	Neutral []string `yaml:"neutral"`
+	Full    []string `yaml:"full"`
+	Empty   []string `yaml:"empty"`
+	Hungry  []string `yaml:"hungry"`
+	Fed     []string `yaml:"fed"`
+}
+
 // Load parses texts.yaml; unknown or missing keys are errors.
 func Load() (Bot, error) {
 	return parse(raw)
@@ -104,13 +118,39 @@ func parse(data []byte) (Bot, error) {
 	if err := dec.Decode(&b); err != nil {
 		return Bot{}, fmt.Errorf("texts.yaml: %w", err)
 	}
-	v, t := reflect.ValueOf(b), reflect.TypeOf(b)
-	for i := range t.NumField() {
-		if strings.TrimSpace(v.Field(i).String()) == "" {
-			return Bot{}, fmt.Errorf("texts.yaml: %q is missing or empty", t.Field(i).Tag.Get("yaml"))
-		}
+	if err := complete(reflect.ValueOf(b), ""); err != nil {
+		return Bot{}, err
 	}
 	return b, nil
+}
+
+// complete checks that every string and every list of phrases is non-empty.
+func complete(v reflect.Value, prefix string) error {
+	t := v.Type()
+	for i := range t.NumField() {
+		key := prefix + t.Field(i).Tag.Get("yaml")
+		f := v.Field(i)
+		switch f.Kind() {
+		case reflect.Struct:
+			if err := complete(f, key+"."); err != nil {
+				return err
+			}
+		case reflect.Slice:
+			if f.Len() == 0 {
+				return fmt.Errorf("texts.yaml: %q is missing or empty", key)
+			}
+			for j := range f.Len() {
+				if strings.TrimSpace(f.Index(j).String()) == "" {
+					return fmt.Errorf("texts.yaml: %q has an empty phrase", key)
+				}
+			}
+		default:
+			if strings.TrimSpace(f.String()) == "" {
+				return fmt.Errorf("texts.yaml: %q is missing or empty", key)
+			}
+		}
+	}
+	return nil
 }
 
 // Fill replaces {key} placeholders: Fill(t.Joined, "head", "Анна").

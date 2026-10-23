@@ -36,11 +36,15 @@ type Members interface {
 	All(ctx context.Context) ([]user.User, error)
 }
 
-// Runs records handled reports so each is sent once.
+// Runs records handled notifications so each is sent once: a kind of message
+// (weekly report, daily reminder) for a period (a week, a day) for a user.
 type Runs interface {
-	Claim(ctx context.Context, weekStart time.Time, userID int64) (bool, error)
-	Release(ctx context.Context, weekStart time.Time, userID int64) error
+	Claim(ctx context.Context, kind, period string, userID int64) (bool, error)
+	Release(ctx context.Context, kind, period string, userID int64) error
 }
+
+// kindWeekly is the Runs kind of weekly reports; the period is the week's Monday.
+const kindWeekly = "weekly"
 
 // SendFunc delivers a message to a member's private chat. It returns an error
 // wrapping ErrUndeliverable when retrying cannot help (the user blocked the bot).
@@ -104,7 +108,8 @@ func (w *Weekly) Tick(ctx context.Context) {
 }
 
 func (w *Weekly) sendOne(ctx context.Context, m user.User, weekStart time.Time) error {
-	claimed, err := w.runs.Claim(ctx, weekStart, m.TelegramID)
+	period := weekStart.Format(time.DateOnly)
+	claimed, err := w.runs.Claim(ctx, kindWeekly, period, m.TelegramID)
 	if err != nil || !claimed {
 		return err
 	}
@@ -121,7 +126,7 @@ func (w *Weekly) sendOne(ctx context.Context, m user.User, weekStart time.Time) 
 	}
 	if err != nil {
 		// Let the next tick retry.
-		if relErr := w.runs.Release(ctx, weekStart, m.TelegramID); relErr != nil {
+		if relErr := w.runs.Release(ctx, kindWeekly, period, m.TelegramID); relErr != nil {
 			w.log.ErrorContext(ctx, "weekly report: release claim", "err", relErr)
 		}
 		return err

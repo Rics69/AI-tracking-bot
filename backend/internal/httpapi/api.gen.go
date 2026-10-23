@@ -178,6 +178,9 @@ func (e Kind) Valid() bool {
 // Defines values for SavikState.
 const (
 	SavikEmpty   SavikState = "empty"
+	SavikFed     SavikState = "fed"
+	SavikFull    SavikState = "full"
+	SavikHungry  SavikState = "hungry"
 	SavikNeutral SavikState = "neutral"
 )
 
@@ -185,6 +188,12 @@ const (
 func (e SavikState) Valid() bool {
 	switch e {
 	case SavikEmpty:
+		return true
+	case SavikFed:
+		return true
+	case SavikFull:
+		return true
+	case SavikHungry:
 		return true
 	case SavikNeutral:
 		return true
@@ -195,6 +204,76 @@ func (e SavikState) Valid() bool {
 
 // Bucket Интервал; недели начинаются с понедельника
 type Bucket string
+
+// BudgetOverview defines model for BudgetOverview.
+type BudgetOverview struct {
+	Plan  *Plan        `json:"plan,omitempty"`
+	Today *BudgetToday `json:"today,omitempty"`
+}
+
+// BudgetToday defines model for BudgetToday.
+type BudgetToday struct {
+	// Available Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	Available Money `json:"available"`
+
+	// DaysLeft Дней до зарплаты, включая сегодня
+	DaysLeft int `json:"days_left"`
+
+	// Income Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	Income Money `json:"income"`
+
+	// IncomeExpected Доход взят из плана: записано меньше
+	IncomeExpected bool `json:"income_expected"`
+
+	// Left Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	Left Money `json:"left"`
+
+	// Limit Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	Limit      Money              `json:"limit"`
+	NextPayday openapi_types.Date `json:"next_payday"`
+
+	// Payments Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	Payments Money `json:"payments"`
+
+	// PeriodStart Последний день зарплаты
+	PeriodStart openapi_types.Date `json:"period_start"`
+
+	// Ready Нет записанного или ожидаемого дохода — лимит не посчитать
+	Ready bool `json:"ready"`
+
+	// Remaining Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	Remaining Money `json:"remaining"`
+
+	// Savings Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	Savings Money `json:"savings"`
+
+	// Spent Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	Spent Money `json:"spent"`
+
+	// SpentToday Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	SpentToday Money `json:"spent_today"`
+
+	// Upcoming Неоплаченные регулярные платежи до зарплаты
+	Upcoming []UpcomingPayment `json:"upcoming"`
+}
 
 // Category Категория; её вид (трата или доход) фиксирован.
 type Category string
@@ -241,6 +320,15 @@ type CreatedInvite struct {
 	Status InviteStatus `json:"status"`
 }
 
+// DepositCreate defines model for DepositCreate.
+type DepositCreate struct {
+	// Amount Сколько отложить; отрицательная сумма забирает деньги из цели
+	Amount Money `json:"amount"`
+
+	// Date По умолчанию — сегодня
+	Date *openapi_types.Date `json:"date,omitempty"`
+}
+
 // Error defines model for Error.
 type Error struct {
 	Error ErrorDetail `json:"error"`
@@ -267,9 +355,65 @@ type Family struct {
 	Members []Member `json:"members"`
 }
 
+// Goal defines model for Goal.
+type Goal struct {
+	// AchievedOn Когда накоплена вся сумма
+	AchievedOn *openapi_types.Date `json:"achieved_on,omitempty"`
+	CreatedAt  time.Time           `json:"created_at"`
+	Deadline   *openapi_types.Date `json:"deadline,omitempty"`
+	Id         int64               `json:"id"`
+
+	// Left Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	Left Money `json:"left"`
+
+	// Saved Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	Saved Money `json:"saved"`
+
+	// Target Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	Target Money `json:"target"`
+
+	// Title Example: Отпуск
+	Title string `json:"title"`
+}
+
+// GoalCreate defines model for GoalCreate.
+type GoalCreate struct {
+	Deadline *openapi_types.Date `json:"deadline,omitempty"`
+
+	// Target Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	Target Money  `json:"target"`
+	Title  string `json:"title"`
+}
+
+// GoalList defines model for GoalList.
+type GoalList struct {
+	Items []Goal `json:"items"`
+}
+
+// GoalUpdate Передаются только изменяемые поля.
+type GoalUpdate struct {
+	// ClearDeadline `true` — убрать срок
+	ClearDeadline *bool               `json:"clear_deadline,omitempty"`
+	Deadline      *openapi_types.Date `json:"deadline,omitempty"`
+
+	// Target Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	Target *Money  `json:"target,omitempty"`
+	Title  *string `json:"title,omitempty"`
+}
+
 // HeadTransfer defines model for HeadTransfer.
 type HeadTransfer struct {
-	// TelegramId Участник
+	// TelegramId Участник, который станет главой
 	TelegramId int64 `json:"telegram_id"`
 }
 
@@ -297,7 +441,7 @@ type Me struct {
 	Consented bool      `json:"consented"`
 	CreatedAt time.Time `json:"created_at"`
 
-	// EffectiveTimezone Пояс
+	// EffectiveTimezone Пояс, по которому считается «сегодня»
 	//
 	// Example: Europe/Moscow
 	EffectiveTimezone string `json:"effective_timezone"`
@@ -387,8 +531,11 @@ type Operation struct {
 	Id int64 `json:"id"`
 
 	// Kind Трата или доход
-	Kind      Kind      `json:"kind"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Kind Kind `json:"kind"`
+
+	// RegularPaymentId Регулярный платёж, который оплачен этой тратой
+	RegularPaymentId *int64    `json:"regular_payment_id,omitempty"`
+	UpdatedAt        time.Time `json:"updated_at"`
 
 	// UserId Telegram ID владельца
 	//
@@ -441,12 +588,104 @@ type OperationUpdate struct {
 	Date     *openapi_types.Date `json:"date,omitempty"`
 }
 
+// Plan defines model for Plan.
+type Plan struct {
+	// ExpectedIncome Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	ExpectedIncome *Money `json:"expected_income,omitempty"`
+
+	// GoalContribution Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	GoalContribution *Money `json:"goal_contribution,omitempty"`
+
+	// Paydays Один или два дня месяца по возрастанию; 31 в коротком месяце — последний день
+	//
+	// Example: [5,20]
+	Paydays []int `json:"paydays"`
+
+	// ReminderHour Час ежедневного напоминания по поясу пользователя
+	ReminderHour int `json:"reminder_hour"`
+
+	// Reminders Присылать ежедневное напоминание о лимите
+	Reminders bool      `json:"reminders"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// PlanInput defines model for PlanInput.
+type PlanInput struct {
+	// ExpectedIncome Доход за период; без него считаются только записанные доходы
+	ExpectedIncome *Money `json:"expected_income,omitempty"`
+
+	// GoalContribution Сколько откладывать на цели за период
+	GoalContribution *Money `json:"goal_contribution,omitempty"`
+	Paydays          []int  `json:"paydays"`
+	ReminderHour     *int   `json:"reminder_hour,omitempty"`
+	Reminders        *bool  `json:"reminders,omitempty"`
+}
+
+// RegularPayment defines model for RegularPayment.
+type RegularPayment struct {
+	// Amount Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	Amount Money `json:"amount"`
+
+	// Category Категория; её вид (трата или доход) фиксирован.
+	Category  Category  `json:"category"`
+	CreatedAt time.Time `json:"created_at"`
+	Day       int       `json:"day"`
+
+	// DueDate Ближайшая дата оплаты; в прошлом — платёж просрочен
+	DueDate    openapi_types.Date  `json:"due_date"`
+	Id         int64               `json:"id"`
+	LastPaidOn *openapi_types.Date `json:"last_paid_on,omitempty"`
+
+	// Title Example: Аренда
+	Title string `json:"title"`
+}
+
+// RegularPaymentCreate defines model for RegularPaymentCreate.
+type RegularPaymentCreate struct {
+	// Amount Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	Amount Money `json:"amount"`
+
+	// Category Категория трат; по умолчанию other
+	Category *Category `json:"category,omitempty"`
+	Day      int       `json:"day"`
+	Title    string    `json:"title"`
+}
+
+// RegularPaymentList defines model for RegularPaymentList.
+type RegularPaymentList struct {
+	Items []RegularPayment `json:"items"`
+}
+
+// RegularPaymentUpdate Передаются только изменяемые поля.
+type RegularPaymentUpdate struct {
+	// Amount Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	Amount *Money `json:"amount,omitempty"`
+
+	// Category Категория; её вид (трата или доход) фиксирован.
+	Category *Category `json:"category,omitempty"`
+	Day      *int      `json:"day,omitempty"`
+	Title    *string   `json:"title,omitempty"`
+}
+
 // Savik defines model for Savik.
 type Savik struct {
 	// Month Свои операции пользователя с начала месяца по сегодня
 	Month SavikMonth `json:"month"`
 
-	// State `neutral` — всё спокойно или данных мало; `empty` — траты месяца больше записанных доходов (без доходов не определить)
+	// State Проверяются по порядку: `full` — цель достигнута за последние 7 дней;
+	// `empty` — до зарплаты ничего не осталось (без плана — траты месяца больше
+	// записанных доходов); `hungry` — сегодня потрачено больше лимита; `fed` —
+	// какая-то цель накоплена на 80%; `neutral` — всё остальное.
 	State SavikState `json:"state"`
 }
 
@@ -472,7 +711,10 @@ type SavikMonth struct {
 	To openapi_types.Date `json:"to"`
 }
 
-// SavikState `neutral` — всё спокойно или данных мало; `empty` — траты месяца больше записанных доходов (без доходов не определить)
+// SavikState Проверяются по порядку: `full` — цель достигнута за последние 7 дней;
+// `empty` — до зарплаты ничего не осталось (без плана — траты месяца больше
+// записанных доходов); `hungry` — сегодня потрачено больше лимита; `fed` —
+// какая-то цель накоплена на 80%; `neutral` — всё остальное.
 type SavikState string
 
 // Summary defines model for Summary.
@@ -520,6 +762,19 @@ type Totals struct {
 	//
 	// Example: 350.5
 	Sum Money `json:"sum"`
+}
+
+// UpcomingPayment defines model for UpcomingPayment.
+type UpcomingPayment struct {
+	// Amount Сумма в рублях, не более двух знаков после запятой.
+	//
+	// Example: 350.5
+	Amount Money              `json:"amount"`
+	Date   openapi_types.Date `json:"date"`
+	Id     int64              `json:"id"`
+
+	// Title Example: Аренда
+	Title string `json:"title"`
 }
 
 // CategoryQuery Категория; её вид (трата или доход) фиксирован.
@@ -602,11 +857,23 @@ type GetTimeSeriesParams struct {
 	To *ToQuery `form:"to,omitempty" json:"to,omitempty"`
 }
 
+// SetPlanJSONRequestBody defines body for SetPlan for application/json ContentType.
+type SetPlanJSONRequestBody = PlanInput
+
 // TransferHeadJSONRequestBody defines body for TransferHead for application/json ContentType.
 type TransferHeadJSONRequestBody = HeadTransfer
 
 // UpdateMemberJSONRequestBody defines body for UpdateMember for application/json ContentType.
 type UpdateMemberJSONRequestBody = MemberUpdate
+
+// CreateGoalJSONRequestBody defines body for CreateGoal for application/json ContentType.
+type CreateGoalJSONRequestBody = GoalCreate
+
+// UpdateGoalJSONRequestBody defines body for UpdateGoal for application/json ContentType.
+type UpdateGoalJSONRequestBody = GoalUpdate
+
+// DepositToGoalJSONRequestBody defines body for DepositToGoal for application/json ContentType.
+type DepositToGoalJSONRequestBody = DepositCreate
 
 // UpdateMeJSONRequestBody defines body for UpdateMe for application/json ContentType.
 type UpdateMeJSONRequestBody = MeUpdate
@@ -617,8 +884,23 @@ type CreateOperationJSONRequestBody = OperationCreate
 // UpdateOperationJSONRequestBody defines body for UpdateOperation for application/json ContentType.
 type UpdateOperationJSONRequestBody = OperationUpdate
 
+// CreateRegularPaymentJSONRequestBody defines body for CreateRegularPayment for application/json ContentType.
+type CreateRegularPaymentJSONRequestBody = RegularPaymentCreate
+
+// UpdateRegularPaymentJSONRequestBody defines body for UpdateRegularPayment for application/json ContentType.
+type UpdateRegularPaymentJSONRequestBody = RegularPaymentUpdate
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// GetBudget План и лимит на сегодня
+	// (GET /budget)
+	GetBudget(w http.ResponseWriter, r *http.Request)
+	// DeletePlan Выключить лимит
+	// (DELETE /budget/plan)
+	DeletePlan(w http.ResponseWriter, r *http.Request)
+	// SetPlan Задать дни зарплаты и ожидаемый доход
+	// (PUT /budget/plan)
+	SetPlan(w http.ResponseWriter, r *http.Request)
 	// ListCategories Справочник категорий
 	// (GET /categories)
 	ListCategories(w http.ResponseWriter, r *http.Request)
@@ -643,6 +925,21 @@ type ServerInterface interface {
 	// UpdateMember Изменить настройки участника (глава или сам участник)
 	// (PATCH /family/members/{telegram_id})
 	UpdateMember(w http.ResponseWriter, r *http.Request, telegramId int64)
+	// ListGoals Цели пользователя
+	// (GET /goals)
+	ListGoals(w http.ResponseWriter, r *http.Request)
+	// CreateGoal Поставить цель
+	// (POST /goals)
+	CreateGoal(w http.ResponseWriter, r *http.Request)
+	// DeleteGoal Удалить цель
+	// (DELETE /goals/{id})
+	DeleteGoal(w http.ResponseWriter, r *http.Request, id int64)
+	// UpdateGoal Изменить цель
+	// (PATCH /goals/{id})
+	UpdateGoal(w http.ResponseWriter, r *http.Request, id int64)
+	// DepositToGoal Отложить деньги на цель или забрать их
+	// (POST /goals/{id}/deposits)
+	DepositToGoal(w http.ResponseWriter, r *http.Request, id int64)
 	// DeleteMe Удалить аккаунт со всеми данными
 	// (DELETE /me)
 	DeleteMe(w http.ResponseWriter, r *http.Request)
@@ -667,6 +964,21 @@ type ServerInterface interface {
 	// UpdateOperation Изменить свою операцию
 	// (PATCH /operations/{id})
 	UpdateOperation(w http.ResponseWriter, r *http.Request, id int64)
+	// ListRegularPayments Регулярные платежи
+	// (GET /regular-payments)
+	ListRegularPayments(w http.ResponseWriter, r *http.Request)
+	// CreateRegularPayment Добавить регулярный платёж
+	// (POST /regular-payments)
+	CreateRegularPayment(w http.ResponseWriter, r *http.Request)
+	// DeleteRegularPayment Удалить регулярный платёж
+	// (DELETE /regular-payments/{id})
+	DeleteRegularPayment(w http.ResponseWriter, r *http.Request, id int64)
+	// UpdateRegularPayment Изменить регулярный платёж
+	// (PATCH /regular-payments/{id})
+	UpdateRegularPayment(w http.ResponseWriter, r *http.Request, id int64)
+	// PayRegularPayment Отметить платёж оплаченным
+	// (POST /regular-payments/{id}/pay)
+	PayRegularPayment(w http.ResponseWriter, r *http.Request, id int64)
 	// GetSavik Состояние Сейвика
 	// (GET /savik)
 	GetSavik(w http.ResponseWriter, r *http.Request)
@@ -686,6 +998,48 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// GetBudget operation middleware
+func (siw *ServerInterfaceWrapper) GetBudget(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetBudget(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeletePlan operation middleware
+func (siw *ServerInterfaceWrapper) DeletePlan(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeletePlan(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetPlan operation middleware
+func (siw *ServerInterfaceWrapper) SetPlan(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetPlan(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // ListCategories operation middleware
 func (siw *ServerInterfaceWrapper) ListCategories(w http.ResponseWriter, r *http.Request) {
@@ -826,6 +1180,112 @@ func (siw *ServerInterfaceWrapper) UpdateMember(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateMember(w, r, telegramId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListGoals operation middleware
+func (siw *ServerInterfaceWrapper) ListGoals(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListGoals(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateGoal operation middleware
+func (siw *ServerInterfaceWrapper) CreateGoal(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateGoal(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteGoal operation middleware
+func (siw *ServerInterfaceWrapper) DeleteGoal(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteGoal(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateGoal operation middleware
+func (siw *ServerInterfaceWrapper) UpdateGoal(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateGoal(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DepositToGoal operation middleware
+func (siw *ServerInterfaceWrapper) DepositToGoal(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DepositToGoal(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1084,6 +1544,112 @@ func (siw *ServerInterfaceWrapper) UpdateOperation(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateOperation(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListRegularPayments operation middleware
+func (siw *ServerInterfaceWrapper) ListRegularPayments(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListRegularPayments(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateRegularPayment operation middleware
+func (siw *ServerInterfaceWrapper) CreateRegularPayment(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateRegularPayment(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteRegularPayment operation middleware
+func (siw *ServerInterfaceWrapper) DeleteRegularPayment(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteRegularPayment(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateRegularPayment operation middleware
+func (siw *ServerInterfaceWrapper) UpdateRegularPayment(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateRegularPayment(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PayRegularPayment operation middleware
+func (siw *ServerInterfaceWrapper) PayRegularPayment(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PayRegularPayment(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1408,6 +1974,19 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/summary", wrapper.GetSummary)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/timeseries", wrapper.GetTimeSeries)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/savik", wrapper.GetSavik)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/budget", wrapper.GetBudget)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/budget/plan", wrapper.DeletePlan)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/budget/plan", wrapper.SetPlan)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/goals", wrapper.ListGoals)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/goals", wrapper.CreateGoal)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/goals/{id}", wrapper.DeleteGoal)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/goals/{id}", wrapper.UpdateGoal)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/goals/{id}/deposits", wrapper.DepositToGoal)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/regular-payments", wrapper.ListRegularPayments)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/regular-payments", wrapper.CreateRegularPayment)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/regular-payments/{id}", wrapper.DeleteRegularPayment)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/regular-payments/{id}", wrapper.UpdateRegularPayment)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/regular-payments/{id}/pay", wrapper.PayRegularPayment)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/family", wrapper.GetFamily)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/family/invites", wrapper.CreateInvite)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/family/invites/{id}", wrapper.RevokeInvite)
@@ -1429,6 +2008,162 @@ type ForbiddenJSONResponse Error
 type NotFoundJSONResponse Error
 
 type UnauthorizedJSONResponse Error
+
+type GetBudgetRequestObject struct {
+}
+
+type GetBudgetResponseObject interface {
+	VisitGetBudgetResponse(w http.ResponseWriter) error
+}
+
+type GetBudget200JSONResponse BudgetOverview
+
+func (response GetBudget200JSONResponse) VisitGetBudgetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBudget401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetBudget401JSONResponse) VisitGetBudgetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBudget403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetBudget403JSONResponse) VisitGetBudgetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePlanRequestObject struct {
+}
+
+type DeletePlanResponseObject interface {
+	VisitDeletePlanResponse(w http.ResponseWriter) error
+}
+
+type DeletePlan204Response struct {
+}
+
+func (response DeletePlan204Response) VisitDeletePlanResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeletePlan401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeletePlan401JSONResponse) VisitDeletePlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePlan403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeletePlan403JSONResponse) VisitDeletePlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetPlanRequestObject struct {
+	Body *SetPlanJSONRequestBody
+}
+
+type SetPlanResponseObject interface {
+	VisitSetPlanResponse(w http.ResponseWriter) error
+}
+
+type SetPlan200JSONResponse Plan
+
+func (response SetPlan200JSONResponse) VisitSetPlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetPlan400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response SetPlan400JSONResponse) VisitSetPlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetPlan401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response SetPlan401JSONResponse) VisitSetPlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetPlan403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response SetPlan403JSONResponse) VisitSetPlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type ListCategoriesRequestObject struct {
 }
@@ -1904,6 +2639,335 @@ func (response UpdateMember403JSONResponse) VisitUpdateMemberResponse(w http.Res
 type UpdateMember404JSONResponse struct{ NotFoundJSONResponse }
 
 func (response UpdateMember404JSONResponse) VisitUpdateMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListGoalsRequestObject struct {
+}
+
+type ListGoalsResponseObject interface {
+	VisitListGoalsResponse(w http.ResponseWriter) error
+}
+
+type ListGoals200JSONResponse GoalList
+
+func (response ListGoals200JSONResponse) VisitListGoalsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListGoals401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListGoals401JSONResponse) VisitListGoalsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListGoals403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListGoals403JSONResponse) VisitListGoalsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateGoalRequestObject struct {
+	Body *CreateGoalJSONRequestBody
+}
+
+type CreateGoalResponseObject interface {
+	VisitCreateGoalResponse(w http.ResponseWriter) error
+}
+
+type CreateGoal201JSONResponse Goal
+
+func (response CreateGoal201JSONResponse) VisitCreateGoalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateGoal400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreateGoal400JSONResponse) VisitCreateGoalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateGoal401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateGoal401JSONResponse) VisitCreateGoalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateGoal403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateGoal403JSONResponse) VisitCreateGoalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteGoalRequestObject struct {
+	Id int64 `json:"id"`
+}
+
+type DeleteGoalResponseObject interface {
+	VisitDeleteGoalResponse(w http.ResponseWriter) error
+}
+
+type DeleteGoal204Response struct {
+}
+
+func (response DeleteGoal204Response) VisitDeleteGoalResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteGoal401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteGoal401JSONResponse) VisitDeleteGoalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteGoal403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteGoal403JSONResponse) VisitDeleteGoalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteGoal404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeleteGoal404JSONResponse) VisitDeleteGoalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateGoalRequestObject struct {
+	Id   int64 `json:"id"`
+	Body *UpdateGoalJSONRequestBody
+}
+
+type UpdateGoalResponseObject interface {
+	VisitUpdateGoalResponse(w http.ResponseWriter) error
+}
+
+type UpdateGoal200JSONResponse Goal
+
+func (response UpdateGoal200JSONResponse) VisitUpdateGoalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateGoal400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response UpdateGoal400JSONResponse) VisitUpdateGoalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateGoal401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response UpdateGoal401JSONResponse) VisitUpdateGoalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateGoal403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateGoal403JSONResponse) VisitUpdateGoalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateGoal404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateGoal404JSONResponse) VisitUpdateGoalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DepositToGoalRequestObject struct {
+	Id   int64 `json:"id"`
+	Body *DepositToGoalJSONRequestBody
+}
+
+type DepositToGoalResponseObject interface {
+	VisitDepositToGoalResponse(w http.ResponseWriter) error
+}
+
+type DepositToGoal200JSONResponse Goal
+
+func (response DepositToGoal200JSONResponse) VisitDepositToGoalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DepositToGoal400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response DepositToGoal400JSONResponse) VisitDepositToGoalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DepositToGoal401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DepositToGoal401JSONResponse) VisitDepositToGoalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DepositToGoal403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DepositToGoal403JSONResponse) VisitDepositToGoalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DepositToGoal404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DepositToGoal404JSONResponse) VisitDepositToGoalResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -2400,6 +3464,320 @@ func (response UpdateOperation404JSONResponse) VisitUpdateOperationResponse(w ht
 	return err
 }
 
+type ListRegularPaymentsRequestObject struct {
+}
+
+type ListRegularPaymentsResponseObject interface {
+	VisitListRegularPaymentsResponse(w http.ResponseWriter) error
+}
+
+type ListRegularPayments200JSONResponse RegularPaymentList
+
+func (response ListRegularPayments200JSONResponse) VisitListRegularPaymentsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListRegularPayments401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListRegularPayments401JSONResponse) VisitListRegularPaymentsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListRegularPayments403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListRegularPayments403JSONResponse) VisitListRegularPaymentsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateRegularPaymentRequestObject struct {
+	Body *CreateRegularPaymentJSONRequestBody
+}
+
+type CreateRegularPaymentResponseObject interface {
+	VisitCreateRegularPaymentResponse(w http.ResponseWriter) error
+}
+
+type CreateRegularPayment201JSONResponse RegularPayment
+
+func (response CreateRegularPayment201JSONResponse) VisitCreateRegularPaymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateRegularPayment400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreateRegularPayment400JSONResponse) VisitCreateRegularPaymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateRegularPayment401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateRegularPayment401JSONResponse) VisitCreateRegularPaymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateRegularPayment403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateRegularPayment403JSONResponse) VisitCreateRegularPaymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteRegularPaymentRequestObject struct {
+	Id int64 `json:"id"`
+}
+
+type DeleteRegularPaymentResponseObject interface {
+	VisitDeleteRegularPaymentResponse(w http.ResponseWriter) error
+}
+
+type DeleteRegularPayment204Response struct {
+}
+
+func (response DeleteRegularPayment204Response) VisitDeleteRegularPaymentResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteRegularPayment401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteRegularPayment401JSONResponse) VisitDeleteRegularPaymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteRegularPayment403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteRegularPayment403JSONResponse) VisitDeleteRegularPaymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteRegularPayment404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeleteRegularPayment404JSONResponse) VisitDeleteRegularPaymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateRegularPaymentRequestObject struct {
+	Id   int64 `json:"id"`
+	Body *UpdateRegularPaymentJSONRequestBody
+}
+
+type UpdateRegularPaymentResponseObject interface {
+	VisitUpdateRegularPaymentResponse(w http.ResponseWriter) error
+}
+
+type UpdateRegularPayment200JSONResponse RegularPayment
+
+func (response UpdateRegularPayment200JSONResponse) VisitUpdateRegularPaymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateRegularPayment400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response UpdateRegularPayment400JSONResponse) VisitUpdateRegularPaymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateRegularPayment401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response UpdateRegularPayment401JSONResponse) VisitUpdateRegularPaymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateRegularPayment403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateRegularPayment403JSONResponse) VisitUpdateRegularPaymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateRegularPayment404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateRegularPayment404JSONResponse) VisitUpdateRegularPaymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PayRegularPaymentRequestObject struct {
+	Id int64 `json:"id"`
+}
+
+type PayRegularPaymentResponseObject interface {
+	VisitPayRegularPaymentResponse(w http.ResponseWriter) error
+}
+
+type PayRegularPayment201JSONResponse Operation
+
+func (response PayRegularPayment201JSONResponse) VisitPayRegularPaymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PayRegularPayment401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response PayRegularPayment401JSONResponse) VisitPayRegularPaymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PayRegularPayment403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response PayRegularPayment403JSONResponse) VisitPayRegularPaymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PayRegularPayment404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response PayRegularPayment404JSONResponse) VisitPayRegularPaymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetSavikRequestObject struct {
 }
 
@@ -2579,6 +3957,15 @@ func (response GetTimeSeries403JSONResponse) VisitGetTimeSeriesResponse(w http.R
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// GetBudget План и лимит на сегодня
+	// (GET /budget)
+	GetBudget(ctx context.Context, request GetBudgetRequestObject) (GetBudgetResponseObject, error)
+	// DeletePlan Выключить лимит
+	// (DELETE /budget/plan)
+	DeletePlan(ctx context.Context, request DeletePlanRequestObject) (DeletePlanResponseObject, error)
+	// SetPlan Задать дни зарплаты и ожидаемый доход
+	// (PUT /budget/plan)
+	SetPlan(ctx context.Context, request SetPlanRequestObject) (SetPlanResponseObject, error)
 	// ListCategories Справочник категорий
 	// (GET /categories)
 	ListCategories(ctx context.Context, request ListCategoriesRequestObject) (ListCategoriesResponseObject, error)
@@ -2603,6 +3990,21 @@ type StrictServerInterface interface {
 	// UpdateMember Изменить настройки участника (глава или сам участник)
 	// (PATCH /family/members/{telegram_id})
 	UpdateMember(ctx context.Context, request UpdateMemberRequestObject) (UpdateMemberResponseObject, error)
+	// ListGoals Цели пользователя
+	// (GET /goals)
+	ListGoals(ctx context.Context, request ListGoalsRequestObject) (ListGoalsResponseObject, error)
+	// CreateGoal Поставить цель
+	// (POST /goals)
+	CreateGoal(ctx context.Context, request CreateGoalRequestObject) (CreateGoalResponseObject, error)
+	// DeleteGoal Удалить цель
+	// (DELETE /goals/{id})
+	DeleteGoal(ctx context.Context, request DeleteGoalRequestObject) (DeleteGoalResponseObject, error)
+	// UpdateGoal Изменить цель
+	// (PATCH /goals/{id})
+	UpdateGoal(ctx context.Context, request UpdateGoalRequestObject) (UpdateGoalResponseObject, error)
+	// DepositToGoal Отложить деньги на цель или забрать их
+	// (POST /goals/{id}/deposits)
+	DepositToGoal(ctx context.Context, request DepositToGoalRequestObject) (DepositToGoalResponseObject, error)
 	// DeleteMe Удалить аккаунт со всеми данными
 	// (DELETE /me)
 	DeleteMe(ctx context.Context, request DeleteMeRequestObject) (DeleteMeResponseObject, error)
@@ -2627,6 +4029,21 @@ type StrictServerInterface interface {
 	// UpdateOperation Изменить свою операцию
 	// (PATCH /operations/{id})
 	UpdateOperation(ctx context.Context, request UpdateOperationRequestObject) (UpdateOperationResponseObject, error)
+	// ListRegularPayments Регулярные платежи
+	// (GET /regular-payments)
+	ListRegularPayments(ctx context.Context, request ListRegularPaymentsRequestObject) (ListRegularPaymentsResponseObject, error)
+	// CreateRegularPayment Добавить регулярный платёж
+	// (POST /regular-payments)
+	CreateRegularPayment(ctx context.Context, request CreateRegularPaymentRequestObject) (CreateRegularPaymentResponseObject, error)
+	// DeleteRegularPayment Удалить регулярный платёж
+	// (DELETE /regular-payments/{id})
+	DeleteRegularPayment(ctx context.Context, request DeleteRegularPaymentRequestObject) (DeleteRegularPaymentResponseObject, error)
+	// UpdateRegularPayment Изменить регулярный платёж
+	// (PATCH /regular-payments/{id})
+	UpdateRegularPayment(ctx context.Context, request UpdateRegularPaymentRequestObject) (UpdateRegularPaymentResponseObject, error)
+	// PayRegularPayment Отметить платёж оплаченным
+	// (POST /regular-payments/{id}/pay)
+	PayRegularPayment(ctx context.Context, request PayRegularPaymentRequestObject) (PayRegularPaymentResponseObject, error)
 	// GetSavik Состояние Сейвика
 	// (GET /savik)
 	GetSavik(ctx context.Context, request GetSavikRequestObject) (GetSavikResponseObject, error)
@@ -2675,6 +4092,85 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// GetBudget operation middleware
+func (sh *strictHandler) GetBudget(w http.ResponseWriter, r *http.Request) {
+	var request GetBudgetRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetBudget(ctx, request.(GetBudgetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetBudget")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetBudgetResponseObject); ok {
+		if err := validResponse.VisitGetBudgetResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeletePlan operation middleware
+func (sh *strictHandler) DeletePlan(w http.ResponseWriter, r *http.Request) {
+	var request DeletePlanRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeletePlan(ctx, request.(DeletePlanRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeletePlan")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeletePlanResponseObject); ok {
+		if err := validResponse.VisitDeletePlanResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetPlan operation middleware
+func (sh *strictHandler) SetPlan(w http.ResponseWriter, r *http.Request) {
+	var request SetPlanRequestObject
+
+	var body SetPlanJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetPlan(ctx, request.(SetPlanRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetPlan")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetPlanResponseObject); ok {
+		if err := validResponse.VisitSetPlanResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // ListCategories operation middleware
@@ -2882,6 +4378,153 @@ func (sh *strictHandler) UpdateMember(w http.ResponseWriter, r *http.Request, te
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdateMemberResponseObject); ok {
 		if err := validResponse.VisitUpdateMemberResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListGoals operation middleware
+func (sh *strictHandler) ListGoals(w http.ResponseWriter, r *http.Request) {
+	var request ListGoalsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListGoals(ctx, request.(ListGoalsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListGoals")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListGoalsResponseObject); ok {
+		if err := validResponse.VisitListGoalsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateGoal operation middleware
+func (sh *strictHandler) CreateGoal(w http.ResponseWriter, r *http.Request) {
+	var request CreateGoalRequestObject
+
+	var body CreateGoalJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateGoal(ctx, request.(CreateGoalRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateGoal")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateGoalResponseObject); ok {
+		if err := validResponse.VisitCreateGoalResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteGoal operation middleware
+func (sh *strictHandler) DeleteGoal(w http.ResponseWriter, r *http.Request, id int64) {
+	var request DeleteGoalRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteGoal(ctx, request.(DeleteGoalRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteGoal")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteGoalResponseObject); ok {
+		if err := validResponse.VisitDeleteGoalResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateGoal operation middleware
+func (sh *strictHandler) UpdateGoal(w http.ResponseWriter, r *http.Request, id int64) {
+	var request UpdateGoalRequestObject
+
+	request.Id = id
+
+	var body UpdateGoalJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateGoal(ctx, request.(UpdateGoalRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateGoal")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateGoalResponseObject); ok {
+		if err := validResponse.VisitUpdateGoalResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DepositToGoal operation middleware
+func (sh *strictHandler) DepositToGoal(w http.ResponseWriter, r *http.Request, id int64) {
+	var request DepositToGoalRequestObject
+
+	request.Id = id
+
+	var body DepositToGoalJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DepositToGoal(ctx, request.(DepositToGoalRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DepositToGoal")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DepositToGoalResponseObject); ok {
+		if err := validResponse.VisitDepositToGoalResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -3110,6 +4753,146 @@ func (sh *strictHandler) UpdateOperation(w http.ResponseWriter, r *http.Request,
 	}
 }
 
+// ListRegularPayments operation middleware
+func (sh *strictHandler) ListRegularPayments(w http.ResponseWriter, r *http.Request) {
+	var request ListRegularPaymentsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListRegularPayments(ctx, request.(ListRegularPaymentsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListRegularPayments")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListRegularPaymentsResponseObject); ok {
+		if err := validResponse.VisitListRegularPaymentsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateRegularPayment operation middleware
+func (sh *strictHandler) CreateRegularPayment(w http.ResponseWriter, r *http.Request) {
+	var request CreateRegularPaymentRequestObject
+
+	var body CreateRegularPaymentJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateRegularPayment(ctx, request.(CreateRegularPaymentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateRegularPayment")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateRegularPaymentResponseObject); ok {
+		if err := validResponse.VisitCreateRegularPaymentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteRegularPayment operation middleware
+func (sh *strictHandler) DeleteRegularPayment(w http.ResponseWriter, r *http.Request, id int64) {
+	var request DeleteRegularPaymentRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteRegularPayment(ctx, request.(DeleteRegularPaymentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteRegularPayment")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteRegularPaymentResponseObject); ok {
+		if err := validResponse.VisitDeleteRegularPaymentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateRegularPayment operation middleware
+func (sh *strictHandler) UpdateRegularPayment(w http.ResponseWriter, r *http.Request, id int64) {
+	var request UpdateRegularPaymentRequestObject
+
+	request.Id = id
+
+	var body UpdateRegularPaymentJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateRegularPayment(ctx, request.(UpdateRegularPaymentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateRegularPayment")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateRegularPaymentResponseObject); ok {
+		if err := validResponse.VisitUpdateRegularPaymentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PayRegularPayment operation middleware
+func (sh *strictHandler) PayRegularPayment(w http.ResponseWriter, r *http.Request, id int64) {
+	var request PayRegularPaymentRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PayRegularPayment(ctx, request.(PayRegularPaymentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PayRegularPayment")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PayRegularPaymentResponseObject); ok {
+		if err := validResponse.VisitPayRegularPaymentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetSavik operation middleware
 func (sh *strictHandler) GetSavik(w http.ResponseWriter, r *http.Request) {
 	var request GetSavikRequestObject
@@ -3191,102 +4974,137 @@ func (sh *strictHandler) GetTimeSeries(w http.ResponseWriter, r *http.Request, p
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"7F3rbhtHln6VRu/+sIM2Sd+SjYzFwvFl4p04ydrOzgZRILXJotRjspvpbipxDAGmFMcZ2GutswE2GOxk",
-	"JpkF5sf8oWgxpiSSAvIEVa+wT7I451T1tVpsOr6Mgv0Vs9VVXXXOqe/cK3fMutfueC5zw8BcuGN2bN9u",
-	"s5D5+OuCHbIVz7/9L13m34YHjmsumJ/gL8t07TYzF8y6fMm0zKC+yto2vPj3PmuaC+bfVePpq/TXoKpm",
-	"NdfXLfOy77Wj6RssqPtOJ3Q8+A7/A++L+7zP9/nU4Ad8KO7yEZ/yHd43+IDv8X3xSNznI7HBh3xfPOQT",
-	"Pq2YlnaRTd9rpxbY9Py2HZoLZsMOmWmZ4e0OvBeEvuOu4Mp+7biNopX9wKf4xT0+NcSGuMv7YkM8MPiI",
-	"7/ORITYSf+Y7fCruwbLFg3MG3+ZD/hR204dRfMyHNN7437vfGHIs/JfviLtikz/hUz4s2tQtx22Upjps",
-	"B/d1wyva1e/5lE/4UHz5c6kdenPS+oOA+VcuFqzrBmuxFd9uG1cuGuI+3+dDPuF9Q/T4kI/FQz46B0Te",
-	"F1uG2AR5ET2xwSd8xPdg6SOgMVAZBozFA9Hj+2kOiR4f8CnfLdpNN2D+ktPQb8lxw9fPxHty3JCtMN9c",
-	"h135LOh4bsDwLL1lN66xT7osCOFX3XND5uI/7U6n5dRt2Gz1twHs+E5Jll7yfU9+KndyhrA1cVfchX8B",
-	"PcQDvmvwp7zPD8RdPhU9c90yL3hus+XUX8aSvuFDvousGfARHxogaUj3p3zMp/xHkCeDDwyUrz2xKX4H",
-	"7AXmTHHUVGwhU0ew7suef9NpNJj7qha+Q6sSm/wAFr5gLNeB02645LNPuo7PGst4okUPZFWiWN9A2o/4",
-	"RGyJDfEQjtkUEENsgLSKTZDjPp8As8Q9a9Fdbqp90mx8IjaRUn0DeAgSbPAnMDMfxPBDs4qH/Cmf8gFA",
-	"E51Y4v42wCnf4yOcYQDfqyy6QNR3vfCy13UbL0c+gY59vst38DhPYQEfuHY3XPV853P2khYhNohaO/yA",
-	"j0SPjwwFNpaBYNhXcgpwOCE8QYjfRIno4/naV/A9FRt8D+m6C0RX7N5H+R6i+A5hhqfRZ4gnE+TEFKFQ",
-	"rhsho1u/xUINUH/LJzC/uIv82z+nZHJI/CeJG+F/H4kN0QNo7NFOoxcRwREjTctkbrdtLnxkNmzAvU8Z",
-	"u2VaZttzw1Xz4yxeW+ZnJ+D9E2u2DwgZwEBa6kUcTv/+DU1CP67SVIA4Svnr1A+J6hMALj4SW+cMPhSP",
-	"DTx3O8YxpWhjLsS69bghvsAz1EsJdmJrTc8DCA992w06nh+alrnqdQPaEXND5oe247ZB3ixzldmtcBUQ",
-	"f9XrdOgdL1xlPjyyWzaqh6bPWMt266DSVpxmiOojZD5APIB/s4vqGcctOW7da7OS1FREukxrVj9vJNau",
-	"nr0d7UE9uZTZS/Sm2pN6cD3em3r0ntxj9Iraa7SixJ7Vs1/R3tXPKzEN1KNrihap71yRJFlPjm16aIb6",
-	"Xof5oUOqs+41WHmj0iK7qJQ5ZJkt+yZrwcvsM7vdaQFn8IT0tXaKAndgEq7KUkYYzROz17v5W1YPzcTe",
-	"3nFI9af35oSsnf5HmV0indajj9m+b9/OLZBmPGxJN7zQbmnonTijZWle97qE1FlDyDIDOICHz3TVc1l+",
-	"A0nPogvmO31EuyOf2SFrXHHXnJBpdkR/XrLDnD16InTaGqPUMtlnHcdnwVxjnEYp49AyW457SwOB34ue",
-	"eMD3yXKVNm2BxSt1jXiAUIeabBsf9tF9OEDNtIO2wRP1wiCyWUZgfwDwRVK/GoadYKFaDSttVr1ur7GO",
-	"57jhW174T0Fo++E//tutNz859U77/c9r9ltv1C+eZJdPr7z9qY4IQWiH3ZmiTKy6Tu/mRBetbfqbleRe",
-	"ii2SjDp5IK2fkwOmHs+0GC6y0HZauYXRBIVflKMKEUwpo5t2Aw1Fgsk1u+U00LZZovkt0/XCpaZHoNlN",
-	"mkVwCNKGJmiiyBzGP5NJL7WRa7dKap1Lvn/Ba7CEo2KpZ/8arTB+FpmL0ZMP0guVTy/Qeq/Fy5V/uJxY",
-	"dfyuWrx8ciXaw7plNh3WamiOzR/RjB6ikTMVX/ER3wb3BxweNJDAfuB98SW6DxqJbbMgsFdYAr4Ox3z1",
-	"vk4OLtttp3VbA/RlocHBgxHotonWJNr74iuyJ8UWWpBo24Fni2ce7LpdA2MLPbElvrQMsjDFA7RJyXAU",
-	"D/gYgCQbrADMiX0KkKIyikkCb04lAa3aN2U4qdRMV/H92cqtYcZzx0TTceRtZjfQdGoyDSSE0hJfcnSS",
-	"9ed0QIHO2qEctEz0vDfQ+wafmxwFDKxsRJQF4TQX3G6rld1Ycj263RwZFfcsasAyu8Gce8ABN2eEjcgR",
-	"Ez0+xQMyQm4O8BA9QU9+qwRnn01JFfPwekQgpRbseuiswS5hU9E0DfQm1rxbrFESyWn+82o2+vkBzUk/",
-	"LkUz0+9ran4Z+NTFPIu9r4SbxT7rMDdgeCTn8Hjgm5eiofAr4R1c1Yk7aRXWKMTJidji+5oQy5RvY+iV",
-	"rKU92kgUdYnZftPzWszGyMgzna1mkyEDluCNzz2X6RWX2BK9lCF2qQsbrV71grqXt68sE3ZkxBjDp3ws",
-	"NgFlKDiLph66/D/9FQ3GJxjfmIitn/Yl4lhmE5XUUumz3HT8IFyieGjKVfoGKTfi+1qoCJZWma3j0H9K",
-	"FEzatFrKZ9A5+vLJU6fPnH39jX940yqz/EM48LV4IOVhImOkhPgUkQE1ekA8oiCL2KBIT2GIbQIqFpTr",
-	"NgYi+nzfONZ2XMewOx1DRjrjsJPUDQOyx6NvyfCSjCRR6LF/PCUl5wPHrr7rrXmBc9Pxg1sF0OjneeY7",
-	"9eD1N3Xvf8rYrdbtJZ9hjKHgXEkPpU8LHqH58ISiTokQ1EB6IwZJa0HkiY81TD9EH6YEMSnFsaxld6E9",
-	"iFYCPlKnWwfWV9kHHUxc6I7vULpZiUBbyp4aYXh7iGAEci4tMHhjq2JaelDLf2k59LtMxoDnCCFLN3HK",
-	"n5KQiocYT5cmZI/CkXH0PZ0V2cSZ9lXcko8N3ud7wDaxifHHvv7EFp61K+ffPX+Cj/iYvNr4kD2RIgKi",
-	"T+HIucQ8J7YaidJwFc3M52JGHXF0/KXDRDE0zDz5ICPx6U9LShmxS64w/b72exgF00WFNvmYjzERa2Ba",
-	"eBvwQ9yzpL7ZJv8X/rnDB2JT3AOvcILndQpEjrxDlQHcQoZgyjNi+emztcrZaFluFw8IWGsr3gn5sMHq",
-	"TttuVS7Sf5N/PeG0FSE6drhqLpgrTrjavVmpe+1qsOp1gg4IUFVOgeR5r8N8iirkqGu3VUCxRNzQesaQ",
-	"Zbst0TZxZsGw+oIPdYL/LNigZCf+wqnaqddPnKydOHk26XPoU+PK3YpGnzlV6kjPEwHvonzP7XT5Woc5",
-	"5XQNEMfkYRZfpqF9HozSOV5xVl5G4KXEWMmwsaRqyjdL7Fd3CCOZpJDyq5bMtv3ZO8xdgQN1tlY7RMDy",
-	"noWBsAEa/T7pIfFI5aQTXgFiSlIbj2NdPCwydNF2mV3WkWRanj2HUl+fLZHe5VL5lILyQ+cbMldSJkYx",
-	"TfgrVCkWTa0NmG33MUgHBv4UXFMKzlGoEqOXU4za8yH+QrcCfL69JEAVHhNcvFqClSJeiiyHMuJFGb8G",
-	"/6NMooOXtSxFfjmyO2EMGAagwcZyGkq4j0hvHYlTOfuM5Ch/3V5zbuVFn7LxM5aLYynZLiNwrNSQ6/hm",
-	"VoBofL4QILPWq2plWbMF4WSUFevCAhUqUkiVy0QhbBnizmBXTgpu2pScLisGKlpV9n0sI5zN1ij4VXbe",
-	"0NPSL73V+fBWVjxiKV4uKGdFlCrk6vVQe+yXXdYNfbslndGB6InHwJUDLCqa8l2q44oihJEvCszEUs5z",
-	"xjJrd8LbskAqUT2Z4vY2yYj4KjJaMYCbmC8KP6KNe0yVVqYfk4E8jfKhQ3KWxcPjiaCl3BM8gZWVjFki",
-	"md6NhuLPSzQeiNhtt21fkwh6QTKKufygvOyp97MJzvlE5YbTZu97jhsWVhE42lRWptZHggKA/7bMaJO9",
-	"Inrk+5TPRKVrGzQa+bBKhdDWe7RRymzXoII1dGrTVVho3s4EhmcuhqC1pSshrCSRi9hznSkeZOQwqi47",
-	"bDGyBm1uoygWDA0LyrsnGSLINUc2f3GJixTvX4RUPrPIlBcV+Ayrd30nvH0d5kznRnUBybZtLHZrtdN1",
-	"x3XCi3Zo4y+myl5l9HqP941l5RRWfsNunu90KmrEsiG+JEAmKy8qwF5ldgNjD7IC+7wsK1AVCIp4HefX",
-	"uG0EvaZGh167dP2Gcf79K0YUgv/pr6hXd/kAVRae4Z/2F9JV/Kmi/UJzxTJIVKIoHThTsvwyit7zPT6q",
-	"LLqL7muv8a9pysprrxkgavxHmD5TlU1Zhp54DLbvUyzemWIBKdhSe8ZyihQLRiEbLIM/AahadJdjcs/B",
-	"mooBdEJsG4q7FHWe0g9lmWNtZqJ6VjxcdNGc36OSXvAkkyVJ2zj4sUp+aA3AlP8wFRtYrrTD+xWD/0GW",
-	"MOwWZ1/Qh32KHslj8kgWXYqXR2UPtKwEwfnQMjDIuCdD68ZyFbF2OQ5P8iG4K5JmM3I/B3HyET5+SHTe",
-	"OLb8/vkbF942qm22DLavqiFfMDDcf9wy0nXm4kGaQMs4kI8WXTDAMNs04FNxn+KmuKsUnO1ahiym76sO",
-	"DjSO0P0cotUNjD1TO60pZ1dC/HvsUBH3qVEFS3NhfyjUusB14h2NJ4C+rbiX79yY8oGVeyotxpgEuHP0",
-	"MlBeJfNVssMylPspo9AJ55Ke7CVPYZyc07WH5P0YpIgKzhJO5D3if77+3rsnMDXbQ+KMYRW9XNxW3KcM",
-	"C4ZvMUMSBXBpTGEI11p08YOAXNnzjSOXP/zwww9PXL164uJFYCLApxNiJDKq8gOINC1zjfkB4eapSq1S",
-	"A93jdZhrdxxzwTxdqVVOg8Nlh6uoHKppVbqirVT/Pu3P7eUUrMJdC7eFfxxnbHjLUCFsgJ4dgBdD+ht9",
-	"GARqw1PhiisNc8F8xwnCC/HqMp04p2q159ZdkCru1TUZ5E0K0cMYvuiJHigH4u4Et6IsjC14COQ/UztZ",
-	"tIJoS9VU2d06GQzkegD9y+ACyIS9EiRqbtFKgLmqzaieTc/hTIUUH1lxkVM/VW2GIZ9nq2BLgkhaR0Sf",
-	"shbdLFwA3lLhD8kSQtBBIuqEfiuVBe3R0UjL0a9YKMv5XqAIyS/ohOd7ZVc8oyzAoNOzB8WFmDnpieya",
-	"Ao2dkBwpKEmpqaoEZ6eLREpTV9XkvU3JOVkP+5bXuP3caJsq/VtP28egY9dzfD2jEfE/aVqtElgPh5do",
-	"XZtN60R17cviKYw4M3tEVM+bEYJknBcrCDSdZ5qTdyw+msdnSEmi4rXjBTqQ+Q4xYYpQpiRwC1Rdolx+",
-	"IqNGZG/CrzcMHDbku2AdJN+lvsMBqp7fJUqm0tgCxgQA0MOFRZdsQfj60BD3ZMHQSA5DE+8roM098e/i",
-	"Kwpag9WqwRRKK8kqzpz4nXx+minVEaFDFw0YYw012jwRtaZ896VK6puzR0RV4jm4UtY/VcZo9ze/XFbv",
-	"OI11EsoWo5homqVUPBmxNNlD/5HsmceUeOTPOgrvYiSar7n441K49V1c+6NaLI8C4HyXKVn6+YxsMXuN",
-	"HQIvGRsG4CxhMQzIr9yWeboh+m+bGAaS+vERIMpYZvKiI0RuA9l3KdeB7LuK3l8Cl0bTyE7ToP8LzqR0",
-	"IGKXRdtsnEBucLsP6xkeoTVKPf5xtxD4ZjoQewcIWmQandGXWSLr9o8KlnwdU3rEnyb92WNZ5sySPtml",
-	"UL2TqFHK4EmGWn/BqBiGW1RYgnyhff5jxB0pbiMDxaoXhaswSTLGiAv1e1MdqrwBQe/KLmhs9qHscMaA",
-	"zUjcUzY46MqHlUWXf01N0WKTTmmii191m4wLzi76AmBcbieaTTBKlJBCWRKblnOdMF5jbW+NyYK+UtL4",
-	"bfwZ8ZhP/naB8WcK8bd5cmaFeQaIltFm6dK7n6nWOnZYX82rWKpCSPD4+fsKqWq/Ur5C7Tl/W2ulZXVT",
-	"MhAUFVgoV/oX7IZ8G+01AoZMmF13/cuxFLrQ1Q2Ej6VRvM0Oxeo/p8tVZuUKsshrIejJVo4RWBI7fESJ",
-	"cv5EBs7zCQUj6ZpHynzRJVVAMQ60GqRjs5CnzSinV8SjEnoFVlzSvtFA9UWk4lVWDqb/I1luHsduXyZi",
-	"p2VQ8lpJYD+9vl5crDVOFT9gNC+WLtnVJMNpuYiTjjrPE2n0vqA+p/GK6PxDdAXQ6LB0DxBZnqrcEcnT",
-	"O9Isma3/t6pQy8UW0zGeSa55Q6+iXph6elWqaR6BObrqaW5tE922VL4fJyuUoF4iITosi0JZElwNFkdl",
-	"CkUPafC2DPLuov6Lg+KS0pRHGkfcF92CvB1F0KUpWSJbF+kMrUvpBOF7MS1yhqeOkfEr1fi2vnVr5svJ",
-	"6+ZKvJ6+BrHEgPhSwxIvq/v44FXNIUOXKNEfs5NI8A215bFiKyqGA5aAA0cXhgFWjuTw/vGi6+4+SV10",
-	"l6h0PaWpdIVF6yZpOW0nTE3UYE272wrNhbM1C2Z12t22rJ5tOy79OqmradZ/wGs2A1bwheSUtVLRs+cH",
-	"l+kCdm1SZ8ZhPjog+UNhyYzo0X1c++Kh3G3aBEqAHqrmoqh/yqhMlIHGt95Q/B1vx0leHKhaCnW2+Dl1",
-	"o5hKN4pNst3BN86nqCsFIfy47P/FKPxsI0opvX/y+X++IDOpai0mqBq3ci7A0RHj/4qLiynBpUrBNrU3",
-	"HWhlOK3JZ2YMyA9KS9DscH7mOKQ6dPtHxY9P+1BkEYDbmxafR8VgUeQ3HULN2ks6Fd/pjsBRyPACTm7G",
-	"QcLSvHg5qa7n7LkZ/C94jepIdgZkwjEDmmtsRFVbw/y9SBYat2dqZ4r8wJemHV6NV3j4OYi8J/H4SOqH",
-	"5xyqnBvkQJsEqg2sqLAufS0yJkn6GPWjCgjNhTCyLEG1eEatDHhB4Li4KhfrsxLmVbo2q7LoxrWxdEWK",
-	"LOtGD3OE1RFg/8FarPyFzthSMeD9BSPuLeKjqEnoWEGH0KI7b4vQ8YrB/4dKSKTJChvGf8urFjVL+xEv",
-	"itqkPLCqIi+oFaPOvRd46ugDBfZYVhxGBgrZF+JuhnJWZOlG15QBraaUuzuIlQHfx1kfvrLqs9yeVOm+",
-	"urc4F00J4q6rIjtBNWbNG2H42wwavEhfVlFKC/HZiBLdsSgTz3vZq5z5+Ai6tVamD2REJWBgAkxELypb",
-	"jf5PCYfBeei0WcBmFEvH93w8ldXScXV6ptuMyoixIG0bIErddykvB8uRv2Jkbw2HHcmWyUwEQjVNiB7m",
-	"9rHsRWxieghL18UmZmFgzsc4wXLT99rLBtVnp+4fjyvreskWjF0VyyLabqHPvpu3xhDk8QuhJztOn8qi",
-	"+Al+YpD6RLJhFjtGhuk+0jO1Ghp3WG1fVPGb6JnTG7iZSFTUk1Zs5ZZpsCsKdMlOt2ebXDXR/T+4aRsU",
-	"JZt1+PYnEuUDambONHoeSTTLBzNkb5tBB4aPrcTtTPA7GpEwHuguJi3KJXoI8bDE3YMffQysDJi/pg5S",
-	"12+ZC2bV7jjVtZPIaDnnHSX3bYaiosK98ZcST2WePvEk0b6w/vH6/wUAAP//",
+	"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",
+	"AP//",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

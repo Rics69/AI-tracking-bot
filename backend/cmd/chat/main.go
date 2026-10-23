@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/agent"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/config"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/llm/provider"
@@ -60,9 +61,10 @@ func run(userID int64, name string) error {
 		return err
 	}
 	expenses := ledger.NewService(postgres.NewOperationRepository(pool), cfg.Location)
+	budgets := budget.NewService(postgres.NewBudgetRepository(pool), expenses)
 	assistant := agent.New(client, expenses, expenses,
 		agent.NewHistory(cfg.HistoryTurns, cfg.HistoryTTL),
-		agent.Config{Location: cfg.Location, MaxSteps: cfg.MaxSteps}, log)
+		agent.Config{Location: cfg.Location, MaxSteps: cfg.MaxSteps, Budget: budgets}, log)
 
 	fmt.Printf("Агент готов (пользователь %d, %s). Пустая строка или Ctrl+D — выход.\n", userID, name)
 	in := bufio.NewScanner(os.Stdin)

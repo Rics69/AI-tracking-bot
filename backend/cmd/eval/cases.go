@@ -15,11 +15,15 @@ import (
 
 // Case is one eval scenario: a dialog with the agent and what must be true after it.
 type Case struct {
-	Name   string          `yaml:"name"`
-	Tags   []string        `yaml:"tags"`
-	Seed   []OperationSpec `yaml:"seed"`  // the user's operations before the dialog, in creation order
-	Turns  []string        `yaml:"turns"` // user messages, sent one by one in one conversation
-	Expect Expect          `yaml:"expect"`
+	Name string          `yaml:"name"`
+	Tags []string        `yaml:"tags"`
+	Seed []OperationSpec `yaml:"seed"` // the user's operations before the dialog, in creation order
+	// Plan, Goals and Payments are the user's limit settings before the dialog.
+	Plan     *PlanSpec     `yaml:"plan"`
+	Goals    []GoalSpec    `yaml:"goals"`
+	Payments []PaymentSpec `yaml:"payments"`
+	Turns    []string      `yaml:"turns"` // user messages, sent one by one in one conversation
+	Expect   Expect        `yaml:"expect"`
 }
 
 // Expect lists the checks of a case. Empty fields are not checked.
@@ -37,6 +41,34 @@ type Expect struct {
 	// "сумм|стоимост" in ReplyContains accepts either word.
 	ReplyContains    []string `yaml:"reply_contains"`
 	ReplyNotContains []string `yaml:"reply_not_contains"`
+	// ReplyHasLimit: the last reply quotes today's limit, computed after the dialog.
+	ReplyHasLimit bool `yaml:"reply_has_limit"`
+	// Plan, Goals and Payments are the exact final limit settings; nil is not checked.
+	Plan     *PlanSpec      `yaml:"plan"`
+	Goals    *[]GoalSpec    `yaml:"goals"`
+	Payments *[]PaymentSpec `yaml:"payments"`
+}
+
+// PlanSpec is the pay plan: paydays and, optionally, the expected income.
+type PlanSpec struct {
+	Paydays        []int  `yaml:"paydays"`
+	ExpectedIncome string `yaml:"expected_income"` // empty: none (expectations: not checked)
+}
+
+// GoalSpec is a goal. In expectations Title matches by substring, case-insensitively.
+type GoalSpec struct {
+	Title  string `yaml:"title"`
+	Target string `yaml:"target"`
+	Saved  string `yaml:"saved"` // empty: zero
+}
+
+// PaymentSpec is a regular payment. In expectations Title matches by
+// substring, case-insensitively, and an empty category is not checked.
+type PaymentSpec struct {
+	Title    string `yaml:"title"`
+	Amount   string `yaml:"amount"`
+	Day      int    `yaml:"day"`
+	Category string `yaml:"category"`
 }
 
 // OperationSpec describes an expense or an income in a case file.
@@ -51,6 +83,9 @@ type OperationSpec struct {
 	Date string `yaml:"date"`
 	// Comment must be contained in the actual comment (case-insensitive); empty matches any.
 	Comment string `yaml:"comment"`
+	// Payment is the title of the regular payment the expense pays: seeds are
+	// linked to it, expectations require the link; empty means no link.
+	Payment string `yaml:"payment"`
 }
 
 func loadCases(path string) ([]Case, error) {
@@ -77,6 +112,7 @@ type resolved struct {
 	Kind     ledger.Kind
 	Date     time.Time
 	Comment  string
+	Payment  string
 }
 
 func (s OperationSpec) resolve(today time.Time) (resolved, error) {
@@ -99,7 +135,7 @@ func (s OperationSpec) resolve(today time.Time) (resolved, error) {
 	if err != nil {
 		return resolved{}, err
 	}
-	return resolved{Amount: amount, Category: c, Kind: k, Date: date, Comment: s.Comment}, nil
+	return resolved{Amount: amount, Category: c, Kind: k, Date: date, Comment: s.Comment, Payment: s.Payment}, nil
 }
 
 var weekdayNames = map[string]time.Weekday{
@@ -142,6 +178,9 @@ func (r resolved) String() string {
 	s := fmt.Sprintf("%s %s %s", r.Amount, what, r.Date.Format(time.DateOnly))
 	if r.Comment != "" {
 		s += " «" + r.Comment + "»"
+	}
+	if r.Payment != "" {
+		s += " → " + r.Payment
 	}
 	return s
 }

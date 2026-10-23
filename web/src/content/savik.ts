@@ -28,12 +28,15 @@ export type Pose =
   | "21-debt";
 
 /**
- * Moods of Savik. "neutral" and "empty" come from the API (GET /savik, the
- * money of the month); the rest are moments of the app itself.
+ * Moods of Savik. The first five come from the API (GET /savik: goals, the
+ * daily limit and the money of the month); the rest are moments of the app itself.
  */
 export type Mood =
   | "neutral" // nothing alarming
-  | "empty" // this month's expenses are above the incomes
+  | "full" // a goal was reached in the last 7 days
+  | "empty" // nothing left until payday (without a limit: the month's expenses are above the incomes)
+  | "hungry" // today's expenses are above the daily limit
+  | "fed" // a goal is 80% saved
   | "saved" // an operation was just recorded
   | "welcome" // first launch, before the data policy is accepted
   | "outside" // opened outside Telegram
@@ -41,7 +44,10 @@ export type Mood =
 
 export const poses: Record<Mood, Pose> = {
   neutral: "01-neutral",
+  full: "20-full",
   empty: "19-empty",
+  hungry: "18-hungry",
+  fed: "09-proud",
   saved: "03-joy",
   welcome: "02-talk",
   outside: "12-think",
@@ -58,6 +64,9 @@ export const phrases: Record<Mood, string[]> = {
     "В этом месяце траты обогнали доходы. Затянем крышку?",
     "Монет больше уходит, чем приходит. Посмотрим, куда?",
   ],
+  full: ["Цель накоплена! Я полон до краёв.", "Получилось! Сундук набит под крышку."],
+  hungry: ["Сегодня мы вышли за лимит. Я голодный, но держусь.", "Лимит на сегодня кончился — завтра будет полегче."],
+  fed: ["До цели совсем немного — я сытый и довольный.", "Ещё чуть-чуть, и цель в кармане!"],
   saved: ["Записано! +1 XP.", "Готово, сундук в курсе.", "Есть! Так держать."],
   welcome: ["Привет! Я Сейвик — сундук, который учится хранить, а не тратить."],
   outside: ["Хм, кто здесь? Открой меня из Telegram."],

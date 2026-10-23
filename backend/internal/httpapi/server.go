@@ -56,13 +56,14 @@ type FamilyService interface {
 type Server struct {
 	ledger LedgerService
 	family FamilyService
+	budget BudgetService
 	loc    *time.Location // timezone of users who have not chosen one
 }
 
 var _ StrictServerInterface = (*Server)(nil)
 
-func NewServer(l LedgerService, f FamilyService, loc *time.Location) *Server {
-	return &Server{ledger: l, family: f, loc: loc}
+func NewServer(l LedgerService, f FamilyService, b BudgetService, loc *time.Location) *Server {
+	return &Server{ledger: l, family: f, budget: b, loc: loc}
 }
 
 // readScope is what the user may see: the head sees the whole family.
@@ -289,8 +290,16 @@ func (s *Server) GetSavik(ctx context.Context, _ GetSavikRequestObject) (GetSavi
 	if err != nil {
 		return nil, err
 	}
+	b, err := s.budget.Budget(ctx, u.TelegramID, today)
+	if err != nil {
+		return nil, err
+	}
+	goals, err := s.budget.Goals(ctx, u.TelegramID)
+	if err != nil {
+		return nil, err
+	}
 	return GetSavik200JSONResponse{
-		State: SavikState(savik.Of(month)),
+		State: SavikState(savik.Of(savik.Input{Today: today, Month: month, Budget: b, Goals: goals})),
 		Month: SavikMonth{
 			From:    openapi_types.Date{Time: from},
 			To:      openapi_types.Date{Time: today},
@@ -312,15 +321,16 @@ func (s *Server) ListCategories(context.Context, ListCategoriesRequestObject) (L
 
 func toAPIOperation(o ledger.Operation) Operation {
 	return Operation{
-		Id:        o.ID,
-		UserId:    o.UserID,
-		Kind:      Kind(o.Kind()),
-		Amount:    o.Amount,
-		Category:  Category(o.Category),
-		Date:      openapi_types.Date{Time: o.Date},
-		Comment:   optional(o.Comment),
-		CreatedAt: o.CreatedAt,
-		UpdatedAt: o.UpdatedAt,
+		Id:               o.ID,
+		UserId:           o.UserID,
+		Kind:             Kind(o.Kind()),
+		Amount:           o.Amount,
+		Category:         Category(o.Category),
+		Date:             openapi_types.Date{Time: o.Date},
+		Comment:          optional(o.Comment),
+		RegularPaymentId: o.RegularPaymentID,
+		CreatedAt:        o.CreatedAt,
+		UpdatedAt:        o.UpdatedAt,
 	}
 }
 

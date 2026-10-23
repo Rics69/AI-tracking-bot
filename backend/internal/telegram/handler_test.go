@@ -540,3 +540,22 @@ func TestAppCommand(t *testing.T) {
 		t.Error("/app must be in the command menu only with a mini app")
 	}
 }
+
+func TestSendWithApp(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	if err := e.h.SendWithApp(ctx, e.s, anna, "Сегодня можно потратить 1 300 ₽."); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.s.last(t, anna); len(got.buttons) != 0 {
+		t.Errorf("without a mini app the reminder has no button: %+v", got)
+	}
+	e.h.cfg.MiniAppURL = "https://app.example.com"
+	e.s.failures = e.s.attempts + 1 // the next attempt fails: retried like replies
+	if err := e.h.SendWithApp(ctx, e.s, anna, "Сегодня можно потратить 1 300 ₽."); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.s.last(t, anna); !slices.Equal(got.buttons, []string{"webapp:https://app.example.com"}) {
+		t.Errorf("reminder buttons = %+v", got)
+	}
+}

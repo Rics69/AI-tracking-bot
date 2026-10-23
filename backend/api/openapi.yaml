@@ -26,6 +26,7 @@ security:
 tags:
   - name: me
   - name: operations
+  - name: budget
   - name: family
   - name: categories
 
@@ -234,9 +235,10 @@ paths:
       tags: [me]
       summary: Состояние Сейвика
       description: |
-        Состояние маскота считается кодом по деньгам пользователя за текущий месяц.
-        Пока нет целей и лимита, состояний два: `neutral` и `empty` (траты месяца
-        больше записанных доходов). Фразы и позы для состояний живут в mini app.
+        Состояние маскота считается кодом по деньгам пользователя: целям, дневному
+        лимиту и операциям текущего месяца. Без целей и лимита состояний два:
+        `neutral` и `empty` (траты месяца больше записанных доходов). Фразы и позы
+        для состояний живут в mini app.
       responses:
         '200':
           description: Состояние и цифры месяца, из которых оно получилось
@@ -245,6 +247,238 @@ paths:
               schema: { $ref: '#/components/schemas/Savik' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+
+  /budget:
+    get:
+      operationId: getBudget
+      tags: [budget]
+      summary: План и лимит на сегодня
+      description: |
+        Без плана (дней зарплаты) лимита нет: `plan` и `today` не приходят.
+        Лимит считается кодом от состояния на начало дня: доход периода минус
+        регулярные платежи, взнос в цели и траты до сегодня, поделённые на дни
+        до зарплаты. Перерасход сегодня уменьшает лимит следующих дней.
+      responses:
+        '200':
+          description: План и деньги текущего периода
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BudgetOverview' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /budget/plan:
+    put:
+      operationId: setPlan
+      tags: [budget]
+      summary: Задать дни зарплаты и ожидаемый доход
+      description: Заменяет план целиком.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlanInput' }
+      responses:
+        '200':
+          description: Сохранённый план
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Plan' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      operationId: deletePlan
+      tags: [budget]
+      summary: Выключить лимит
+      description: Цели и регулярные платежи остаются.
+      responses:
+        '204': { description: План удалён }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /goals:
+    get:
+      operationId: listGoals
+      tags: [budget]
+      summary: Цели пользователя
+      responses:
+        '200':
+          description: Цели, старые первыми
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GoalList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: createGoal
+      tags: [budget]
+      summary: Поставить цель
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GoalCreate' }
+      responses:
+        '201':
+          description: Новая цель
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Goal' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /goals/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    patch:
+      operationId: updateGoal
+      tags: [budget]
+      summary: Изменить цель
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GoalUpdate' }
+      responses:
+        '200':
+          description: Изменённая цель
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Goal' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: deleteGoal
+      tags: [budget]
+      summary: Удалить цель
+      description: Пополнения цели удаляются вместе с ней — деньги снова свободны.
+      responses:
+        '204': { description: Цель удалена }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /goals/{id}/deposits:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    post:
+      operationId: depositToGoal
+      tags: [budget]
+      summary: Отложить деньги на цель или забрать их
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DepositCreate' }
+      responses:
+        '200':
+          description: Цель после пополнения
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Goal' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /regular-payments:
+    get:
+      operationId: listRegularPayments
+      tags: [budget]
+      summary: Регулярные платежи
+      responses:
+        '200':
+          description: Платежи по дню месяца
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RegularPaymentList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: createRegularPayment
+      tags: [budget]
+      summary: Добавить регулярный платёж
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegularPaymentCreate' }
+      responses:
+        '201':
+          description: Новый платёж
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RegularPayment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /regular-payments/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    patch:
+      operationId: updateRegularPayment
+      tags: [budget]
+      summary: Изменить регулярный платёж
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegularPaymentUpdate' }
+      responses:
+        '200':
+          description: Изменённый платёж
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RegularPayment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: deleteRegularPayment
+      tags: [budget]
+      summary: Удалить регулярный платёж
+      description: Траты, которыми он был оплачен, остаются.
+      responses:
+        '204': { description: Платёж удалён }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /regular-payments/{id}/pay:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    post:
+      operationId: payRegularPayment
+      tags: [budget]
+      summary: Отметить платёж оплаченным
+      description: Записывает сегодняшнюю трату на сумму платежа, связанную с ним.
+      responses:
+        '201':
+          description: Записанная трата
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Operation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /family:
     get:
@@ -483,7 +717,7 @@ components:
           type: string
           example: Asia/Novosibirsk
           description: Выбранный часовой пояс; нет — пользователь не выбирал (mini app может подставить пояс устройства)
-        effective_timezone: { type: string, example: Europe/Moscow, description: Пояс, по которому считается «сегодня» }
+        effective_timezone: { type: string, example: Europe/Moscow, description: 'Пояс, по которому считается «сегодня»' }
         consented: { type: boolean, description: Принял политику обработки данных }
         created_at: { type: string, format: date-time }
 
@@ -506,6 +740,10 @@ components:
         category: { $ref: '#/components/schemas/Category' }
         date: { type: string, format: date, example: '2026-10-15' }
         comment: { type: string, example: кофе }
+        regular_payment_id:
+          type: integer
+          format: int64
+          description: Регулярный платёж, который оплачен этой тратой
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
@@ -598,9 +836,13 @@ components:
 
     SavikState:
       type: string
-      enum: [neutral, empty]
-      description: '`neutral` — всё спокойно или данных мало; `empty` — траты месяца больше записанных доходов (без доходов не определить)'
-      x-enum-varnames: [SavikNeutral, SavikEmpty]
+      enum: [neutral, full, empty, hungry, fed]
+      description: |
+        Проверяются по порядку: `full` — цель достигнута за последние 7 дней;
+        `empty` — до зарплаты ничего не осталось (без плана — траты месяца больше
+        записанных доходов); `hungry` — сегодня потрачено больше лимита; `fed` —
+        какая-то цель накоплена на 80%; `neutral` — всё остальное.
+      x-enum-varnames: [SavikNeutral, SavikFull, SavikEmpty, SavikHungry, SavikFed]
 
     Savik:
       type: object
@@ -619,6 +861,169 @@ components:
         expense: { $ref: '#/components/schemas/Money' }
         income: { $ref: '#/components/schemas/Money' }
         balance: { $ref: '#/components/schemas/Money' }
+
+    Plan:
+      type: object
+      required: [paydays, reminder_hour, reminders, updated_at]
+      properties:
+        paydays:
+          type: array
+          description: Один или два дня месяца по возрастанию; 31 в коротком месяце — последний день
+          items: { type: integer, minimum: 1, maximum: 31 }
+          example: [5, 20]
+        expected_income: { $ref: '#/components/schemas/Money' }
+        goal_contribution: { $ref: '#/components/schemas/Money' }
+        reminder_hour: { type: integer, minimum: 0, maximum: 23, description: Час ежедневного напоминания по поясу пользователя }
+        reminders: { type: boolean, description: Присылать ежедневное напоминание о лимите }
+        updated_at: { type: string, format: date-time }
+
+    PlanInput:
+      type: object
+      required: [paydays]
+      properties:
+        paydays:
+          type: array
+          items: { type: integer, minimum: 1, maximum: 31 }
+          minItems: 1
+          maxItems: 2
+        expected_income:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: Доход за период; без него считаются только записанные доходы
+        goal_contribution:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: Сколько откладывать на цели за период
+        reminder_hour: { type: integer, minimum: 0, maximum: 23, default: 9 }
+        reminders: { type: boolean, default: true }
+
+    BudgetOverview:
+      type: object
+      properties:
+        plan: { $ref: '#/components/schemas/Plan' }
+        today: { $ref: '#/components/schemas/BudgetToday' }
+
+    BudgetToday:
+      type: object
+      required: [ready, period_start, next_payday, days_left, income, income_expected, payments, savings,
+                 spent, spent_today, available, remaining, limit, left, upcoming]
+      properties:
+        ready: { type: boolean, description: Нет записанного или ожидаемого дохода — лимит не посчитать }
+        period_start: { type: string, format: date, description: Последний день зарплаты }
+        next_payday: { type: string, format: date }
+        days_left: { type: integer, description: 'Дней до зарплаты, включая сегодня' }
+        income: { $ref: '#/components/schemas/Money' }
+        income_expected: { type: boolean, description: 'Доход взят из плана: записано меньше' }
+        payments: { $ref: '#/components/schemas/Money' }
+        savings: { $ref: '#/components/schemas/Money' }
+        spent: { $ref: '#/components/schemas/Money' }
+        spent_today: { $ref: '#/components/schemas/Money' }
+        available: { $ref: '#/components/schemas/Money' }
+        remaining: { $ref: '#/components/schemas/Money' }
+        limit: { $ref: '#/components/schemas/Money' }
+        left: { $ref: '#/components/schemas/Money' }
+        upcoming:
+          type: array
+          description: Неоплаченные регулярные платежи до зарплаты
+          items: { $ref: '#/components/schemas/UpcomingPayment' }
+
+    UpcomingPayment:
+      type: object
+      required: [id, title, amount, date]
+      properties:
+        id: { type: integer, format: int64 }
+        title: { type: string, example: Аренда }
+        amount: { $ref: '#/components/schemas/Money' }
+        date: { type: string, format: date }
+
+    Goal:
+      type: object
+      required: [id, title, target, saved, left, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        title: { type: string, example: Отпуск }
+        target: { $ref: '#/components/schemas/Money' }
+        saved: { $ref: '#/components/schemas/Money' }
+        left: { $ref: '#/components/schemas/Money' }
+        deadline: { type: string, format: date }
+        achieved_on: { type: string, format: date, description: Когда накоплена вся сумма }
+        created_at: { type: string, format: date-time }
+
+    GoalList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Goal' }
+
+    GoalCreate:
+      type: object
+      required: [title, target]
+      properties:
+        title: { type: string, maxLength: 100 }
+        target: { $ref: '#/components/schemas/Money' }
+        deadline: { type: string, format: date }
+
+    GoalUpdate:
+      type: object
+      description: Передаются только изменяемые поля.
+      properties:
+        title: { type: string, maxLength: 100 }
+        target: { $ref: '#/components/schemas/Money' }
+        deadline: { type: string, format: date }
+        clear_deadline: { type: boolean, description: '`true` — убрать срок' }
+
+    DepositCreate:
+      type: object
+      required: [amount]
+      properties:
+        amount:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: Сколько отложить; отрицательная сумма забирает деньги из цели
+        date: { type: string, format: date, description: По умолчанию — сегодня }
+
+    RegularPayment:
+      type: object
+      required: [id, title, amount, day, category, due_date, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        title: { type: string, example: Аренда }
+        amount: { $ref: '#/components/schemas/Money' }
+        day: { type: integer, minimum: 1, maximum: 31 }
+        category: { $ref: '#/components/schemas/Category' }
+        due_date:
+          type: string
+          format: date
+          description: Ближайшая дата оплаты; в прошлом — платёж просрочен
+        last_paid_on: { type: string, format: date }
+        created_at: { type: string, format: date-time }
+
+    RegularPaymentList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/RegularPayment' }
+
+    RegularPaymentCreate:
+      type: object
+      required: [title, amount, day]
+      properties:
+        title: { type: string, maxLength: 100 }
+        amount: { $ref: '#/components/schemas/Money' }
+        day: { type: integer, minimum: 1, maximum: 31 }
+        category:
+          allOf: [{ $ref: '#/components/schemas/Category' }]
+          description: Категория трат; по умолчанию other
+
+    RegularPaymentUpdate:
+      type: object
+      description: Передаются только изменяемые поля.
+      properties:
+        title: { type: string, maxLength: 100 }
+        amount: { $ref: '#/components/schemas/Money' }
+        day: { type: integer, minimum: 1, maximum: 31 }
+        category: { $ref: '#/components/schemas/Category' }
 
     Member:
       type: object
@@ -654,7 +1059,7 @@ components:
       type: object
       required: [telegram_id]
       properties:
-        telegram_id: { type: integer, format: int64, description: Участник, который станет главой }
+        telegram_id: { type: integer, format: int64, description: 'Участник, который станет главой' }
 
     InviteStatus:
       type: string

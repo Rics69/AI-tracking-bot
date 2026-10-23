@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/agent"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/llm"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/memory"
@@ -70,16 +71,30 @@ func (rn runner) run(ctx context.Context, c Case) Result {
 	res := Result{Case: c}
 	repo := memory.NewOperationRepository()
 	svc := ledger.NewService(repo, rn.loc)
+	store := memory.NewBudget(repo)
+	budgets := budget.NewService(store, svc)
 	today := svc.Today()
 
+	// Limit settings first: seeded expenses may pay a regular payment.
+	paymentIDs, err := seedBudget(ctx, budgets, c, today)
+	if err != nil {
+		res.Failures = append(res.Failures, "bad seed: "+err.Error())
+		return res
+	}
 	seed := func(owner int64, spec OperationSpec) error {
 		r, err := spec.resolve(today)
 		if err != nil {
 			return err
 		}
-		_, err = svc.Create(ctx, ledger.CreateInput{
-			UserID: owner, Amount: r.Amount, Category: r.Category, Date: &r.Date, Comment: r.Comment,
-		})
+		in := ledger.CreateInput{UserID: owner, Amount: r.Amount, Category: r.Category, Date: &r.Date, Comment: r.Comment}
+		if r.Payment != "" {
+			id, ok := paymentIDs[r.Payment]
+			if !ok {
+				return fmt.Errorf("no seeded regular payment %q", r.Payment)
+			}
+			in.RegularPaymentID = &id
+		}
+		_, err = svc.Create(ctx, in)
 		return err
 	}
 	for _, s := range c.Seed {
@@ -95,7 +110,9 @@ func (rn runner) run(ctx context.Context, c Case) Result {
 	before := repo.All()
 
 	rec := &recorder{Client: rn.client}
-	a := agent.New(rec, svc, svc, agent.NewHistory(10, time.Hour), rn.cfg, rn.log)
+	cfg := rn.cfg
+	cfg.Budget = budgets
+	a := agent.New(rec, svc, svc, agent.NewHistory(10, time.Hour), cfg, rn.log)
 	start := time.Now()
 	for _, turn := range c.Turns {
 		reply, err := a.Reply(ctx, agent.Caller{UserID: userID, Name: "Анна"}, turn)
@@ -108,12 +125,17 @@ func (rn runner) run(ctx context.Context, c Case) Result {
 	res.Duration = time.Since(start)
 	res.Tools, res.Usage = rec.tools, rec.usage
 
-	res.Failures = append(res.Failures, check(c, today, before, repo.All(), res)...)
+	titles := map[int64]string{}
+	for _, p := range store.AllPayments() {
+		titles[p.ID] = p.Title
+	}
+	res.Failures = append(res.Failures, check(c, today, before, repo.All(), titles, res)...)
+	res.Failures = append(res.Failures, checkBudget(ctx, c, today, budgets, store, res)...)
 	return res
 }
 
 // check compares the outcome with the expectations of the case.
-func check(c Case, today time.Time, before, after []ledger.Operation, res Result) []string {
+func check(c Case, today time.Time, before, after []ledger.Operation, titles map[int64]string, res Result) []string {
 	var fails []string
 	e := c.Expect
 
@@ -131,10 +153,10 @@ func check(c Case, today time.Time, before, after []ledger.Operation, res Result
 
 	mine := owned(after, userID)
 	if e.Unchanged && !slices.EqualFunc(owned(before, userID), mine, sameOperation) {
-		fails = append(fails, "expected no changes, got: "+describe(mine))
+		fails = append(fails, "expected no changes, got: "+describe(mine, titles))
 	}
 	if e.Operations != nil {
-		if msg := matchOperations(*e.Operations, mine, today); msg != "" {
+		if msg := matchOperations(*e.Operations, mine, today, titles); msg != "" {
 			fails = append(fails, msg)
 		}
 	}
@@ -160,7 +182,8 @@ func check(c Case, today time.Time, before, after []ledger.Operation, res Result
 }
 
 // matchOperations pairs every expected operation with a distinct actual one.
-func matchOperations(want []OperationSpec, got []ledger.Operation, today time.Time) string {
+// titles names the regular payments by ID, for the payment links.
+func matchOperations(want []OperationSpec, got []ledger.Operation, today time.Time, titles map[int64]string) string {
 	remaining := slices.Clone(got)
 	var missing []string
 	for _, spec := range want {
@@ -171,7 +194,8 @@ func matchOperations(want []OperationSpec, got []ledger.Operation, today time.Ti
 		i := slices.IndexFunc(remaining, func(e ledger.Operation) bool {
 			return e.Amount.Equal(w.Amount) && (w.Category == "" || e.Category == w.Category) && e.Kind() == w.Kind &&
 				e.Date.Equal(w.Date) &&
-				strings.Contains(strings.ToLower(e.Comment), strings.ToLower(w.Comment))
+				strings.Contains(strings.ToLower(e.Comment), strings.ToLower(w.Comment)) &&
+				samePayment(paymentTitle(e, titles), w.Payment)
 		})
 		if i < 0 {
 			missing = append(missing, w.String())
@@ -182,7 +206,7 @@ func matchOperations(want []OperationSpec, got []ledger.Operation, today time.Ti
 	if len(missing) == 0 && len(remaining) == 0 {
 		return ""
 	}
-	return fmt.Sprintf("operations: missing [%s]; actual: %s", strings.Join(missing, "; "), describe(got))
+	return fmt.Sprintf("operations: missing [%s]; actual: %s", strings.Join(missing, "; "), describe(got, titles))
 }
 
 func owned(all []ledger.Operation, user int64) []ledger.Operation {
@@ -200,15 +224,32 @@ func sameOperation(a, b ledger.Operation) bool {
 		a.Date.Equal(b.Date) && a.Comment == b.Comment
 }
 
-func describe(es []ledger.Operation) string {
+func describe(es []ledger.Operation, titles map[int64]string) string {
 	if len(es) == 0 {
 		return "none"
 	}
 	parts := make([]string, len(es))
 	for i, e := range es {
-		parts[i] = resolved{Amount: e.Amount, Category: e.Category, Date: e.Date, Comment: e.Comment}.String()
+		parts[i] = resolved{Amount: e.Amount, Category: e.Category, Date: e.Date, Comment: e.Comment,
+			Payment: paymentTitle(e, titles)}.String()
 	}
 	return strings.Join(parts, "; ")
+}
+
+// samePayment: no link expected and none made, or the linked title contains the expected one.
+func samePayment(got, want string) bool {
+	if want == "" || got == "" {
+		return want == got
+	}
+	return strings.Contains(strings.ToLower(got), strings.ToLower(want))
+}
+
+// paymentTitle is the title of the regular payment the expense pays, or "".
+func paymentTitle(e ledger.Operation, titles map[int64]string) string {
+	if e.RegularPaymentID == nil {
+		return ""
+	}
+	return titles[*e.RegularPaymentID]
 }
 
 // containsNorm is a case- and whitespace-insensitive substring check, so that

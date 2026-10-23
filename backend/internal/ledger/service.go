@@ -68,11 +68,12 @@ func (s *Service) today(t time.Time) time.Time {
 // Create validates and stores a new operation.
 func (s *Service) Create(ctx context.Context, in CreateInput) (Operation, error) {
 	e := Operation{
-		UserID:   in.UserID,
-		Amount:   in.Amount,
-		Category: in.Category,
-		Comment:  in.Comment,
-		Date:     s.today(in.Today),
+		UserID:           in.UserID,
+		Amount:           in.Amount,
+		Category:         in.Category,
+		Comment:          in.Comment,
+		Date:             s.today(in.Today),
+		RegularPaymentID: in.RegularPaymentID,
 	}
 	if in.Date != nil {
 		e.Date = dateOf(*in.Date)
@@ -98,14 +99,18 @@ func (s *Service) Update(ctx context.Context, sc Scope, id int64, p Patch) (Oper
 	if err != nil {
 		return Operation{}, err
 	}
-	if p.UserID != nil {
+	if p.UserID != nil && *p.UserID != e.UserID {
 		e.UserID = *p.UserID
+		e.RegularPaymentID = nil // the new owner has regular payments of their own
 	}
 	if p.Amount != nil {
 		e.Amount = *p.Amount
 	}
 	if p.Category != nil {
 		e.Category = *p.Category
+		if e.Kind() != KindExpense {
+			e.RegularPaymentID = nil // an income pays nothing
+		}
 	}
 	if p.Date != nil {
 		e.Date = dateOf(*p.Date)
@@ -157,6 +162,9 @@ func (s *Service) normalize(e *Operation, today time.Time) error {
 	}
 	if !e.Category.Valid() {
 		return invalid("category", "unknown category %q", e.Category)
+	}
+	if e.RegularPaymentID != nil && e.Kind() != KindExpense {
+		return invalid("regular_payment_id", "only an expense can pay a regular payment")
 	}
 	if e.Date.Before(minDate) {
 		return invalid("date", "must not be earlier than %s", minDate.Format(time.DateOnly))

@@ -3,15 +3,18 @@
 import { useQueryClient } from "@tanstack/react-query";
 import {
   type LucideIcon,
+  ChevronRightIcon,
   CrownIcon,
   LogOutIcon,
   SendIcon,
   SettingsIcon,
   ShieldIcon,
+  TargetIcon,
   UserMinusIcon,
   UsersIcon,
   XIcon,
 } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -27,7 +30,7 @@ import {
   useTransferHead,
   useUpdateMe,
 } from "@/api/queries";
-import { Card, PageHeader, Pill, PillButton } from "@/components/kit";
+import { Card, IconCircle, PageHeader, Pill, PillButton } from "@/components/kit";
 import { confirm } from "@/components/operations/operation-sheet";
 import { Sheet } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -55,11 +58,28 @@ export function ProfileScreen() {
           </span>
         </div>
       </Card>
+      <PlanLink />
       <FamilySection me={u} />
       <SettingsSection me={u} />
       <PrivacySection />
       <DeleteAccount me={u} />
     </>
+  );
+}
+
+/** The way to the limit, goals and regular payments. */
+function PlanLink() {
+  return (
+    <Link href="/plan" className="block">
+      <Card className="flex items-center gap-3 p-4 transition-transform active:scale-[0.99]">
+        <IconCircle icon={TargetIcon} />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="text-[17px] font-medium">Цели и лимит</span>
+          <span className="text-[13px] text-muted-foreground">День зарплаты, регулярные платежи, цели</span>
+        </span>
+        <ChevronRightIcon className="size-5 text-muted-foreground" strokeWidth={1.75} />
+      </Card>
+    </Link>
   );
 }
 

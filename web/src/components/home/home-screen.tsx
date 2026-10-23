@@ -12,7 +12,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import type { SavikState } from "@/api/client";
 import { useMe, useRecentOperations, useSavik, useSummary } from "@/api/queries";
+import { GoalsPanel } from "@/components/budget/goals";
+import { LimitCard } from "@/components/budget/limit-card";
 import { Card, Panel, Pill, StatCard } from "@/components/kit";
 import { CategoryColors, Distribution } from "@/components/money/distribution";
 import { OperationList } from "@/components/operations/operation-list";
@@ -59,6 +62,8 @@ export function HomeScreen() {
         <SavikSays mood={mood} income={m?.income.sum} expense={m?.expense.sum} />
       </Card>
 
+      <LimitCard />
+
       <div className="grid grid-cols-2 gap-3">
         <StatCard
           tone="hero"
@@ -91,6 +96,8 @@ export function HomeScreen() {
           }
         />
       </div>
+
+      <GoalsPanel />
 
       <Panel icon={ChartPieIcon} title="Куда уходят деньги" action={<Pill>{formatMonth()}</Pill>}>
         <Distribution items={m?.expense.categories} total={m?.expense.sum} />
@@ -186,7 +193,7 @@ function EmptyRecent() {
 }
 
 /** The month's mood, with a short burst of joy after each saved operation. */
-function useMood(state: "neutral" | "empty" | undefined): Mood {
+function useMood(state: SavikState | undefined): Mood {
   const { saves } = useOperationSheet();
   // Saves up to this count have been celebrated already.
   const [celebrated, setCelebrated] = useState(saves);

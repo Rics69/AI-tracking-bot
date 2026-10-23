@@ -338,7 +338,7 @@ func TestBlockedAndFailedLLM(t *testing.T) {
 }
 
 func TestSystemPromptCalendar(t *testing.T) {
-	p := systemPrompt(today, time.UTC, "Анна")
+	p := systemPrompt(today, time.UTC, "Анна", nil)
 	for _, want := range []string{
 		"сегодня: 2026-10-16, пятница",
 		"последние 7 дней: пт 2026-10-16 (сегодня), чт 2026-10-15 (вчера), ср 2026-10-14, вт 2026-10-13, пн 2026-10-12, вс 2026-10-11, сб 2026-10-10",
@@ -351,7 +351,7 @@ func TestSystemPromptCalendar(t *testing.T) {
 		}
 	}
 	// Sunday belongs to the week that started on Monday.
-	if p := systemPrompt(time.Date(2026, 10, 18, 0, 0, 0, 0, time.UTC), time.UTC, ""); !strings.Contains(p, "эта неделя: 2026-10-12 — 2026-10-18") {
+	if p := systemPrompt(time.Date(2026, 10, 18, 0, 0, 0, 0, time.UTC), time.UTC, "", nil); !strings.Contains(p, "эта неделя: 2026-10-12 — 2026-10-18") {
 		t.Error("Sunday is not in the current week")
 	}
 }

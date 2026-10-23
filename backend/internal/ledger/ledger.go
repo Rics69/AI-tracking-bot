@@ -92,14 +92,17 @@ func (c Category) Kind() Kind {
 
 // Operation is a single record of money spent or received by a user.
 type Operation struct {
-	ID        int64
-	UserID    int64 // Telegram ID of the owner
-	Amount    decimal.Decimal
-	Category  Category
-	Date      time.Time // calendar date, midnight UTC
-	Comment   string    // empty means no comment
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID       int64
+	UserID   int64 // Telegram ID of the owner
+	Amount   decimal.Decimal
+	Category Category
+	Date     time.Time // calendar date, midnight UTC
+	Comment  string    // empty means no comment
+	// RegularPaymentID links an expense to the regular payment it pays (rent,
+	// phone), so the daily limit does not count the money twice; nil: none.
+	RegularPaymentID *int64
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 // Kind is the kind of the operation, decided by its category.
@@ -113,6 +116,8 @@ type CreateInput struct {
 	Category Category
 	Date     *time.Time // nil means Today
 	Comment  string
+	// RegularPaymentID pays one of the owner's regular payments; expenses only.
+	RegularPaymentID *int64
 	// Today is the current date of whoever records the operation, in their
 	// timezone: later dates are rejected. Zero means today in the service timezone.
 	Today time.Time

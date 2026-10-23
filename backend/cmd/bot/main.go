@@ -14,6 +14,7 @@ import (
 	"github.com/go-telegram/bot"
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/agent"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/config"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
@@ -70,8 +71,9 @@ func run() error {
 	})
 	meter := usage.NewMeter(postgres.NewUsageRepository(pool),
 		usage.Limits{Messages: cfg.UserDailyMessages, Tokens: cfg.UserDailyTokens}, cfg.AdminID, log)
+	budgets := budget.NewService(postgres.NewBudgetRepository(pool), expenses)
 	assistant := agent.New(client, expenses, expenses, history,
-		agent.Config{Location: cfg.Location, MaxSteps: cfg.MaxSteps, Usage: meter},
+		agent.Config{Location: cfg.Location, MaxSteps: cfg.MaxSteps, Usage: meter, Budget: budgets},
 		log.With("component", "agent"))
 	users := postgres.NewUserRepository(pool)
 	members := family.NewService(users, postgres.NewInviteRepository(pool), postgres.NewSettingsRepository(pool))
@@ -114,17 +116,26 @@ func run() error {
 		log.Info("MINI_APP_URL is not set: no mini app button in the bot")
 	}
 
-	// Monday reports go to private chats, whose ID equals the user's Telegram ID.
-	weekly := report.NewWeekly(expenses, users, postgres.NewReportRunRepository(pool),
+	// Reports and reminders go to private chats, whose ID equals the user's Telegram ID.
+	undeliverable := func(err error) error {
+		if errors.Is(err, telegram.ErrUndeliverable) {
+			return fmt.Errorf("%w: %w", report.ErrUndeliverable, err)
+		}
+		return err
+	}
+	runs := postgres.NewNotificationRunRepository(pool)
+	weekly := report.NewWeekly(expenses, users, runs,
 		func(ctx context.Context, chatID int64, text string) error {
-			err := handler.Send(ctx, b, chatID, text)
-			if errors.Is(err, telegram.ErrUndeliverable) {
-				return fmt.Errorf("%w: %w", report.ErrUndeliverable, err)
-			}
-			return err
+			return undeliverable(handler.Send(ctx, b, chatID, text))
 		},
 		cfg.Location, log.With("component", "report"))
 	go weekly.Run(ctx)
+	daily := report.NewDaily(budgets, users, runs,
+		func(ctx context.Context, chatID int64, text string) error {
+			return undeliverable(handler.SendWithApp(ctx, b, chatID, text))
+		},
+		botTexts, cfg.Location, log.With("component", "reminder"))
+	go daily.Run(ctx)
 
 	if cfg.AdminID == 0 {
 		log.Warn("ADMIN_TELEGRAM_ID is not set: feedback is only logged")

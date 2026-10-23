@@ -271,6 +271,18 @@ func (h *Handler) Send(ctx context.Context, s Sender, chatID int64, text string)
 	return h.sendMessage(ctx, s, &bot.SendMessageParams{ChatID: chatID, Text: text})
 }
 
+// SendWithApp delivers a message the bot starts itself with a button that
+// opens the mini app (when it is deployed), retrying like Send.
+func (h *Handler) SendWithApp(ctx context.Context, s Sender, chatID int64, text string) error {
+	params := &bot.SendMessageParams{ChatID: chatID, Text: text}
+	if h.cfg.MiniAppURL != "" {
+		params.ReplyMarkup = &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{
+			{Text: h.t.AppButton, WebApp: &models.WebAppInfo{URL: h.cfg.MiniAppURL}},
+		}}}
+	}
+	return h.sendMessage(ctx, s, params)
+}
+
 func (h *Handler) sendMessage(ctx context.Context, s Sender, params *bot.SendMessageParams) error {
 	if r := []rune(params.Text); len(r) > maxMessageRunes {
 		params.Text = string(r[:maxMessageRunes-1]) + "…"

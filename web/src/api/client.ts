@@ -22,6 +22,14 @@ export type Invite = components["schemas"]["Invite"];
 export type Bucket = components["schemas"]["Bucket"];
 export type TimePoint = components["schemas"]["TimePoint"];
 export type SavikState = components["schemas"]["SavikState"];
+export type Plan = components["schemas"]["Plan"];
+export type PlanInput = components["schemas"]["PlanInput"];
+export type BudgetToday = components["schemas"]["BudgetToday"];
+export type Goal = components["schemas"]["Goal"];
+export type GoalCreate = components["schemas"]["GoalCreate"];
+export type GoalUpdate = components["schemas"]["GoalUpdate"];
+export type RegularPayment = components["schemas"]["RegularPayment"];
+export type RegularPaymentCreate = components["schemas"]["RegularPaymentCreate"];
 export type ApiErrorBody = components["schemas"]["Error"];
 
 // Requests go to the same origin; Next.js proxies /api/* to the Go API

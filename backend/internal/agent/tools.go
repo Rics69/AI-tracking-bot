@@ -11,6 +11,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/llm"
 )
@@ -69,7 +70,8 @@ func toolDefs(today time.Time) []llm.Tool {
     "amount": {"type": "number", "description": "Сумма в рублях, больше нуля. «5к» = 5000"},
     "category": ` + expenseCategorySchema + `,
     "date": {"type": "string", "description": "Дата траты YYYY-MM-DD. Если пользователь не назвал день — сегодняшняя дата. «Вчера», «в понедельник», «3 числа» — возьми из календаря в инструкциях"},
-    "comment": {"type": "string", "description": "На что потрачено, коротко, как сказал пользователь: «кофе», «такси до работы»"}
+    "comment": {"type": "string", "description": "На что потрачено, коротко, как сказал пользователь: «кофе», «такси до работы»"},
+    "regular_payment_id": {"type": "integer", "description": "id регулярного платежа из списка в инструкциях, если эта трата его оплачивает («заплатил аренду»); иначе не указывай"}
   },
   "required": ["amount", "category", "comment", "date"]
 }`),
@@ -80,6 +82,7 @@ func toolDefs(today time.Time) []llm.Tool {
 				{Request: "продукты 2.5к в субботу", Params: map[string]any{"amount": 2500, "category": "food", "comment": "продукты", "date": d(lastSaturday)}},
 				{Request: "обед 450 3 числа", Params: map[string]any{"amount": 450, "category": "food", "comment": "обед", "date": d(time.Date(today.Year(), today.Month(), 3, 0, 0, 0, 0, time.UTC))}},
 				{Request: "перевёл маме 2000", Params: map[string]any{"amount": 2000, "category": "other", "comment": "перевёл маме", "date": d(today)}},
+				{Request: "заплатил аренду 45000 (регулярный платёж «Аренда», id 3)", Params: map[string]any{"amount": 45000, "category": "housing", "comment": "аренда", "date": d(today), "regular_payment_id": 3}},
 			},
 		},
 		{
@@ -232,6 +235,8 @@ func (a *Agent) runTool(ctx context.Context, t turn, call *llm.ToolCall) (string
 		result, err = a.update(ctx, t, call.Arguments)
 	case toolDelete:
 		result, err = a.delete(ctx, t, call.Arguments)
+	case toolGetBudget, toolSetPayday, toolAddRegular, toolSetGoal, toolDepositToGoal:
+		result, err = a.runBudgetTool(ctx, t, call)
 	default:
 		err = badArgs("unknown function %q", call.Name)
 	}
@@ -253,6 +258,8 @@ func (a *Agent) runTool(ctx context.Context, t turn, call *llm.ToolCall) (string
 		result = map[string]string{"error": msg}
 	case errors.Is(err, ledger.ErrNotFound):
 		result = map[string]string{"error": "operation not found; call find_operations to get a valid id"}
+	case errors.Is(err, budget.ErrNotFound):
+		result = map[string]string{"error": "no such goal or regular payment; take the id from the lists in the instructions"}
 	default:
 		return "", err
 	}
@@ -264,10 +271,11 @@ func (a *Agent) runTool(ctx context.Context, t turn, call *llm.ToolCall) (string
 }
 
 type addArgs struct {
-	Amount   json.Number `json:"amount"`
-	Category string      `json:"category"`
-	Date     string      `json:"date"`
-	Comment  string      `json:"comment"`
+	Amount           json.Number `json:"amount"`
+	Category         string      `json:"category"`
+	Date             string      `json:"date"`
+	Comment          string      `json:"comment"`
+	RegularPaymentID json.Number `json:"regular_payment_id"`
 }
 
 // add records an expense or an income: the tool decides the kind, and a
@@ -297,13 +305,18 @@ func (a *Agent) add(ctx context.Context, t turn, kind ledger.Kind, raw json.RawM
 	if err != nil {
 		return nil, err
 	}
+	paymentID, err := a.checkRegularPayment(ctx, t, args.RegularPaymentID, kind)
+	if err != nil {
+		return nil, err
+	}
 	e, err := a.ledger.Create(ctx, ledger.CreateInput{
-		UserID:   t.userID,
-		Amount:   *amount,
-		Category: *category,
-		Date:     date,
-		Comment:  args.Comment,
-		Today:    t.today,
+		UserID:           t.userID,
+		Amount:           *amount,
+		Category:         *category,
+		Date:             date,
+		Comment:          args.Comment,
+		RegularPaymentID: paymentID,
+		Today:            t.today,
 	})
 	if err != nil {
 		return nil, err

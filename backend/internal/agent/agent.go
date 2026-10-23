@@ -45,6 +45,9 @@ type Config struct {
 	Location *time.Location // default timezone of users
 	MaxSteps int
 	Usage    UsageRecorder // optional
+	// Budget enables the daily limit, goals and regular payments; without it
+	// the agent only tracks expenses and incomes.
+	Budget Budget
 }
 
 // Agent is the expense assistant.
@@ -56,6 +59,7 @@ type Agent struct {
 	loc      *time.Location
 	maxSteps int
 	usage    UsageRecorder
+	budget   Budget
 	log      *slog.Logger
 }
 
@@ -66,7 +70,7 @@ func New(client llm.Client, ledger Ledger, clock Clock, history HistoryStore, cf
 	}
 	return &Agent{
 		llm: client, ledger: ledger, clock: clock, history: history,
-		loc: cfg.Location, maxSteps: cfg.MaxSteps, usage: cfg.Usage, log: log,
+		loc: cfg.Location, maxSteps: cfg.MaxSteps, usage: cfg.Usage, budget: cfg.Budget, log: log,
 	}
 }
 
@@ -89,7 +93,11 @@ func (a *Agent) Reply(ctx context.Context, caller Caller, text string) (string, 
 	today := a.clock.TodayIn(loc)
 	t := turn{userID: caller.UserID, today: today}
 	tools := toolDefs(today)
-	messages := []llm.Message{{Role: llm.RoleSystem, Content: systemPrompt(today, loc, caller.Name)}}
+	if a.budget != nil {
+		tools = append(tools, budgetToolDefs(today)...)
+	}
+	mc := a.loadMoneyContext(ctx, caller.UserID)
+	messages := []llm.Message{{Role: llm.RoleSystem, Content: systemPrompt(today, loc, caller.Name, mc)}}
 	// Without history the agent still works, only follow-ups lose context:
 	// a storage hiccup must not cost the user their reply.
 	history, err := a.history.Messages(ctx, caller.UserID)

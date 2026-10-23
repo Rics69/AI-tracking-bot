@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/initdata"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
@@ -37,6 +38,7 @@ type env struct {
 	family  *family.Service
 	auth    *Auth
 	ledgerS *ledger.Service
+	budgetS *budget.Service
 }
 
 func newEnv(t *testing.T) *env {
@@ -49,9 +51,10 @@ func newEnv(t *testing.T) *env {
 	fam := family.NewService(users, users, settings)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	e := &env{users: users, ops: ops, family: fam, ledgerS: ledger.NewService(ops, time.UTC)}
+	e.budgetS = budget.NewService(memory.NewBudget(ops), e.ledgerS)
 	e.auth = &Auth{BotToken: botToken, Users: fam, Log: log}
 	e.h = NewHandler(Deps{
-		Ledger: e.ledgerS, Family: fam, Auth: e.auth, Location: time.UTC,
+		Ledger: e.ledgerS, Family: fam, Budget: e.budgetS, Auth: e.auth, Location: time.UTC,
 		Health: func(context.Context) error { return nil }, Log: log,
 	})
 	return e
@@ -403,7 +406,7 @@ func TestErrors(t *testing.T) {
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	h := NewHandler(Deps{
-		Ledger: failingLedger{e.ledgerS}, Family: e.family, Auth: e.auth, Location: time.UTC,
+		Ledger: failingLedger{e.ledgerS}, Family: e.family, Budget: e.budgetS, Auth: e.auth, Location: time.UTC,
 		Health: func(context.Context) error { return errors.New("db down") }, Log: log,
 	})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/operations", nil)
@@ -417,5 +420,112 @@ func TestErrors(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	if rec.Code != 503 {
 		t.Errorf("unhealthy: %d", rec.Code)
+	}
+}
+
+func TestBudgetEndpoints(t *testing.T) {
+	e := newEnv(t)
+	e.onboard(t, anna, boris)
+	now := time.Now().UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	_, payday := budget.Period(today, []int{today.Day()})
+	days := budget.DaysLeft(today, payday)
+
+	if status, body := e.do(t, vera, http.MethodGet, "/api/v1/budget", ""); status != 403 || errorCode(body) != "consent_required" {
+		t.Errorf("budget before consent: %d %v", status, body)
+	}
+	if b := e.ok(t, anna, 200, http.MethodGet, "/api/v1/budget", ""); len(b) != 0 {
+		t.Errorf("budget without a plan = %v, want no plan and no limit", b)
+	}
+
+	// Payday today: the period starts today.
+	plan := e.ok(t, anna, 200, http.MethodPut, "/api/v1/budget/plan", fmt.Sprintf(`{"paydays":[%d]}`, today.Day()))
+	if plan["reminders"] != true || plan["reminder_hour"] != float64(9) {
+		t.Errorf("plan defaults = %v", plan)
+	}
+	if b := e.ok(t, anna, 200, http.MethodGet, "/api/v1/budget", "")["today"].(map[string]any); b["ready"] != false {
+		t.Errorf("no income yet, the limit must be unknown: %v", b)
+	}
+
+	e.ok(t, anna, 201, http.MethodPost, "/api/v1/operations", `{"amount":60000,"category":"salary"}`)
+	rent := e.ok(t, anna, 201, http.MethodPost, "/api/v1/regular-payments",
+		fmt.Sprintf(`{"title":"Аренда","amount":20000,"day":%d,"category":"housing"}`, today.Day()))
+	if rent["due_date"] != today.Format(time.DateOnly) {
+		t.Errorf("rent due = %v, want today", rent["due_date"])
+	}
+	goal := e.ok(t, anna, 201, http.MethodPost, "/api/v1/goals", `{"title":"Отпуск","target":10000}`)
+	goalPath := fmt.Sprintf("/api/v1/goals/%v", goal["id"])
+	if g := e.ok(t, anna, 200, http.MethodPost, goalPath+"/deposits", `{"amount":8000}`); g["saved"] != float64(8000) || g["left"] != float64(2000) {
+		t.Errorf("after a deposit = %v", g)
+	}
+
+	b := e.ok(t, anna, 200, http.MethodGet, "/api/v1/budget", "")["today"].(map[string]any)
+	limit := float64(32000 / days) // 60000 − rent 20000 − saved 8000, whole rubles
+	if b["ready"] != true || b["income"] != float64(60000) || b["payments"] != float64(20000) || b["savings"] != float64(8000) ||
+		b["available"] != float64(32000) || b["limit"] != limit || b["days_left"] != float64(days) || len(b["upcoming"].([]any)) != 1 {
+		t.Errorf("budget = %v, want limit %v over %d days", b, limit, days)
+	}
+	if s := e.ok(t, anna, 200, http.MethodGet, "/api/v1/savik", ""); s["state"] != "fed" {
+		t.Errorf("80%% saved: savik = %v", s)
+	}
+
+	rentPath := fmt.Sprintf("/api/v1/regular-payments/%v", rent["id"])
+	paid := e.ok(t, anna, 201, http.MethodPost, rentPath+"/pay", "")
+	if paid["regular_payment_id"] != rent["id"] || paid["amount"] != float64(20000) || paid["category"] != "housing" || paid["comment"] != "Аренда" {
+		t.Errorf("payment expense = %v", paid)
+	}
+	b = e.ok(t, anna, 200, http.MethodGet, "/api/v1/budget", "")["today"].(map[string]any)
+	if b["payments"] != float64(20000) || b["spent_today"] != float64(0) || len(b["upcoming"].([]any)) != 0 {
+		t.Errorf("a paid regular payment must be counted once: %v", b)
+	}
+	list := e.ok(t, anna, 200, http.MethodGet, "/api/v1/regular-payments", "")["items"].([]any)
+	if p := list[0].(map[string]any); p["last_paid_on"] != today.Format(time.DateOnly) || p["due_date"] == today.Format(time.DateOnly) {
+		t.Errorf("paid rent = %v, want the next due date", p)
+	}
+
+	e.ok(t, anna, 200, http.MethodPost, goalPath+"/deposits", `{"amount":2000}`)
+	if s := e.ok(t, anna, 200, http.MethodGet, "/api/v1/savik", ""); s["state"] != "full" {
+		t.Errorf("goal reached: savik = %v", s)
+	}
+	if status, body := e.do(t, anna, http.MethodPost, goalPath+"/deposits", `{"amount":-20000}`); status != 400 || errorCode(body) != "validation_error" {
+		t.Errorf("taking back more than saved: %d %v", status, body)
+	}
+
+	// Everything here is personal: Boris sees and touches none of it.
+	if goals := e.ok(t, boris, 200, http.MethodGet, "/api/v1/goals", "")["items"].([]any); len(goals) != 0 {
+		t.Errorf("Boris sees goals %v", goals)
+	}
+	for _, req := range [][2]string{
+		{http.MethodPost, goalPath + "/deposits"}, {http.MethodDelete, goalPath},
+		{http.MethodPost, rentPath + "/pay"}, {http.MethodPatch, rentPath},
+	} {
+		body := `{"amount":1}`
+		if status, out := e.do(t, boris, req[0], req[1], body); status != 404 {
+			t.Errorf("Boris %s %s: %d %v", req[0], req[1], status, out)
+		}
+	}
+
+	for _, tt := range []struct{ method, path, body, field string }{
+		{http.MethodPut, "/api/v1/budget/plan", `{"paydays":[]}`, "paydays"},
+		{http.MethodPut, "/api/v1/budget/plan", `{"paydays":[5],"reminder_hour":25}`, "reminder_hour"},
+		{http.MethodPost, "/api/v1/regular-payments", `{"title":"Зарплата","amount":1,"day":5,"category":"salary"}`, "category"},
+		{http.MethodPost, "/api/v1/goals", `{"title":" ","target":100}`, "title"},
+		{http.MethodPost, "/api/v1/goals", `{"title":"Вчера","target":100,"deadline":"2000-01-01"}`, "deadline"},
+	} {
+		status, body := e.do(t, anna, tt.method, tt.path, tt.body)
+		field, _ := body["error"].(map[string]any)["field"].(string)
+		if status != 400 || field != tt.field {
+			t.Errorf("%s %s: %d %v, want 400 on %s", tt.method, tt.body, status, body, tt.field)
+		}
+	}
+
+	// Deleting the payment keeps the expense; deleting the plan turns the limit off.
+	e.ok(t, anna, 204, http.MethodDelete, rentPath, "")
+	if o := e.ok(t, anna, 200, http.MethodGet, fmt.Sprintf("/api/v1/operations/%v", paid["id"]), ""); o["regular_payment_id"] != nil {
+		t.Errorf("expense after its payment was deleted = %v", o)
+	}
+	e.ok(t, anna, 204, http.MethodDelete, "/api/v1/budget/plan", "")
+	if b := e.ok(t, anna, 200, http.MethodGet, "/api/v1/budget", ""); len(b) != 0 {
+		t.Errorf("budget after the plan was deleted = %v", b)
 	}
 }

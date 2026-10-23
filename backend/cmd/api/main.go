@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/config"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/httpapi"
@@ -56,9 +57,11 @@ func run() error {
 	} else if cfg.AuthDevUserID != 0 {
 		log.Warn("AUTH_DEV_USER_ID is ignored: it works only with APP_ENV=dev")
 	}
+	operations := ledger.NewService(postgres.NewOperationRepository(pool), cfg.Location)
 	handler := httpapi.NewHandler(httpapi.Deps{
-		Ledger: ledger.NewService(postgres.NewOperationRepository(pool), cfg.Location),
+		Ledger: operations,
 		Family: families,
+		Budget: budget.NewService(postgres.NewBudgetRepository(pool), operations),
 		Auth: &httpapi.Auth{
 			BotToken:  cfg.TelegramToken,
 			Users:     families,
