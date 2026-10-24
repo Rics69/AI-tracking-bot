@@ -118,6 +118,10 @@ func (r *UserRepository) SetConsent(ctx context.Context, telegramID int64, at ti
 	return r.set(ctx, telegramID, `consented_at = $2`, at)
 }
 
+func (r *UserRepository) SetBlocked(ctx context.Context, telegramID int64, at *time.Time) (user.User, error) {
+	return r.set(ctx, telegramID, `blocked_at = $2`, at)
+}
+
 func (r *UserRepository) set(ctx context.Context, telegramID int64, assignment string, value any) (user.User, error) {
 	u, err := scanUser(r.pool.QueryRow(ctx, `
 		UPDATE users SET `+assignment+`, updated_at = now() WHERE telegram_id = $1

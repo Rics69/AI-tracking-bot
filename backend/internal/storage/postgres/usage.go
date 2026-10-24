@@ -24,21 +24,22 @@ func NewUsageRepository(pool *pgxpool.Pool) *UsageRepository {
 	return &UsageRepository{pool: pool}
 }
 
-func (r *UsageRepository) Add(ctx context.Context, userID int64, day time.Time, u llm.Usage, failed bool) error {
+func (r *UsageRepository) Add(ctx context.Context, userID int64, day time.Time, u llm.Usage, failed bool, took time.Duration) error {
 	failures := 0
 	if failed {
 		failures = 1
 	}
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO llm_usage AS u (user_id, day, requests, failures, prompt_tokens, cached_tokens, completion_tokens)
-		VALUES ($1, $2, 1, $3, $4, $5, $6)
+		INSERT INTO llm_usage AS u (user_id, day, requests, failures, prompt_tokens, cached_tokens, completion_tokens, reply_ms)
+		VALUES ($1, $2, 1, $3, $4, $5, $6, $7)
 		ON CONFLICT (user_id, day) DO UPDATE SET
 		    requests = u.requests + 1,
 		    failures = u.failures + EXCLUDED.failures,
 		    prompt_tokens = u.prompt_tokens + EXCLUDED.prompt_tokens,
 		    cached_tokens = u.cached_tokens + EXCLUDED.cached_tokens,
-		    completion_tokens = u.completion_tokens + EXCLUDED.completion_tokens`,
-		userID, day, failures, u.PromptTokens, u.CachedTokens, u.CompletionTokens)
+		    completion_tokens = u.completion_tokens + EXCLUDED.completion_tokens,
+		    reply_ms = u.reply_ms + EXCLUDED.reply_ms`,
+		userID, day, failures, u.PromptTokens, u.CachedTokens, u.CompletionTokens, took.Milliseconds())
 	if err != nil {
 		return fmt.Errorf("add llm usage: %w", err)
 	}
@@ -46,11 +47,15 @@ func (r *UsageRepository) Add(ctx context.Context, userID int64, day time.Time, 
 }
 
 func (r *UsageRepository) Get(ctx context.Context, userID int64, day time.Time) (usage.Day, error) {
-	var d usage.Day
+	var (
+		d       usage.Day
+		replyMS int64
+	)
 	err := r.pool.QueryRow(ctx, `
-		SELECT requests, failures, prompt_tokens, cached_tokens, completion_tokens
+		SELECT requests, failures, prompt_tokens, cached_tokens, completion_tokens, reply_ms
 		FROM llm_usage WHERE user_id = $1 AND day = $2`, userID, day).
-		Scan(&d.Requests, &d.Failures, &d.PromptTokens, &d.CachedTokens, &d.CompletionTokens)
+		Scan(&d.Requests, &d.Failures, &d.PromptTokens, &d.CachedTokens, &d.CompletionTokens, &replyMS)
+	d.ReplyTime = time.Duration(replyMS) * time.Millisecond
 	if errors.Is(err, pgx.ErrNoRows) {
 		return usage.Day{}, nil
 	}

@@ -426,7 +426,7 @@ func TestDeleteUser(t *testing.T) {
 	ctx := context.Background()
 	mustCreate(t, repo, 2, "500", ledger.CategoryFood, 10, "обед")
 	boris, _ := users.Get(ctx, 2)
-	if err := NewUsageRepository(testPool).Add(ctx, 2, day(10), llm.Usage{PromptTokens: 10}, false); err != nil {
+	if err := NewUsageRepository(testPool).Add(ctx, 2, day(10), llm.Usage{PromptTokens: 10}, false, time.Second); err != nil {
 		t.Fatal(err)
 	}
 	if err := users.Delete(ctx, 2); err != nil {
@@ -519,11 +519,12 @@ func TestUsage(t *testing.T) {
 	if d, err := r.Get(ctx, 1, day(21)); err != nil || d.Requests != 0 {
 		t.Fatalf("empty day: %+v %v", d, err)
 	}
-	_ = r.Add(ctx, 1, day(21), llm.Usage{PromptTokens: 100, CachedTokens: 900, CompletionTokens: 20}, false)
-	_ = r.Add(ctx, 1, day(21), llm.Usage{PromptTokens: 50}, true)
-	_ = r.Add(ctx, 1, day(22), llm.Usage{PromptTokens: 1}, false)
+	_ = r.Add(ctx, 1, day(21), llm.Usage{PromptTokens: 100, CachedTokens: 900, CompletionTokens: 20}, false, 3*time.Second)
+	_ = r.Add(ctx, 1, day(21), llm.Usage{PromptTokens: 50}, true, 1500*time.Millisecond)
+	_ = r.Add(ctx, 1, day(22), llm.Usage{PromptTokens: 1}, false, time.Second)
 	d, err := r.Get(ctx, 1, day(21))
-	if err != nil || d.Requests != 2 || d.Failures != 1 || d.Tokens() != 170 || d.CachedTokens != 900 {
+	if err != nil || d.Requests != 2 || d.Failures != 1 || d.Tokens() != 170 || d.CachedTokens != 900 ||
+		d.ReplyTime != 4500*time.Millisecond {
 		t.Errorf("day = %+v, %v", d, err)
 	}
 }

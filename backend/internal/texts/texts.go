@@ -82,6 +82,13 @@ type Bot struct {
 	ReminderNoIncome string    `yaml:"reminder_no_income"`
 	ReminderPayment  string    `yaml:"reminder_payment"`
 
+	AdminBanUsage    string `yaml:"admin_ban_usage"`
+	AdminBanned      string `yaml:"admin_banned"`
+	AdminUnbanned    string `yaml:"admin_unbanned"`
+	AdminUnknownUser string `yaml:"admin_unknown_user"`
+	AdminSelf        string `yaml:"admin_self"`
+	LLMAlert         string `yaml:"llm_alert"`
+
 	FeedbackUsage   string `yaml:"feedback_usage"`
 	FeedbackThanks  string `yaml:"feedback_thanks"`
 	FeedbackToAdmin string `yaml:"feedback_to_admin"`
@@ -94,6 +101,9 @@ type Bot struct {
 	CommandFeedback string `yaml:"command_feedback"`
 	CommandDeleteMe string `yaml:"command_delete_me"`
 	CommandHelp     string `yaml:"command_help"`
+	CommandStats    string `yaml:"command_stats"`
+	CommandBan      string `yaml:"command_ban"`
+	CommandUnban    string `yaml:"command_unban"`
 }
 
 // Reminders are the phrases of the morning reminder by Savik's state; one is

@@ -35,9 +35,10 @@ type Clock interface {
 	TodayIn(loc *time.Location) time.Time
 }
 
-// UsageRecorder accounts what a reply cost: the bot keeps per-user daily limits.
+// UsageRecorder accounts what a reply cost and how long it took: the bot keeps
+// per-user daily limits and shows the owner the average reply time.
 type UsageRecorder interface {
-	RecordUsage(ctx context.Context, userID int64, day time.Time, u llm.Usage, failed bool)
+	RecordUsage(ctx context.Context, userID int64, day time.Time, u llm.Usage, failed bool, took time.Duration)
 }
 
 // Config tunes the agent.
@@ -112,7 +113,7 @@ func (a *Agent) Reply(ctx context.Context, caller Caller, text string) (string, 
 	account := func(failed bool) {
 		if a.usage != nil {
 			// The request may have timed out; the accounting must still be saved.
-			a.usage.RecordUsage(context.WithoutCancel(ctx), caller.UserID, today, usage, failed)
+			a.usage.RecordUsage(context.WithoutCancel(ctx), caller.UserID, today, usage, failed, time.Since(start))
 		}
 	}
 	for step := 0; step < a.maxSteps; step++ {

@@ -118,9 +118,14 @@ func (r *Users) SetConsent(_ context.Context, id int64, at time.Time) (user.User
 	return r.update(id, func(u *user.User) { u.ConsentedAt = &at })
 }
 
-// Block bans a user; there is no command for it yet, as in the database.
+func (r *Users) SetBlocked(_ context.Context, id int64, at *time.Time) (user.User, error) {
+	return r.update(id, func(u *user.User) { u.BlockedAt = at })
+}
+
+// Block bans a user now, for tests.
 func (r *Users) Block(id int64) {
-	_, _ = r.update(id, func(u *user.User) { now := r.now(); u.BlockedAt = &now })
+	now := r.now()
+	_, _ = r.SetBlocked(context.Background(), id, &now)
 }
 
 func (r *Users) update(id int64, fn func(*user.User)) (user.User, error) {

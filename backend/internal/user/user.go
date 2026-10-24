@@ -62,6 +62,8 @@ type Repository interface {
 	// SetTimezone stores an IANA timezone name; empty resets to the app default.
 	SetTimezone(ctx context.Context, telegramID int64, tz string) (User, error)
 	SetConsent(ctx context.Context, telegramID int64, at time.Time) (User, error)
+	// SetBlocked bans the user from the bot and the app since at; nil lifts the ban.
+	SetBlocked(ctx context.Context, telegramID int64, at *time.Time) (User, error)
 	// Detach moves the user out of their family into a new family of their
 	// own, where they are the head. Their expenses go with them.
 	Detach(ctx context.Context, telegramID int64) (User, error)

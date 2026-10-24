@@ -177,6 +177,16 @@ reminder_no_income: "Лимит на сегодня не посчитать: с 
 # За день до регулярного платежа, отдельной строкой. {title} — название, {amount} — сумма.
 reminder_payment: "Завтра {title} — {amount}."
 
+# Только для владельца (ADMIN_TELEGRAM_ID). {id} — Telegram ID, {count} — сколько ответов подряд упало.
+admin_ban_usage: "Укажите Telegram ID: /ban 123456789 или /unban 123456789"
+admin_banned: "Пользователь {id} заблокирован: бот и приложение ему не отвечают. Снять — /unban {id}"
+admin_unbanned: Пользователь {id} разблокирован.
+admin_unknown_user: Пользователя {id} нет в базе.
+admin_self: Себя заблокировать нельзя.
+llm_alert: |-
+  GigaChat не отвечает: {count} ответов агента подряд с ошибкой.
+  Проверьте ключ и лимиты GigaChat и логи бота: docker compose logs --since 1h bot
+
 # Меню команд (кнопка «/» в Telegram).
 command_start: Начать
 command_app: Открыть приложение
@@ -186,3 +196,7 @@ command_privacy: Как хранятся данные
 command_feedback: Написать разработчику
 command_delete_me: Удалить аккаунт
 command_help: Помощь
+# Видны только владельцу.
+command_stats: Статистика сервиса
+command_ban: Заблокировать пользователя
+command_unban: Разблокировать пользователя

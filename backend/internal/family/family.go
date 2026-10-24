@@ -135,6 +135,17 @@ func (s *Service) Consent(ctx context.Context, telegramID int64) (user.User, err
 	return s.users.SetConsent(ctx, telegramID, s.now())
 }
 
+// SetBlocked bans a user from the bot and the app, or lifts the ban. Their
+// data stays: a ban is reversible, deleting is the user's own choice.
+func (s *Service) SetBlocked(ctx context.Context, telegramID int64, on bool) (user.User, error) {
+	var at *time.Time
+	if on {
+		now := s.now()
+		at = &now
+	}
+	return s.users.SetBlocked(ctx, telegramID, at)
+}
+
 // Invitation checks an invite code and returns the head of the family it
 // leads to, so the bot can ask the user before they join.
 func (s *Service) Invitation(ctx context.Context, code string) (head user.User, err error) {

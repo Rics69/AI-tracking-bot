@@ -21,6 +21,7 @@
 - `backend/internal/storage/postgres` — репозитории на pgx, миграции goose (вшиты через embed, применяются при старте).
 - `backend/internal/storage/memory` — in-memory репозитории трат и бюджета с той же семантикой (для eval и тестов).
 - `backend/internal/budget` — необязательная часть: цели (`goals`, пополнения в `goal_deposits`, минус — забрать), план (`budget_plans`: 1–2 дня зарплаты, ожидаемый доход, взнос в цели, час напоминания), регулярные платежи (`regular_payments`; трата ссылается на платёж через `operations.regular_payment_id`). `Compute` считает лимит дня кодом, ничего не хранится. Всё личное: только `user_id`, без семейного scope.
+- `backend/internal/stats` — `/stats` для владельца: только количества по всей базе (`postgres.StatsRepository`), текст собирается кодом. Команды владельца (`/stats`, `/ban`, `/unban`) — `telegram/admin.go`, видны в меню только в чате `ADMIN_TELEGRAM_ID`. `usage.Meter.OnOutage` шлёт владельцу оповещение, если 5 ответов агента подряд упали (не чаще раза в час).
 - `backend/internal/report` — сообщения, которые бот шлёт сам, собираются кодом (не LLM): итоги недели (понедельник 10:00) и утреннее напоминание о лимите и завтрашних платежах (`daily.go`, час из плана, фразы — `reminders` в `texts.yaml`). `notification_runs` (`kind`, `period_key`, `user_id`) гарантирует одну отправку. Постоянные ошибки Telegram (`telegram.ErrUndeliverable`) не ретраятся.
 - `backend/internal/httpapi` — REST для mini app: `api.gen.go` генерируется из `backend/api/openapi.yaml`, руками пишутся `server.go`, `family.go`, `budget.go`, `auth.go` (вход по `initData`).
 - `backend/internal/initdata` — проверка подписи Telegram Mini App `initData`.
@@ -34,6 +35,13 @@
   - `/api/*` проксируется на Go API через rewrites в `next.config.ts`.
   - Позы Сейвика: исходники в `poses/*.png` (не в git), `npm run poses` собирает `web/public/savik/{512,256}/*.webp`. Руками webp не править.
   - Графики (`components/money/`): у категорий своя проверенная палитра из 7 цветов (`distribution.tsx`, светлая и тёмная), цвет закреплён за категорией, рядом всегда подпись и сумма. Динамика (`flow-chart.tsx`) — одна серия цветом текста, без категориальных цветов. Новые цвета — только после проверки валидатором.
+
+## Продакшен
+
+- `docker-compose.prod.yml` — один VPS: Caddy (`deploy/Caddyfile`, HTTPS по `DOMAIN`), `backup` (`deploy/backup/backup.sh`: ночной `pg_dump`, 14 дней, опционально S3), наружу только 80/443, `APP_ENV=prod`. Пошагово — `docs/deploy.md`.
+- `docs/privacy.md` — политика данных (правит владелец), Caddy отдаёт её на `/privacy` через шаблон `deploy/privacy.html`; правки видны без пересборки.
+- `make deploy DEPLOY_HOST=user@host` — `git pull` и `up -d --build` на сервере; откажется при незапушенных коммитах.
+- CI — `.github/workflows/ci.yml`: vet, golangci-lint, тесты, typecheck, lint, сборка web, сверка сгенерированного кода.
 
 ## Команды
 

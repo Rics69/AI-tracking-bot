@@ -1,0 +1,133 @@
+# Production on one VPS: HTTPS by Caddy, nightly database backups, no ports
+# open except 80 and 443. Settings come from .env next to this file (see
+# docs/deploy.md):
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# The local development stack is docker-compose.yml.
+name: savepoint
+
+x-database-url: &database-url postgres://${POSTGRES_USER:-expenses}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-expenses}?sslmode=disable
+
+# Docker keeps container logs forever by default: cap them, the disk is small.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 20m
+    max-file: "5"
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-expenses}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-expenses}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+    logging: *logging
+
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: *database-url
+      APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Moscow}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set TELEGRAM_BOT_TOKEN in .env}
+      # Never dev in production: requests without Telegram init data get 401.
+      APP_ENV: prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *logging
+
+  bot:
+    build: ./backend
+    entrypoint: ["/app/bot"]
+    environment:
+      DATABASE_URL: *database-url
+      APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Moscow}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set TELEGRAM_BOT_TOKEN in .env}
+      ADMIN_TELEGRAM_ID: ${ADMIN_TELEGRAM_ID:-}
+      PRIVACY_URL: ${PRIVACY_URL:-https://${DOMAIN}/privacy}
+      MINI_APP_URL: ${MINI_APP_URL:-https://${DOMAIN}}
+      USER_DAILY_MESSAGES: ${USER_DAILY_MESSAGES:-150}
+      USER_DAILY_TOKENS: ${USER_DAILY_TOKENS:-200000}
+      LLM_PROVIDER: ${LLM_PROVIDER:-gigachat}
+      GIGACHAT_AUTH_KEY: ${GIGACHAT_AUTH_KEY:?set GIGACHAT_AUTH_KEY in .env}
+      GIGACHAT_SCOPE: ${GIGACHAT_SCOPE:-GIGACHAT_API_PERS}
+      GIGACHAT_MODEL: ${GIGACHAT_MODEL:-GigaChat-2-Pro}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *logging
+
+  web:
+    build:
+      context: ./web
+      args:
+        API_URL: http://api:8080
+    depends_on:
+      - api
+    restart: unless-stopped
+    logging: *logging
+
+  caddy:
+    image: caddy:2.10-alpine
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./deploy/privacy.html:/srv/privacy.html:ro
+      - ./docs/privacy.md:/srv/privacy.md:ro
+      - caddy_data:/data # certificates: keep them, Let's Encrypt limits reissues
+      - caddy_config:/config
+    depends_on:
+      - web
+    restart: unless-stopped
+    logging: *logging
+
+  backup:
+    build: ./deploy/backup
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-expenses}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      PGDATABASE: ${POSTGRES_DB:-expenses}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_HOUR_UTC: ${BACKUP_HOUR_UTC:-0} # 03:00 in Moscow
+      # Optional copy to S3-compatible storage (Yandex Object Storage, Selectel...).
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_PREFIX: ${S3_PREFIX:-savepoint}
+      RCLONE_CONFIG_S3_TYPE: s3
+      RCLONE_CONFIG_S3_PROVIDER: Other
+      RCLONE_CONFIG_S3_ENDPOINT: ${S3_ENDPOINT:-}
+      RCLONE_CONFIG_S3_REGION: ${S3_REGION:-}
+      RCLONE_CONFIG_S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      RCLONE_CONFIG_S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      RCLONE_CONFIG_S3_NO_CHECK_BUCKET: "true"
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

@@ -37,7 +37,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { texts } from "@/content/texts";
 import { formatDateTime } from "@/lib/format";
-import { closeApp, haptic, shareLink } from "@/lib/telegram";
+import { closeApp, haptic, openPage, shareLink } from "@/lib/telegram";
 import { timezoneOptions } from "@/lib/timezones";
 import { cn } from "@/lib/utils";
 
@@ -358,6 +358,10 @@ function PrivacySection() {
             <li key={line}>{line}</li>
           ))}
         </ul>
+        {/* Served by Caddy in production (docs/privacy.md); absent in local development. */}
+        <button type="button" onClick={() => openPage("/privacy")} className="mt-3 text-[15px] underline underline-offset-4">
+          Полный текст политики
+        </button>
       </details>
     </Section>
   );

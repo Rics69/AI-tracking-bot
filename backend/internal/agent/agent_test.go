@@ -413,7 +413,7 @@ type usageCall struct {
 
 type fakeRecorder struct{ calls []usageCall }
 
-func (f *fakeRecorder) RecordUsage(_ context.Context, userID int64, day time.Time, u llm.Usage, failed bool) {
+func (f *fakeRecorder) RecordUsage(_ context.Context, userID int64, day time.Time, u llm.Usage, failed bool, _ time.Duration) {
 	f.calls = append(f.calls, usageCall{userID, day, u, failed})
 }
 

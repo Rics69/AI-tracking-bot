@@ -17,6 +17,7 @@ import (
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/agent"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/stats"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/memory"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
@@ -557,5 +558,61 @@ func TestSendWithApp(t *testing.T) {
 	}
 	if got := e.s.last(t, anna); !slices.Equal(got.buttons, []string{"webapp:https://app.example.com"}) {
 		t.Errorf("reminder buttons = %+v", got)
+	}
+}
+
+type fakeStats struct{ asked int }
+
+func (f *fakeStats) Snapshot(_ context.Context, now, _, _ time.Time) (stats.Snapshot, error) {
+	f.asked++
+	return stats.Snapshot{At: now, Users: 3, Consented: 2}, nil
+}
+
+func TestAdminCommands(t *testing.T) {
+	e := setup(t)
+	st := &fakeStats{}
+	e.h.cfg.Stats = st
+	e.onboard(t, anna)
+	e.onboard(t, admin)
+
+	// For everyone else these are unknown commands.
+	for _, cmd := range []string{"/stats", "/ban 99", "/unban 99"} {
+		e.message(anna, cmd)
+		if got := e.s.last(t, anna); got.text != e.t.Help {
+			t.Errorf("%s from a user: %q", cmd, got.text)
+		}
+	}
+	if st.asked != 0 {
+		t.Error("a user got the stats")
+	}
+
+	e.message(admin, "/stats")
+	if got := e.s.last(t, admin); !strings.Contains(got.text, "Пользователи: 3 (приняли политику 2") {
+		t.Errorf("stats = %q", got.text)
+	}
+
+	for _, tt := range []struct{ cmd, want string }{
+		{"/ban", e.t.AdminBanUsage},
+		{"/ban abc", e.t.AdminBanUsage},
+		{"/ban 99", e.t.AdminSelf},
+		{"/ban 404", texts.Fill(e.t.AdminUnknownUser, "id", "404")},
+		{"/ban 1", texts.Fill(e.t.AdminBanned, "id", "1")},
+	} {
+		e.message(admin, tt.cmd)
+		if got := e.s.last(t, admin); got.text != tt.want {
+			t.Errorf("%s: %q, want %q", tt.cmd, got.text, tt.want)
+		}
+	}
+	e.message(anna, "кофе 350")
+	if got := e.s.last(t, anna); got.text != e.t.Blocked {
+		t.Errorf("banned user served: %q", got.text)
+	}
+	e.message(admin, "/unban 1")
+	e.message(anna, "кофе 350")
+	if got := e.s.last(t, anna); got.text != "Записано" {
+		t.Errorf("unbanned user: %q", got.text)
+	}
+	if len(AdminCommands(e.t, true)) != len(Commands(e.t, true))+3 {
+		t.Error("the owner's menu must add /stats, /ban and /unban")
 	}
 }

@@ -1,0 +1,26 @@
+# Caddy in front of the mini app: HTTPS certificates from Let's Encrypt are
+# issued and renewed automatically for DOMAIN (its DNS must point here).
+{$DOMAIN} {
+	encode zstd gzip
+
+	# The data policy: docs/privacy.md rendered to HTML, readable without
+	# Telegram. Edits to the file are live at once.
+	handle /privacy {
+		root * /srv
+		rewrite * /privacy.html
+		templates
+		file_server
+	}
+
+	# Everything else is the mini app; it forwards /api/* to the Go API itself.
+	handle {
+		reverse_proxy web:3000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}

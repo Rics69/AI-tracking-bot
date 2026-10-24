@@ -16,6 +16,7 @@ import (
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/agent"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/stats"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
@@ -58,6 +59,7 @@ type Family interface {
 	SetWeeklyReport(ctx context.Context, by user.User, telegramID int64, on bool) (user.User, error)
 	SetTimezone(ctx context.Context, telegramID int64, tz string) (user.User, error)
 	DeleteAccount(ctx context.Context, telegramID int64) error
+	SetBlocked(ctx context.Context, telegramID int64, on bool) (user.User, error)
 }
 
 // Meter enforces per-user daily limits; *usage.Meter implements it.
@@ -81,6 +83,7 @@ type Config struct {
 	PrivacyURL   string         // full data policy; empty: /privacy shows the summary only
 	MiniAppURL   string         // HTTPS address of the mini app; empty: not deployed yet
 	Texts        texts.Bot
+	Stats        stats.Source // the owner's /stats; nil: the command is off
 }
 
 // Handler processes incoming Telegram updates.
@@ -188,6 +191,12 @@ func (h *Handler) handleMessage(ctx context.Context, s Sender, msg *models.Messa
 		return
 	case isCommand(text, "/delete_me"):
 		h.confirmDelete(ctx, s, chatID, u)
+		return
+	case h.isAdmin(u) && isCommand(text, "/stats"):
+		h.showStats(ctx, s, chatID, u)
+		return
+	case h.isAdmin(u) && (isCommand(text, "/ban") || isCommand(text, "/unban")):
+		h.ban(ctx, s, chatID, u, text)
 		return
 	case strings.HasPrefix(text, "/"):
 		h.send(ctx, s, chatID, h.t.Help) // an unknown command is not an expense

@@ -72,6 +72,14 @@ export function shareLink(url: string, text: string): boolean {
   return true;
 }
 
+/** Opens a page of this site in the browser: Telegram's own, or a new tab outside it. */
+export function openPage(path: string) {
+  const url = new URL(path, window.location.origin).toString();
+  const app = webApp();
+  if (app) app.openLink(url);
+  else window.open(url, "_blank", "noopener");
+}
+
 /** Closes the Mini App; outside Telegram there is nothing to close. */
 export function closeApp() {
   webApp()?.close();

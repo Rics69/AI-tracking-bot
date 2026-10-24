@@ -2,7 +2,12 @@ LINT_IMAGE := golangci/golangci-lint:v2.13.2
 
 RUNS ?= 1
 
-.PHONY: up down logs seed gen test test-short lint eval
+# The production server for `make deploy`: user@host and the clone's directory there.
+DEPLOY_HOST ?=
+DEPLOY_DIR ?= savepoint
+PROD := docker compose -f docker-compose.prod.yml
+
+.PHONY: up down logs seed gen test test-short lint eval deploy
 
 up: ## Собрать и запустить всё в Docker
 	docker compose up -d --build
@@ -34,3 +39,9 @@ lint: ## go vet + golangci-lint (в Docker, ставить локально не
 
 eval: ## Eval агента на настоящем GigaChat (ключи из .env), отчёт в backend/eval/report.md
 	set -a && . ./.env && set +a && cd backend && LOG_LEVEL=warn go run ./cmd/eval -runs $(RUNS) -report eval/report.md
+
+deploy: ## Выкатить на сервер то, что запушено: make deploy DEPLOY_HOST=user@1.2.3.4 (см. docs/deploy.md)
+	@test -n "$(DEPLOY_HOST)" || { echo "Укажите сервер: make deploy DEPLOY_HOST=user@1.2.3.4"; exit 1; }
+	@upstream=$$(git rev-parse --abbrev-ref @{u} 2>/dev/null) || { echo "У ветки нет upstream: git push -u origin $$(git branch --show-current)"; exit 1; }; \
+	git fetch -q && [ "$$(git rev-list --count $$upstream..HEAD)" = 0 ] || { echo "Есть незапушенные коммиты: сначала git push"; exit 1; }
+	ssh $(DEPLOY_HOST) 'cd $(DEPLOY_DIR) && git pull --ff-only && $(PROD) up -d --build --remove-orphans && $(PROD) ps'

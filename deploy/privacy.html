@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Политика обработки данных — Сейвпоинт</title>
+  <style>
+    :root { --bg: #f1f0ec; --card: #fff; --fg: #121212; --muted: #6f6e69; --line: rgb(18 18 18 / 0.08); }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #0b0b0b; --card: #161616; --fg: #f2f2ef; --muted: #9b9a95; --line: rgb(255 255 255 / 0.08); }
+    }
+    body { margin: 0; background: var(--bg); color: var(--fg);
+      font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif; }
+    main { max-width: 720px; margin: 24px auto; padding: 24px 20px; background: var(--card);
+      border: 1px solid var(--line); border-radius: 22px; }
+    @media (max-width: 760px) { main { margin: 16px; } }
+    h1 { font-size: 28px; line-height: 1.2; font-weight: 600; margin: 0 0 8px; }
+    h2 { font-size: 19px; font-weight: 600; margin: 28px 0 8px; }
+    p, li { color: var(--fg); }
+    em { color: var(--muted); font-style: normal; }
+    a { color: inherit; }
+    code { background: var(--bg); padding: 1px 6px; border-radius: 6px; font-size: 0.92em; }
+    ul { padding-left: 20px; }
+  </style>
+</head>
+<body>
+  <main>
+{{include "/privacy.md" | markdown}}
+  </main>
+</body>
+</html>
