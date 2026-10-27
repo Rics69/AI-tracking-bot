@@ -79,10 +79,10 @@ curl -s -o /dev/null -w '%{http_code}\n' --max-time 15 https://api.telegram.org
 mkdir -p deploy/telegram-proxy/keys && ssh-keygen -t ed25519 -N '' -C savepoint-telegram -f deploy/telegram-proxy/keys/id_ed25519
 ```
 
-Отдать его зарубежному серверу (спросит его пароль один раз). `restrict,port-forwarding` разрешает этому ключу только туннель, без входа в консоль:
+Отдать его зарубежному серверу (спросит его пароль один раз). `restrict,port-forwarding,command="/bin/false"` разрешает этому ключу только туннель: ни консоли, ни команд. Проверьте потом, что строка в `~/.ssh/authorized_keys` на зарубежном сервере заканчивается ключом `ssh-ed25519 …`, а не обрывается на опциях:
 
 ```bash
-ssh root@<ip-за-рубежом> "mkdir -p ~/.ssh && echo 'restrict,port-forwarding $(cat deploy/telegram-proxy/keys/id_ed25519.pub)' >> ~/.ssh/authorized_keys"
+ssh root@<ip-за-рубежом> "mkdir -p ~/.ssh && echo 'restrict,port-forwarding,command=\"/bin/false\" $(cat ~/savepoint/deploy/telegram-proxy/keys/id_ed25519.pub)' >> ~/.ssh/authorized_keys"
 ```
 
 В `.env`:
