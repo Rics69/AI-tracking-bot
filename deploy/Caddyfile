@@ -17,6 +17,15 @@
 		reverse_proxy web:3000
 	}
 
+	# Pages are never cached: after an update a cached page points to scripts
+	# that are gone, and Telegram hangs on its loader. Built assets have the
+	# content hash in their names and stay cacheable.
+	@pages not path /_next/static/* /savik/* /favicon.ico
+	header @pages {
+		Cache-Control "no-cache"
+		defer
+	}
+
 	header {
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options "nosniff"
