@@ -21,3 +21,6 @@ web/out/
 
 # Production database dumps (docker-compose.prod.yml)
 /backups/
+
+# The SSH key of the Telegram tunnel (docker-compose.prod.yml)
+/deploy/telegram-proxy/keys/

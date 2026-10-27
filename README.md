@@ -296,6 +296,7 @@ make lint         # go vet + golangci-lint
 | `AGENT_HISTORY_RETENTION` | `168h` | сколько хранить диалоги в базе |
 | `LOG_LEVEL` | `info` | `debug` покажет запросы к модели и расход токенов |
 | `DOMAIN` | — | только продакшен: домен для HTTPS; из него собираются `MINI_APP_URL` и `PRIVACY_URL` |
+| `TELEGRAM_PROXY` | пусто | прокси только для запросов бота к Telegram (`socks5://…`, `http://…`): с серверов в России `api.telegram.org` часто недоступен; в продакшене — SSH-туннель за рубеж, см. `docs/deploy.md` |
 | `BACKUP_HOUR_UTC` / `BACKUP_KEEP_DAYS` | `0` / `14` | только продакшен: когда делать бэкап и сколько дней хранить |
 | `S3_BUCKET`, `S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | пусто | только продакшен: копия бэкапов в S3-совместимое хранилище |
 

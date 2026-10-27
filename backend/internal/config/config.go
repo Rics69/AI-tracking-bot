@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"time"
 	_ "time/tzdata" // embed the tz database: minimal images have no /usr/share/zoneinfo
 
@@ -90,6 +91,27 @@ type Bot struct {
 	// Daily limits per user, so nobody spends the whole token budget; 0: unlimited.
 	UserDailyMessages int   `env:"USER_DAILY_MESSAGES" envDefault:"150"`
 	UserDailyTokens   int64 `env:"USER_DAILY_TOKENS" envDefault:"200000"`
+	// TelegramProxy routes requests to the Telegram Bot API, and only them,
+	// through a proxy: http://, https:// or socks5://[user:password@]host:port.
+	// From servers in Russia api.telegram.org is often unreachable. Empty: direct.
+	TelegramProxy string `env:"TELEGRAM_PROXY"`
+}
+
+// TelegramProxyURL parses TELEGRAM_PROXY; nil when it is empty.
+func (b Bot) TelegramProxyURL() (*url.URL, error) {
+	if b.TelegramProxy == "" {
+		return nil, nil
+	}
+	u, err := url.Parse(b.TelegramProxy)
+	if err != nil || u.Host == "" {
+		return nil, fmt.Errorf("TELEGRAM_PROXY must be a URL like socks5://host:1080, got %q", b.TelegramProxy)
+	}
+	switch u.Scheme {
+	case "http", "https", "socks5":
+		return u, nil
+	default:
+		return nil, fmt.Errorf("TELEGRAM_PROXY scheme must be http, https or socks5, got %q", u.Scheme)
+	}
 }
 
 // Chat is the configuration of the local agent REPL (cmd/chat).
@@ -142,6 +164,9 @@ func LoadBot() (Bot, error) {
 		return Bot{}, err
 	}
 	if err := cfg.validate(); err != nil {
+		return Bot{}, err
+	}
+	if _, err := cfg.TelegramProxyURL(); err != nil {
 		return Bot{}, err
 	}
 	return cfg, nil

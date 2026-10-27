@@ -40,6 +40,7 @@
 
 - `docker-compose.prod.yml` — один VPS: Caddy (`deploy/Caddyfile`, HTTPS по `DOMAIN`), `backup` (`deploy/backup/backup.sh`: ночной `pg_dump`, 14 дней, опционально S3), наружу только 80/443, `APP_ENV=prod`. Пошагово — `docs/deploy.md`.
 - `docs/privacy.md` — политика данных (правит владелец), Caddy отдаёт её на `/privacy` через шаблон `deploy/privacy.html`; правки видны без пересборки.
+- С российского сервера `api.telegram.org` часто недоступен: `TELEGRAM_PROXY` пускает через прокси только клиент Telegram (GigaChat — напрямую); в проде это сервис `telegram-proxy` (профиль compose, SSH-туннель за рубеж, ключ в `deploy/telegram-proxy/keys/`, не в git).
 - `make deploy DEPLOY_HOST=user@host` — `git pull` и `up -d --build` на сервере; откажется при незапушенных коммитах.
 - CI — `.github/workflows/ci.yml`: vet, golangci-lint, тесты, typecheck, lint, сборка web, сверка сгенерированного кода.
 

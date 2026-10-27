@@ -65,6 +65,8 @@ services:
       GIGACHAT_AUTH_KEY: ${GIGACHAT_AUTH_KEY:?set GIGACHAT_AUTH_KEY in .env}
       GIGACHAT_SCOPE: ${GIGACHAT_SCOPE:-GIGACHAT_API_PERS}
       GIGACHAT_MODEL: ${GIGACHAT_MODEL:-GigaChat-2-Pro}
+      # socks5://telegram-proxy:1080 with the tunnel below; empty: direct.
+      TELEGRAM_PROXY: ${TELEGRAM_PROXY:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -100,6 +102,21 @@ services:
     restart: unless-stopped
     logging: *logging
 
+  # Optional, on with COMPOSE_PROFILES=telegram-proxy in .env: from servers in
+  # Russia api.telegram.org is often unreachable, so the bot's requests to
+  # Telegram go through SSH to a small server abroad. Everything else stays here.
+  telegram-proxy:
+    build: ./deploy/telegram-proxy
+    profiles: [telegram-proxy]
+    environment:
+      TELEGRAM_PROXY_SSH: ${TELEGRAM_PROXY_SSH:-}
+      TELEGRAM_PROXY_SSH_PORT: ${TELEGRAM_PROXY_SSH_PORT:-22}
+    volumes:
+      - ./deploy/telegram-proxy/keys:/keys:ro
+      - telegram_proxy_state:/state
+    restart: unless-stopped
+    logging: *logging
+
   backup:
     build: ./deploy/backup
     environment:
@@ -131,3 +148,4 @@ volumes:
   pgdata:
   caddy_data:
   caddy_config:
+  telegram_proxy_state:

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -93,10 +94,18 @@ func run() error {
 		Stats:        postgres.NewStatsRepository(pool),
 	}, log.With("component", "telegram"))
 
-	b, err := bot.New(cfg.TelegramToken,
+	opts := []bot.Option{
 		bot.WithDefaultHandler(handler.Handle),
 		bot.WithErrorsHandler(func(err error) { log.Error("telegram polling", "err", err) }),
-	)
+	}
+	if proxy, _ := cfg.TelegramProxyURL(); proxy != nil { // validated by LoadBot
+		// Only the Telegram client goes through the proxy; GigaChat stays direct.
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.Proxy = http.ProxyURL(proxy)
+		opts = append(opts, bot.WithHTTPClient(telegramPollTimeout, &http.Client{Transport: transport, Timeout: telegramPollTimeout}))
+		log.Info("telegram through a proxy", "proxy", proxy.Redacted())
+	}
+	b, err := bot.New(cfg.TelegramToken, opts...)
 	if err != nil {
 		return fmt.Errorf("telegram: %w", err)
 	}
@@ -165,6 +174,10 @@ func run() error {
 	log.Info("bot stopped")
 	return nil
 }
+
+// telegramPollTimeout is the long-polling timeout of the Telegram client, as
+// the library's default one.
+const telegramPollTimeout = time.Minute
 
 // every runs fn now and then at each interval until ctx is cancelled.
 func every(ctx context.Context, interval time.Duration, fn func()) {

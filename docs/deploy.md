@@ -63,6 +63,44 @@ docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml logs -f --since 30m bot api caddy
 ```
 
+## 4a. Telegram с российского сервера
+
+С серверов в России `api.telegram.org` часто не открывается: в логах бота `error call getMe … context deadline exceeded`. Проверка на сервере (`000` — недоступен):
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' --max-time 15 https://api.telegram.org
+```
+
+Тогда запросы бота к Telegram — и только они — идут через SSH-туннель на маленький сервер за рубежом (Нидерланды, Финляндия, Германия; 1 ядро и 512 МБ хватит, нужен только SSH). База, приложение и GigaChat остаются в России.
+
+На российском сервере, в папке `savepoint`. Ключ для туннеля:
+
+```bash
+mkdir -p deploy/telegram-proxy/keys && ssh-keygen -t ed25519 -N '' -C savepoint-telegram -f deploy/telegram-proxy/keys/id_ed25519
+```
+
+Отдать его зарубежному серверу (спросит его пароль один раз). `restrict,port-forwarding` разрешает этому ключу только туннель, без входа в консоль:
+
+```bash
+ssh root@<ip-за-рубежом> "mkdir -p ~/.ssh && echo 'restrict,port-forwarding $(cat deploy/telegram-proxy/keys/id_ed25519.pub)' >> ~/.ssh/authorized_keys"
+```
+
+В `.env`:
+
+```
+COMPOSE_PROFILES=telegram-proxy
+TELEGRAM_PROXY_SSH=root@<ip-за-рубежом>
+TELEGRAM_PROXY=socks5://telegram-proxy:1080
+```
+
+Запустить и проверить, что бот поднялся (`bot started` и `telegram through a proxy`):
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --build && sleep 20 && docker compose -f docker-compose.prod.yml logs --since 2m telegram-proxy bot | tail -20
+```
+
+Если туннель упадёт, контейнер `telegram-proxy` перезапустится сам, а бот повторит запросы.
+
 ## 5. Обновления
 
 Локально, когда всё закоммичено и запушено:
