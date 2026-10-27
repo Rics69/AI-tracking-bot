@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarClockIcon, CheckIcon, PlusIcon, RepeatIcon, TargetIcon, Trash2Icon } from "lucide-react";
+import { CalendarClockIcon, CheckIcon, PencilIcon, PlusIcon, RepeatIcon, TargetIcon, Trash2Icon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -10,12 +10,14 @@ import {
   useBudget,
   useCreateGoal,
   useCreatePayment,
+  useDeleteOperation,
   useDeletePayment,
   useDeletePlan,
   useGoals,
   usePayPayment,
   useRegularPayments,
   useSetPlan,
+  useUpdatePayment,
 } from "@/api/queries";
 import { DepositSheet, GoalRow } from "@/components/budget/goals";
 import { Card, PageHeader, Panel, Pill, PillButton } from "@/components/kit";
@@ -27,7 +29,7 @@ import { Switch } from "@/components/ui/switch";
 import { texts } from "@/content/texts";
 import { amountInput, parseAmount } from "@/lib/amount";
 import { capitalize, categoryIcons, useCategoryInfo } from "@/lib/categories";
-import { formatDate, formatMoney, toISODate } from "@/lib/format";
+import { formatDate, formatMoney, parseDate, toISODate } from "@/lib/format";
 import { haptic } from "@/lib/telegram";
 import { cn } from "@/lib/utils";
 
@@ -331,6 +333,7 @@ function PaymentsPanel({ payments }: { payments: RegularPayment[] }) {
 
 function PaymentsEditor({ payments, startOpen }: { payments: RegularPayment[]; startOpen?: boolean }) {
   const [adding, setAdding] = useState(!!startOpen && payments.length === 0);
+  const [editing, setEditing] = useState<number | null>(null);
   const [today] = useState(() => toISODate(new Date()));
   return (
     <div className="flex flex-col gap-4">
@@ -339,7 +342,11 @@ function PaymentsEditor({ payments, startOpen }: { payments: RegularPayment[]; s
         <ul className="flex flex-col divide-y divide-border">
           {payments.map((p) => (
             <li key={p.id} className="py-3 first:pt-0">
-              <PaymentRow payment={p} today={today} />
+              {editing === p.id ? (
+                <PaymentForm payment={p} onDone={() => setEditing(null)} />
+              ) : (
+                <PaymentRow payment={p} today={today} onEdit={() => setEditing(p.id)} />
+              )}
             </li>
           ))}
         </ul>
@@ -355,8 +362,9 @@ function PaymentsEditor({ payments, startOpen }: { payments: RegularPayment[]; s
   );
 }
 
-function PaymentRow({ payment: p, today }: { payment: RegularPayment; today: string }) {
+function PaymentRow({ payment: p, today, onEdit }: { payment: RegularPayment; today: string; onEdit: () => void }) {
   const pay = usePayPayment();
+  const undo = useDeleteOperation();
   const remove = useDeletePayment();
   const Icon = categoryIcons[p.category];
   const status: ReactNode =
@@ -367,12 +375,19 @@ function PaymentRow({ payment: p, today }: { payment: RegularPayment; today: str
     ) : (
       <Pill>{formatDate(p.due_date)}</Pill>
     );
+  // Paid ahead of time the next date moves a month on: say why.
+  const paidRecently = p.last_paid_on && p.due_date > today && p.last_paid_on > shiftDays(p.due_date, -40);
 
   async function onPay() {
+    // Paying records an expense: no accidental taps.
+    if (!(await confirm(`Отметить «${p.title}» оплаченным сегодня? Запишется трата ${formatMoney(p.amount)}.`))) return;
     try {
-      await pay.mutateAsync(p.id);
+      const op = await pay.mutateAsync(p.id);
       haptic.success();
-      toast.success(`Записано: ${p.title} — ${formatMoney(p.amount)}`);
+      toast.success(`Записано: ${p.title} — ${formatMoney(p.amount)}`, {
+        duration: 8000, // time to notice a wrong tap and undo it
+        action: { label: "Отменить", onClick: () => void undo.mutateAsync(op.id).catch(() => toast.error("Не удалось отменить")) },
+      });
     } catch (err) {
       haptic.error();
       toast.error(err instanceof Error ? err.message : "Не удалось записать");
@@ -403,7 +418,10 @@ function PaymentRow({ payment: p, today }: { payment: RegularPayment; today: str
               {formatMoney(p.amount)} · каждое {p.day}-е
             </span>
           </span>
-          {status}
+          <span className="flex shrink-0 flex-col items-end gap-1">
+            {status}
+            {paidRecently && <Pill tone="success">оплачен {formatDate(p.last_paid_on!)}</Pill>}
+          </span>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -414,6 +432,14 @@ function PaymentRow({ payment: p, today }: { payment: RegularPayment; today: str
           >
             <CheckIcon className="size-4" strokeWidth={2} />
             Оплачено
+          </button>
+          <button
+            type="button"
+            aria-label={`Изменить платёж «${p.title}»`}
+            onClick={onEdit}
+            className="flex size-8 items-center justify-center rounded-full text-muted-foreground"
+          >
+            <PencilIcon className="size-[17px]" strokeWidth={1.75} />
           </button>
           <button
             type="button"
@@ -429,14 +455,17 @@ function PaymentRow({ payment: p, today }: { payment: RegularPayment; today: str
   );
 }
 
-function PaymentForm({ onDone }: { onDone: () => void }) {
-  const [title, setTitle] = useState("");
-  const [amount, setAmount] = useState("");
-  const [day, setDay] = useState(1);
-  const [category, setCategory] = useState<Category>("housing");
+/** Adds a regular payment, or edits the given one. */
+function PaymentForm({ payment, onDone }: { payment?: RegularPayment; onDone: () => void }) {
+  const [title, setTitle] = useState(payment?.title ?? "");
+  const [amount, setAmount] = useState(payment ? String(payment.amount).replace(".", ",") : "");
+  const [day, setDay] = useState(payment?.day ?? 1);
+  const [category, setCategory] = useState<Category>(payment?.category ?? "housing");
   const [errors, setErrors] = useState<Partial<Record<"title" | "amount" | "day" | "category", string>>>({});
   const categories = useCategoryInfo();
   const create = useCreatePayment();
+  const update = useUpdatePayment();
+  const pending = create.isPending || update.isPending;
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -450,7 +479,9 @@ function PaymentForm({ onDone }: { onDone: () => void }) {
       return;
     }
     try {
-      await create.mutateAsync({ title: title.trim(), amount: parsed, day, category });
+      const body = { title: title.trim(), amount: parsed, day, category };
+      if (payment) await update.mutateAsync({ id: payment.id, body });
+      else await create.mutateAsync(body);
       haptic.success();
       onDone();
     } catch (err) {
@@ -527,8 +558,8 @@ function PaymentForm({ onDone }: { onDone: () => void }) {
         <PillButton variant="outline" className="h-11 flex-1" onClick={onDone}>
           Отмена
         </PillButton>
-        <PillButton type="submit" className="h-11 flex-1" disabled={create.isPending}>
-          Добавить
+        <PillButton type="submit" className="h-11 flex-1" disabled={pending}>
+          {payment ? "Сохранить" : "Добавить"}
         </PillButton>
       </div>
     </form>
@@ -648,6 +679,12 @@ function GoalForm({ submit, onSaved, onCancel }: { submit: string; onSaved: () =
       </div>
     </form>
   );
+}
+
+/** "2026-11-01" moved by n days. */
+function shiftDays(iso: string, n: number): string {
+  const d = parseDate(iso);
+  return toISODate(new Date(d.getFullYear(), d.getMonth(), d.getDate() + n));
 }
 
 // Fields.

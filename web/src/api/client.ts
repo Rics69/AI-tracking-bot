@@ -30,6 +30,7 @@ export type GoalCreate = components["schemas"]["GoalCreate"];
 export type GoalUpdate = components["schemas"]["GoalUpdate"];
 export type RegularPayment = components["schemas"]["RegularPayment"];
 export type RegularPaymentCreate = components["schemas"]["RegularPaymentCreate"];
+export type RegularPaymentUpdate = components["schemas"]["RegularPaymentUpdate"];
 export type ApiErrorBody = components["schemas"]["Error"];
 
 // Requests go to the same origin; Next.js proxies /api/* to the Go API

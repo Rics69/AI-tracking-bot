@@ -21,6 +21,7 @@ import {
   type OperationUpdate,
   type PlanInput,
   type RegularPaymentCreate,
+  type RegularPaymentUpdate,
 } from "./client";
 
 /** What the history and charts show. */
@@ -227,6 +228,12 @@ export function useDeposit() {
 export function useCreatePayment() {
   return useMoneyMutation(async (body: RegularPaymentCreate) =>
     unwrap(await api.POST("/regular-payments", { body })),
+  );
+}
+
+export function useUpdatePayment() {
+  return useMoneyMutation(async ({ id, body }: { id: number; body: RegularPaymentUpdate }) =>
+    unwrap(await api.PATCH("/regular-payments/{id}", { params: { path: { id } }, body })),
   );
 }
 
