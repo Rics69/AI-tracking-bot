@@ -376,8 +376,8 @@ func TestHumanDate(t *testing.T) {
 		today.AddDate(0, 0, -10): "6 октября",
 		today.AddDate(-1, 0, 0):  "16 октября 2025",
 	} {
-		if got := humanDate(d, today); got != want {
-			t.Errorf("humanDate(%s) = %q, want %q", d.Format(time.DateOnly), got, want)
+		if got := HumanDate(d, today); got != want {
+			t.Errorf("HumanDate(%s) = %q, want %q", d.Format(time.DateOnly), got, want)
 		}
 	}
 }

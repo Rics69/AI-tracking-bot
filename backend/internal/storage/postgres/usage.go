@@ -46,6 +46,17 @@ func (r *UsageRepository) Add(ctx context.Context, userID int64, day time.Time, 
 	return nil
 }
 
+func (r *UsageRepository) Total(ctx context.Context, from time.Time) (int64, error) {
+	var total int64
+	err := r.pool.QueryRow(ctx, `
+		SELECT COALESCE(sum(prompt_tokens + completion_tokens), 0)
+		FROM llm_usage WHERE day >= $1`, from).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("sum llm usage: %w", err)
+	}
+	return total, nil
+}
+
 func (r *UsageRepository) Get(ctx context.Context, userID int64, day time.Time) (usage.Day, error) {
 	var (
 		d       usage.Day

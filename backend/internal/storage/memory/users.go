@@ -118,6 +118,19 @@ func (r *Users) SetConsent(_ context.Context, id int64, at time.Time) (user.User
 	return r.update(id, func(u *user.User) { u.ConsentedAt = &at })
 }
 
+func (r *Users) SetSource(_ context.Context, id int64, source string) (user.User, error) {
+	return r.update(id, func(u *user.User) {
+		if u.FirstSource == "" {
+			u.FirstSource = source
+		}
+		u.LastSource = source
+	})
+}
+
+func (r *Users) SetPendingStart(_ context.Context, id int64, param string) (user.User, error) {
+	return r.update(id, func(u *user.User) { u.PendingStart = param })
+}
+
 func (r *Users) SetBlocked(_ context.Context, id int64, at *time.Time) (user.User, error) {
 	return r.update(id, func(u *user.User) { u.BlockedAt = at })
 }

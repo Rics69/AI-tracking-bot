@@ -22,6 +22,7 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/config"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/llm/provider"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/logger"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
 )
 
 func main() {
@@ -63,9 +64,14 @@ func run(casesPath string, runs int, filter, model, reportPath string, verbose b
 	if err != nil {
 		return err
 	}
+	botTexts, err := texts.Load()
+	if err != nil {
+		return err
+	}
 	rn := runner{
 		client: client,
 		loc:    cfg.Location,
+		texts:  botTexts,
 		cfg:    agent.Config{Location: cfg.Location, MaxSteps: cfg.MaxSteps},
 		log:    log,
 	}

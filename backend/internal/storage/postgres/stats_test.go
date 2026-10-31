@@ -2,12 +2,15 @@ package postgres
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/llm"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/stats"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
 
@@ -42,7 +45,32 @@ func TestStatsSnapshot(t *testing.T) {
 	_ = u.Add(ctx, 1, day(3), llm.Usage{PromptTokens: 7}, false, time.Second)
 	_ = u.Add(ctx, 1, day(23), llm.Usage{}, false, 0)
 
-	s, err := NewStatsRepository(testPool).Snapshot(ctx, time.Now(), day(24), day(1))
+	if total, err := u.Total(ctx, day(23)); err != nil || total != 160 {
+		t.Errorf("tokens since the 23rd = %d, %v", total, err) // cached ones are free
+	}
+	ev := NewEventRepository(testPool)
+	for _, e := range []struct {
+		id   int64
+		name string
+		via  string
+	}{
+		{1, events.ExpenseAdded, events.ViaFast},
+		{1, events.ExpenseAdded, events.ViaFast},
+		{1, events.IncomeAdded, events.ViaAI},
+		{2, events.ExpenseAdded, events.ViaMiniApp},
+	} {
+		if err := ev.Add(ctx, e.id, e.name, events.Props{"via": e.via}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := ev.Add(ctx, 0, events.Start, events.Props{"source": "reels"}); err != nil {
+		t.Fatalf("an event of nobody: %v", err)
+	}
+	if _, err := users.SetSource(ctx, 1, "reels"); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := NewStatsRepository(testPool).Snapshot(ctx, time.Now(), day(24), day(1), day(23))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,6 +87,36 @@ func TestStatsSnapshot(t *testing.T) {
 	}
 	if s.Month.Replies != 4 || s.Month.PromptTokens != 157 {
 		t.Errorf("month = %+v", s.Month)
+	}
+	if s.Package.Spent != 160 || s.Package.WeekTokens != 160 || s.Package.WeekDays != 2 {
+		t.Errorf("package = %+v", s.Package)
+	}
+	if s.Recorded != (stats.Recorded{Fast: 2, AI: 1, MiniApp: 1}) {
+		t.Errorf("recorded = %+v", s.Recorded)
+	}
+	if !slices.Equal(s.Sources, []stats.SourceCount{{Name: "direct", Users: 1}, {Name: "reels", Users: 1}}) {
+		t.Errorf("sources = %+v", s.Sources)
+	}
+}
+
+func TestSourcesAndPendingStart(t *testing.T) {
+	_, users := setup(t)
+	ctx := context.Background()
+	u, err := users.SetPendingStart(ctx, 1, "go_dream__reels")
+	if err != nil || u.PendingStart != "go_dream__reels" {
+		t.Fatalf("pending = %+v, %v", u, err)
+	}
+	if u, err = users.SetSource(ctx, 1, "reels"); err != nil || u.FirstSource != "reels" || u.LastSource != "reels" {
+		t.Fatalf("first source = %+v, %v", u, err)
+	}
+	if u, err = users.SetSource(ctx, 1, "tg"); err != nil || u.FirstSource != "reels" || u.LastSource != "tg" {
+		t.Errorf("second source = %+v, %v", u, err)
+	}
+	if u, err = users.SetPendingStart(ctx, 1, ""); err != nil || u.PendingStart != "" {
+		t.Errorf("cleared = %+v, %v", u, err)
+	}
+	if u, err = users.Get(ctx, 1); err != nil || u.LastSource != "tg" {
+		t.Errorf("reloaded = %+v, %v", u, err)
 	}
 }
 

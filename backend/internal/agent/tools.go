@@ -12,6 +12,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/llm"
 )
@@ -321,6 +322,11 @@ func (a *Agent) add(ctx context.Context, t turn, kind ledger.Kind, raw json.RawM
 	if err != nil {
 		return nil, err
 	}
+	name := events.ExpenseAdded
+	if kind == ledger.KindIncome {
+		name = events.IncomeAdded
+	}
+	a.events.Track(ctx, t.userID, name, events.Props{"via": events.ViaAI})
 	return map[string]any{"added": t.item(e)}, nil
 }
 
@@ -512,7 +518,7 @@ func (t turn) item(e ledger.Operation) item {
 		Amount:   money(e.Amount),
 		Category: e.Category.Label(),
 		Date:     e.Date.Format(time.DateOnly),
-		DateText: humanDate(e.Date, t.today),
+		DateText: HumanDate(e.Date, t.today),
 		Comment:  e.Comment,
 	}
 }
@@ -520,8 +526,8 @@ func (t turn) item(e ledger.Operation) item {
 var monthsGenitive = [...]string{"", "января", "февраля", "марта", "апреля", "мая", "июня",
 	"июля", "августа", "сентября", "октября", "ноября", "декабря"}
 
-// humanDate formats a date the way people say it in Russian.
-func humanDate(d, today time.Time) string {
+// HumanDate formats a date the way people say it in Russian.
+func HumanDate(d, today time.Time) string {
 	switch {
 	case d.Equal(today):
 		return "сегодня"

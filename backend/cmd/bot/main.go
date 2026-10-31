@@ -19,10 +19,12 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/agent"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/config"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/llm/provider"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/logger"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/quick"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/report"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/postgres"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/telegram"
@@ -74,9 +76,17 @@ func run() error {
 	})
 	meter := usage.NewMeter(postgres.NewUsageRepository(pool),
 		usage.Limits{Messages: cfg.UserDailyMessages, Tokens: cfg.UserDailyTokens}, cfg.AdminID, log)
+	packageSince, _ := cfg.PackageStart() // validated by LoadBot
+	meter.SetPackage(usage.Package{Tokens: cfg.LLMTokenPackage, Since: packageSince, Daily: cfg.LLMDailyTokens})
+	tracker := events.NewTracker(postgres.NewEventRepository(pool), log.With("component", "events"))
+	defer tracker.Wait()
 	budgets := budget.NewService(postgres.NewBudgetRepository(pool), expenses)
+	records, err := quick.New(expenses, budgets)
+	if err != nil {
+		return err
+	}
 	assistant := agent.New(client, expenses, expenses, history,
-		agent.Config{Location: cfg.Location, MaxSteps: cfg.MaxSteps, Usage: meter, Budget: budgets},
+		agent.Config{Location: cfg.Location, MaxSteps: cfg.MaxSteps, Usage: meter, Budget: budgets, Events: tracker},
 		log.With("component", "agent"))
 	users := postgres.NewUserRepository(pool)
 	members := family.NewService(users, postgres.NewInviteRepository(pool), postgres.NewSettingsRepository(pool))
@@ -92,6 +102,11 @@ func run() error {
 		MiniAppURL:   cfg.MiniAppURL,
 		Texts:        botTexts,
 		Stats:        postgres.NewStatsRepository(pool),
+		Quick:        records,
+		Events:       tracker,
+
+		PackageTokens: cfg.LLMTokenPackage,
+		PackageSince:  packageSince,
 	}, log.With("component", "telegram"))
 
 	opts := []bot.Option{
@@ -135,6 +150,12 @@ func run() error {
 				log.Error("llm outage alert", "err", err)
 			}
 		})
+		if cfg.LLMTokenPackage > 0 {
+			alert := report.NewPackageAlert(meter, postgres.NewNotificationRunRepository(pool),
+				func(ctx context.Context, chatID int64, text string) error { return handler.Send(ctx, b, chatID, text) },
+				cfg.AdminID, cfg.LLMTokenPackage, packageSince, botTexts, log.With("component", "package"))
+			go every(ctx, 10*time.Minute, func() { alert.Tick(ctx) })
+		}
 	}
 	if menu := telegram.MenuButton(botTexts, cfg.MiniAppURL); menu != nil {
 		if _, err := b.SetChatMenuButton(ctx, &bot.SetChatMenuButtonParams{MenuButton: menu}); err != nil {
@@ -160,7 +181,11 @@ func run() error {
 	go weekly.Run(ctx)
 	daily := report.NewDaily(budgets, users, runs,
 		func(ctx context.Context, chatID int64, text string) error {
-			return undeliverable(handler.SendWithApp(ctx, b, chatID, text))
+			err := handler.SendWithApp(ctx, b, chatID, text, fromMorning)
+			if err == nil {
+				tracker.Track(ctx, chatID, events.MorningSent, nil)
+			}
+			return undeliverable(err)
 		},
 		botTexts, cfg.Location, log.With("component", "reminder"))
 	go daily.Run(ctx)
@@ -169,7 +194,7 @@ func run() error {
 		log.Warn("ADMIN_TELEGRAM_ID is not set: feedback is only logged")
 	}
 	log.Info("bot started", "username", me.Username, "llm", cfg.Provider, "model", cfg.GigaChat.Model,
-		"daily_messages", cfg.UserDailyMessages, "daily_tokens", cfg.UserDailyTokens)
+		"daily_messages", cfg.UserDailyMessages, "daily_tokens", cfg.UserDailyTokens, "token_package", cfg.LLMTokenPackage)
 	b.Start(ctx) // blocks until ctx is cancelled
 	log.Info("bot stopped")
 	return nil
@@ -178,6 +203,10 @@ func run() error {
 // telegramPollTimeout is the long-polling timeout of the Telegram client, as
 // the library's default one.
 const telegramPollTimeout = time.Minute
+
+// fromMorning marks the mini app button of the morning reminder: the app
+// reports the click.
+const fromMorning = "morning"
 
 // every runs fn now and then at each interval until ctx is cancelled.
 func every(ctx context.Context, interval time.Duration, fn func()) {

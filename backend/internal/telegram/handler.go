@@ -15,6 +15,7 @@ import (
 	"github.com/go-telegram/bot/models"
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/agent"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/stats"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
@@ -43,6 +44,7 @@ func permanent(err error) bool {
 type Replier interface {
 	Reply(ctx context.Context, caller agent.Caller, text string) (string, error)
 	Reset(ctx context.Context, userID int64)
+	Remember(ctx context.Context, userID int64, text, reply string)
 }
 
 // Family manages users and families; *family.Service implements it.
@@ -50,6 +52,8 @@ type Family interface {
 	Admit(ctx context.Context, tg user.User) (user.User, error)
 	Get(ctx context.Context, telegramID int64) (user.User, error)
 	Consent(ctx context.Context, telegramID int64) (user.User, error)
+	SetSource(ctx context.Context, telegramID int64, source string) (user.User, error)
+	SetPendingStart(ctx context.Context, telegramID int64, param string) (user.User, error)
 	Invitation(ctx context.Context, code string) (head user.User, err error)
 	Join(ctx context.Context, code string, telegramID int64) (user.User, error)
 	Leave(ctx context.Context, telegramID int64) (user.User, error)
@@ -62,9 +66,10 @@ type Family interface {
 	SetBlocked(ctx context.Context, telegramID int64, on bool) (user.User, error)
 }
 
-// Meter enforces per-user daily limits; *usage.Meter implements it.
+// Meter enforces daily limits and the token package; *usage.Meter implements it.
 type Meter interface {
 	Allow(ctx context.Context, userID int64, day time.Time) (bool, error)
+	Exhausted(ctx context.Context, day time.Time) (bool, error)
 }
 
 // Sender is the part of the Telegram API the handler uses; *bot.Bot implements it.
@@ -84,6 +89,11 @@ type Config struct {
 	MiniAppURL   string         // HTTPS address of the mini app; empty: not deployed yet
 	Texts        texts.Bot
 	Stats        stats.Source // the owner's /stats; nil: the command is off
+	Quick        Quick        // records without the LLM; nil: everything goes to the agent
+	Events       *events.Tracker
+
+	PackageTokens int64     // the token package, for /stats; 0: none
+	PackageSince  time.Time // the date it started
 }
 
 // Handler processes incoming Telegram updates.
@@ -153,14 +163,13 @@ func (h *Handler) handleMessage(ctx context.Context, s Sender, msg *models.Messa
 		h.send(ctx, s, chatID, h.privacyText())
 		return
 	}
-	// An invite link arrives as "/start <code>".
-	code, _ := commandArg(text, "/start")
+	// A link with a parameter arrives as "/start <param>".
+	param, isStart := commandArg(text, "/start")
 	if !u.Consented() {
-		h.askConsent(ctx, s, chatID, code)
-		return
-	}
-	if code != "" {
-		h.offerInvitation(ctx, s, chatID, code)
+		if isStart {
+			h.holdStart(ctx, u, param)
+		}
+		h.askConsent(ctx, s, chatID)
 		return
 	}
 
@@ -168,9 +177,8 @@ func (h *Handler) handleMessage(ctx context.Context, s Sender, msg *models.Messa
 	case text == "":
 		h.send(ctx, s, chatID, h.t.NotText)
 		return
-	case isCommand(text, "/start"):
-		h.agent.Reset(ctx, u.TelegramID)
-		h.send(ctx, s, chatID, h.t.Welcome)
+	case isStart:
+		h.start(ctx, s, chatID, u, param)
 		return
 	case isCommand(text, "/help"):
 		h.agent.Reset(ctx, u.TelegramID)
@@ -207,7 +215,21 @@ func (h *Handler) handleMessage(ctx context.Context, s Sender, msg *models.Messa
 	}
 
 	loc := u.Location(h.cfg.Location)
-	allowed, err := h.meter.Allow(ctx, u.TelegramID, today(h.now(), loc))
+	day := today(h.now(), loc)
+	if h.recordQuick(ctx, s, chatID, u, text, day) {
+		return
+	}
+	exhausted, err := h.meter.Exhausted(ctx, day)
+	if err != nil {
+		log.ErrorContext(ctx, "check token package", "err", err) // better to spend a token than to go silent
+	}
+	if exhausted {
+		log.WarnContext(ctx, "token package is used up")
+		h.cfg.Events.Track(ctx, u.TelegramID, events.AILimitHit, events.Props{"reason": "package"})
+		h.send(ctx, s, chatID, h.t.AgentResting)
+		return
+	}
+	allowed, err := h.meter.Allow(ctx, u.TelegramID, day)
 	if err != nil {
 		log.ErrorContext(ctx, "check usage limit", "err", err)
 		h.send(ctx, s, chatID, h.t.Failure)
@@ -215,6 +237,7 @@ func (h *Handler) handleMessage(ctx context.Context, s Sender, msg *models.Messa
 	}
 	if !allowed {
 		log.WarnContext(ctx, "daily limit reached")
+		h.cfg.Events.Track(ctx, u.TelegramID, events.AILimitHit, events.Props{"reason": "daily"})
 		h.send(ctx, s, chatID, h.t.LimitReached)
 		return
 	}
@@ -281,12 +304,13 @@ func (h *Handler) Send(ctx context.Context, s Sender, chatID int64, text string)
 }
 
 // SendWithApp delivers a message the bot starts itself with a button that
-// opens the mini app (when it is deployed), retrying like Send.
-func (h *Handler) SendWithApp(ctx context.Context, s Sender, chatID int64, text string) error {
+// opens the mini app (when it is deployed), retrying like Send. from tells the
+// app which message the user came from.
+func (h *Handler) SendWithApp(ctx context.Context, s Sender, chatID int64, text, from string) error {
 	params := &bot.SendMessageParams{ChatID: chatID, Text: text}
 	if h.cfg.MiniAppURL != "" {
 		params.ReplyMarkup = &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{
-			{Text: h.t.AppButton, WebApp: &models.WebAppInfo{URL: h.cfg.MiniAppURL}},
+			{Text: h.t.AppButton, WebApp: &models.WebAppInfo{URL: h.cfg.MiniAppURL + "?from=" + from}},
 		}}}
 	}
 	return h.sendMessage(ctx, s, params)
@@ -313,6 +337,9 @@ func (h *Handler) sendMessage(ctx context.Context, s Sender, params *bot.SendMes
 		}
 		if permanent(err) {
 			h.log.WarnContext(ctx, "message undeliverable", "chat_id", chatID, "err", err)
+			if id, ok := chatID.(int64); ok && errors.Is(err, bot.ErrorForbidden) {
+				h.cfg.Events.Track(ctx, id, events.BotBlocked, nil) // a private chat's ID is the user's
+			}
 			return fmt.Errorf("%w: %w", ErrUndeliverable, err)
 		}
 		if attempt == sendAttempts {

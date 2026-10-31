@@ -30,6 +30,15 @@ type Bot struct {
 	LimitReached  string `yaml:"limit_reached"`
 	Cancelled     string `yaml:"cancelled"`
 
+	QuickSaved        string `yaml:"quick_saved"`
+	QuickSavedIncome  string `yaml:"quick_saved_income"`
+	QuickFixButton    string `yaml:"quick_fix_button"`
+	QuickFixHint      string `yaml:"quick_fix_hint"`
+	QuickDeleteButton string `yaml:"quick_delete_button"`
+	QuickDeleted      string `yaml:"quick_deleted"`
+	QuickGone         string `yaml:"quick_gone"`
+	AgentResting      string `yaml:"agent_resting"`
+
 	Invitation     string `yaml:"invitation"`
 	JoinButton     string `yaml:"join_button"`
 	DeclineButton  string `yaml:"decline_button"`
@@ -88,6 +97,8 @@ type Bot struct {
 	AdminUnknownUser string `yaml:"admin_unknown_user"`
 	AdminSelf        string `yaml:"admin_self"`
 	LLMAlert         string `yaml:"llm_alert"`
+	PackageAlert     string `yaml:"package_alert"`
+	PackageOut       string `yaml:"package_out"`
 
 	FeedbackUsage   string `yaml:"feedback_usage"`
 	FeedbackThanks  string `yaml:"feedback_thanks"`

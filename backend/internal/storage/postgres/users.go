@@ -13,7 +13,8 @@ import (
 )
 
 const userColumns = `telegram_id, family_id, first_name, COALESCE(username, ''), is_head, weekly_report,
-	COALESCE(timezone, ''), consented_at, blocked_at, last_seen_at, created_at, updated_at`
+	COALESCE(timezone, ''), COALESCE(first_source, ''), COALESCE(last_source, ''), COALESCE(pending_start, ''),
+	consented_at, blocked_at, last_seen_at, created_at, updated_at`
 
 // UserRepository implements user.Repository.
 type UserRepository struct {
@@ -118,6 +119,14 @@ func (r *UserRepository) SetConsent(ctx context.Context, telegramID int64, at ti
 	return r.set(ctx, telegramID, `consented_at = $2`, at)
 }
 
+func (r *UserRepository) SetSource(ctx context.Context, telegramID int64, source string) (user.User, error) {
+	return r.set(ctx, telegramID, `first_source = COALESCE(first_source, $2), last_source = $2`, source)
+}
+
+func (r *UserRepository) SetPendingStart(ctx context.Context, telegramID int64, param string) (user.User, error) {
+	return r.set(ctx, telegramID, `pending_start = NULLIF($2, '')`, param)
+}
+
 func (r *UserRepository) SetBlocked(ctx context.Context, telegramID int64, at *time.Time) (user.User, error) {
 	return r.set(ctx, telegramID, `blocked_at = $2`, at)
 }
@@ -217,6 +226,6 @@ func (r *UserRepository) Delete(ctx context.Context, telegramID int64) error {
 func scanUser(row pgx.Row) (user.User, error) {
 	var u user.User
 	err := row.Scan(&u.TelegramID, &u.FamilyID, &u.FirstName, &u.Username, &u.IsHead, &u.WeeklyReport,
-		&u.Timezone, &u.ConsentedAt, &u.BlockedAt, &u.LastSeenAt, &u.CreatedAt, &u.UpdatedAt)
+		&u.Timezone, &u.FirstSource, &u.LastSource, &u.PendingStart, &u.ConsentedAt, &u.BlockedAt, &u.LastSeenAt, &u.CreatedAt, &u.UpdatedAt)
 	return u, err
 }

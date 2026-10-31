@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/llm"
 )
 
@@ -49,6 +50,7 @@ type Config struct {
 	// Budget enables the daily limit, goals and regular payments; without it
 	// the agent only tracks expenses and incomes.
 	Budget Budget
+	Events *events.Tracker // optional
 }
 
 // Agent is the expense assistant.
@@ -61,6 +63,7 @@ type Agent struct {
 	maxSteps int
 	usage    UsageRecorder
 	budget   Budget
+	events   *events.Tracker
 	log      *slog.Logger
 }
 
@@ -71,7 +74,7 @@ func New(client llm.Client, ledger Ledger, clock Clock, history HistoryStore, cf
 	}
 	return &Agent{
 		llm: client, ledger: ledger, clock: clock, history: history,
-		loc: cfg.Location, maxSteps: cfg.MaxSteps, usage: cfg.Usage, budget: cfg.Budget, log: log,
+		loc: cfg.Location, maxSteps: cfg.MaxSteps, usage: cfg.Usage, budget: cfg.Budget, events: cfg.Events, log: log,
 	}
 }
 
@@ -79,6 +82,20 @@ func New(client llm.Client, ledger Ledger, clock Clock, history HistoryStore, cf
 func (a *Agent) Reset(ctx context.Context, userID int64) {
 	if err := a.history.Reset(ctx, userID); err != nil {
 		a.log.WarnContext(ctx, "reset history", "user_id", userID, "err", err)
+	}
+}
+
+// Remember adds an exchange the agent did not take part in to the
+// conversation, so "нет, 450" after a quick record makes sense. It is plain
+// text, not a tool call: GigaChat needs a state ID for a call in the history,
+// and the agent finds the operation with find_operations anyway.
+func (a *Agent) Remember(ctx context.Context, userID int64, text, reply string) {
+	turn := []llm.Message{
+		{Role: llm.RoleUser, Content: text},
+		{Role: llm.RoleAssistant, Content: reply},
+	}
+	if err := a.history.Append(ctx, userID, turn); err != nil {
+		a.log.WarnContext(ctx, "save history", "user_id", userID, "err", err)
 	}
 }
 

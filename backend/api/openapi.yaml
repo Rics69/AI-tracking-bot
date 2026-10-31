@@ -75,6 +75,23 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  /events:
+    post:
+      operationId: trackEvent
+      tags: [me]
+      summary: Сообщить о том, что видит только приложение
+      description: Открытие приложения и переход из утреннего сообщения, для статистики сервиса.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ClientEvent' }
+      responses:
+        '204': { description: Записано }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
   /operations:
     get:
       operationId: listOperations
@@ -679,6 +696,17 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    ClientEvent:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          enum: [miniapp_open, morning_clicked]
+        screen:
+          type: string
+          maxLength: 32
+          description: Экран, на котором открыто приложение.
     Money:
       type: number
       description: Сумма в рублях, не более двух знаков после запятой.

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/initdata"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
@@ -39,6 +40,8 @@ type env struct {
 	auth    *Auth
 	ledgerS *ledger.Service
 	budgetS *budget.Service
+	events  *memory.Events
+	tracker *events.Tracker
 }
 
 func newEnv(t *testing.T) *env {
@@ -50,11 +53,13 @@ func newEnv(t *testing.T) *env {
 	_ = settings.Set(context.Background(), family.SettingBotUsername, "SavepointBot")
 	fam := family.NewService(users, users, settings)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	e := &env{users: users, ops: ops, family: fam, ledgerS: ledger.NewService(ops, time.UTC)}
+	e := &env{users: users, ops: ops, family: fam, ledgerS: ledger.NewService(ops, time.UTC),
+		events: memory.NewEvents()}
+	e.tracker = events.NewTracker(e.events, log)
 	e.budgetS = budget.NewService(memory.NewBudget(ops), e.ledgerS)
 	e.auth = &Auth{BotToken: botToken, Users: fam, Log: log}
 	e.h = NewHandler(Deps{
-		Ledger: e.ledgerS, Family: fam, Budget: e.budgetS, Auth: e.auth, Location: time.UTC,
+		Ledger: e.ledgerS, Family: fam, Budget: e.budgetS, Auth: e.auth, Events: e.tracker, Location: time.UTC,
 		Health: func(context.Context) error { return nil }, Log: log,
 	})
 	return e
@@ -420,6 +425,41 @@ func TestErrors(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	if rec.Code != 503 {
 		t.Errorf("unhealthy: %d", rec.Code)
+	}
+}
+
+func TestEvents(t *testing.T) {
+	e := newEnv(t)
+	if status, _ := e.do(t, 0, http.MethodPost, "/api/v1/events", `{"name":"miniapp_open"}`); status != 401 {
+		t.Errorf("without a user: %d", status)
+	}
+	if status, body := e.do(t, anna, http.MethodPost, "/api/v1/events", `{"name":"miniapp_open"}`); status != 403 || errorCode(body) != "consent_required" {
+		t.Errorf("before consent: %d %v", status, body)
+	}
+	e.onboard(t, anna)
+	e.ok(t, anna, 204, http.MethodPost, "/api/v1/events", `{"name":"miniapp_open","screen":"/plan"}`)
+	e.ok(t, anna, 204, http.MethodPost, "/api/v1/events", `{"name":"morning_clicked"}`)
+	if status, _ := e.do(t, anna, http.MethodPost, "/api/v1/events", `{"name":"expense_added"}`); status != 400 {
+		t.Errorf("a name off the list: %d", status)
+	}
+	e.ok(t, anna, 201, http.MethodPost, "/api/v1/operations", `{"amount":350,"category":"food"}`)
+	e.ok(t, anna, 201, http.MethodPost, "/api/v1/operations", `{"amount":80000,"category":"salary"}`)
+
+	e.tracker.Wait()
+	if got := e.events.Named(events.MiniAppOpen); len(got) != 1 || got[0].UserID != anna || got[0].Props["screen"] != "/plan" {
+		t.Errorf("miniapp_open = %+v", got)
+	}
+	if got := e.events.Named(events.MorningClicked); len(got) != 1 {
+		t.Errorf("morning_clicked = %+v", got)
+	}
+	if got := e.events.Named(events.ExpenseAdded); len(got) != 1 || got[0].Props["via"] != events.ViaMiniApp {
+		t.Errorf("expense_added = %+v", got)
+	}
+	if got := e.events.Named(events.IncomeAdded); len(got) != 1 {
+		t.Errorf("income_added = %+v", got)
+	}
+	if got := e.events.Named(events.Consented); len(got) != 1 {
+		t.Errorf("consented = %+v", got)
 	}
 }
 

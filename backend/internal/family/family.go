@@ -135,6 +135,16 @@ func (s *Service) Consent(ctx context.Context, telegramID int64) (user.User, err
 	return s.users.SetConsent(ctx, telegramID, s.now())
 }
 
+// SetSource records the content the user came from.
+func (s *Service) SetSource(ctx context.Context, telegramID int64, source string) (user.User, error) {
+	return s.users.SetSource(ctx, telegramID, source)
+}
+
+// SetPendingStart keeps a start parameter until the user accepts the data policy.
+func (s *Service) SetPendingStart(ctx context.Context, telegramID int64, param string) (user.User, error) {
+	return s.users.SetPendingStart(ctx, telegramID, param)
+}
+
 // SetBlocked bans a user from the bot and the app, or lifts the ban. Their
 // data stays: a ban is reversible, deleting is the user's own choice.
 func (s *Service) SetBlocked(ctx context.Context, telegramID int64, on bool) (user.User, error) {

@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/stats"
 )
 
@@ -22,7 +24,7 @@ func NewStatsRepository(pool *pgxpool.Pool) *StatsRepository {
 	return &StatsRepository{pool: pool}
 }
 
-func (r *StatsRepository) Snapshot(ctx context.Context, now, today, monthStart time.Time) (stats.Snapshot, error) {
+func (r *StatsRepository) Snapshot(ctx context.Context, now, today, monthStart, packageSince time.Time) (stats.Snapshot, error) {
 	s := stats.Snapshot{At: now}
 	day, week := now.Add(-24*time.Hour), now.Add(-7*24*time.Hour)
 	err := r.pool.QueryRow(ctx, `
@@ -51,6 +53,28 @@ func (r *StatsRepository) Snapshot(ctx context.Context, now, today, monthStart t
 	if err != nil {
 		return stats.Snapshot{}, fmt.Errorf("count usage of features: %w", err)
 	}
+	err = r.pool.QueryRow(ctx, `
+		SELECT COALESCE(sum(prompt_tokens + completion_tokens) FILTER (WHERE day >= $1), 0),
+		       COALESCE(sum(prompt_tokens + completion_tokens) FILTER (WHERE day >= $2), 0),
+		       count(DISTINCT day) FILTER (WHERE day >= $2)
+		FROM llm_usage`, packageSince, today.AddDate(0, 0, -6)).
+		Scan(&s.Package.Spent, &s.Package.WeekTokens, &s.Package.WeekDays)
+	if err != nil {
+		return stats.Snapshot{}, fmt.Errorf("sum package usage: %w", err)
+	}
+	err = r.pool.QueryRow(ctx, `
+		SELECT count(*) FILTER (WHERE props->>'via' = $3),
+		       count(*) FILTER (WHERE props->>'via' = $4),
+		       count(*) FILTER (WHERE props->>'via' = $5)
+		FROM events WHERE name IN ($1, $2) AND created_at >= $6`,
+		events.ExpenseAdded, events.IncomeAdded, events.ViaFast, events.ViaAI, events.ViaMiniApp, week).
+		Scan(&s.Recorded.Fast, &s.Recorded.AI, &s.Recorded.MiniApp)
+	if err != nil {
+		return stats.Snapshot{}, fmt.Errorf("count recorded operations: %w", err)
+	}
+	if s.Sources, err = r.sources(ctx, week); err != nil {
+		return stats.Snapshot{}, err
+	}
 	if s.Today, err = r.usage(ctx, today, today); err != nil {
 		return stats.Snapshot{}, err
 	}
@@ -58,6 +82,23 @@ func (r *StatsRepository) Snapshot(ctx context.Context, now, today, monthStart t
 		return stats.Snapshot{}, err
 	}
 	return s, nil
+}
+
+// sources counts new users by where they came from. Only the biggest are
+// listed: the list ends up in one Telegram message.
+func (r *StatsRepository) sources(ctx context.Context, since time.Time) ([]stats.SourceCount, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT COALESCE(first_source, 'direct'), count(*)
+		FROM users WHERE created_at >= $1
+		GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 10`, since)
+	if err != nil {
+		return nil, fmt.Errorf("count sources: %w", err)
+	}
+	sources, err := pgx.CollectRows(rows, pgx.RowToStructByPos[stats.SourceCount])
+	if err != nil {
+		return nil, fmt.Errorf("count sources: %w", err)
+	}
+	return sources, nil
 }
 
 // usage sums the LLM accounting between two calendar dates, inclusive.

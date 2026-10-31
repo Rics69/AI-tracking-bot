@@ -4,7 +4,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { ApiError } from "@/api/client";
-import { useMe, useUpdateMe } from "@/api/queries";
+import { trackEvent, useMe, useUpdateMe } from "@/api/queries";
 import { Savik, usePreloadPoses } from "@/components/savik/savik";
 import { Card, PillButton } from "@/components/kit";
 import { texts } from "@/content/texts";
@@ -19,6 +19,7 @@ export function Gate({ children }: { children: ReactNode }) {
   const me = useMe();
   usePreloadPoses();
   useDeviceTimezone(me.data?.consented === true && !me.data.timezone);
+  useTrackOpen(me.data?.consented === true);
 
   if (me.isPending) {
     return (
@@ -91,6 +92,22 @@ function useDeviceTimezone(needed: boolean) {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     if (tz) update.mutate({ timezone: tz }, { onError: () => undefined }); // not worth bothering the user
   }, [needed, update]);
+}
+
+/**
+ * Reports the opening of the app once. The button of the morning reminder
+ * opens it with ?from=morning.
+ */
+function useTrackOpen(consented: boolean) {
+  const done = useRef(false);
+  useEffect(() => {
+    if (!consented || done.current) return;
+    done.current = true;
+    trackEvent({ name: "miniapp_open", screen: window.location.pathname.slice(0, 32) });
+    if (new URLSearchParams(window.location.search).get("from") === "morning") {
+      trackEvent({ name: "morning_clicked" });
+    }
+  }, [consented]);
 }
 
 function Centered({ children }: { children: ReactNode }) {

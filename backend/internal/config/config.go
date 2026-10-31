@@ -91,6 +91,13 @@ type Bot struct {
 	// Daily limits per user, so nobody spends the whole token budget; 0: unlimited.
 	UserDailyMessages int   `env:"USER_DAILY_MESSAGES" envDefault:"150"`
 	UserDailyTokens   int64 `env:"USER_DAILY_TOKENS" envDefault:"200000"`
+	// LLMTokenPackage is the supply of tokens shared by all users, counted from
+	// LLMPackageSince (YYYY-MM-DD; empty: all usage on record). When it runs out
+	// only quick records work. 0: no package.
+	LLMTokenPackage int64  `env:"LLM_TOKEN_PACKAGE"`
+	LLMPackageSince string `env:"LLM_PACKAGE_SINCE"`
+	// LLMDailyTokens is a ceiling for all users per day; 0: none.
+	LLMDailyTokens int64 `env:"LLM_DAILY_TOKENS"`
 	// TelegramProxy routes requests to the Telegram Bot API, and only them,
 	// through a proxy: http://, https:// or socks5://[user:password@]host:port.
 	// From servers in Russia api.telegram.org is often unreachable. Empty: direct.
@@ -112,6 +119,18 @@ func (b Bot) TelegramProxyURL() (*url.URL, error) {
 	default:
 		return nil, fmt.Errorf("TELEGRAM_PROXY scheme must be http, https or socks5, got %q", u.Scheme)
 	}
+}
+
+// PackageStart parses LLM_PACKAGE_SINCE; the zero time when it is empty.
+func (b Bot) PackageStart() (time.Time, error) {
+	if b.LLMPackageSince == "" {
+		return time.Time{}, nil
+	}
+	t, err := time.Parse(time.DateOnly, b.LLMPackageSince)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("LLM_PACKAGE_SINCE must be a date like 2026-11-01, got %q", b.LLMPackageSince)
+	}
+	return t, nil
 }
 
 // Chat is the configuration of the local agent REPL (cmd/chat).
@@ -167,6 +186,9 @@ func LoadBot() (Bot, error) {
 		return Bot{}, err
 	}
 	if _, err := cfg.TelegramProxyURL(); err != nil {
+		return Bot{}, err
+	}
+	if _, err := cfg.PackageStart(); err != nil {
 		return Bot{}, err
 	}
 	return cfg, nil

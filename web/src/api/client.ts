@@ -17,6 +17,7 @@ export type Summary = components["schemas"]["Summary"];
 export type Member = components["schemas"]["Member"];
 export type Me = components["schemas"]["Me"];
 export type MeUpdate = components["schemas"]["MeUpdate"];
+export type ClientEvent = components["schemas"]["ClientEvent"];
 export type Family = components["schemas"]["Family"];
 export type Invite = components["schemas"]["Invite"];
 export type Bucket = components["schemas"]["Bucket"];

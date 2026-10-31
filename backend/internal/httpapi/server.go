@@ -7,6 +7,7 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"github.com/shopspring/decimal"
 
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/savik"
@@ -57,13 +58,14 @@ type Server struct {
 	ledger LedgerService
 	family FamilyService
 	budget BudgetService
+	events *events.Tracker
 	loc    *time.Location // timezone of users who have not chosen one
 }
 
 var _ StrictServerInterface = (*Server)(nil)
 
-func NewServer(l LedgerService, f FamilyService, b BudgetService, loc *time.Location) *Server {
-	return &Server{ledger: l, family: f, budget: b, loc: loc}
+func NewServer(l LedgerService, f FamilyService, b BudgetService, e *events.Tracker, loc *time.Location) *Server {
+	return &Server{ledger: l, family: f, budget: b, events: e, loc: loc}
 }
 
 // readScope is what the user may see: the head sees the whole family.
@@ -100,8 +102,12 @@ func (s *Server) UpdateMe(ctx context.Context, req UpdateMeRequestObject) (Updat
 		if !*b.Consent {
 			return nil, &ledger.ValidationError{Field: "consent", Message: "can only be accepted; delete the account to withdraw it"}
 		}
+		first := !u.Consented()
 		if u, err = s.family.Consent(ctx, u.TelegramID); err != nil {
 			return nil, err
+		}
+		if first {
+			s.events.Track(ctx, u.TelegramID, events.Consented, events.Props{"source": events.ViaMiniApp})
 		}
 	}
 	// The rest is personal data: only after the policy is accepted.
@@ -119,6 +125,28 @@ func (s *Server) UpdateMe(ctx context.Context, req UpdateMeRequestObject) (Updat
 		}
 	}
 	return UpdateMe200JSONResponse(s.toAPIMe(u)), nil
+}
+
+// maxScreen bounds what a client may put into the events table.
+const maxScreen = 32
+
+// TrackEvent records what only the mini app can see. The list of names is
+// closed: the table is for /stats, not for whatever a client sends.
+func (s *Server) TrackEvent(ctx context.Context, req TrackEventRequestObject) (TrackEventResponseObject, error) {
+	u, err := consented(ctx)
+	if err != nil {
+		return nil, err
+	}
+	name := string(req.Body.Name)
+	if name != events.MiniAppOpen && name != events.MorningClicked {
+		return nil, &ledger.ValidationError{Field: "name", Message: "unknown event"}
+	}
+	var props events.Props
+	if screen := deref(req.Body.Screen); screen != "" && len(screen) <= maxScreen {
+		props = events.Props{"screen": screen}
+	}
+	s.events.Track(ctx, u.TelegramID, name, props)
+	return TrackEvent204Response{}, nil
 }
 
 func (s *Server) DeleteMe(ctx context.Context, _ DeleteMeRequestObject) (DeleteMeResponseObject, error) {
@@ -194,6 +222,11 @@ func (s *Server) CreateOperation(ctx context.Context, req CreateOperationRequest
 	if err != nil {
 		return nil, err
 	}
+	name := events.ExpenseAdded
+	if o.Kind() == ledger.KindIncome {
+		name = events.IncomeAdded
+	}
+	s.events.Track(ctx, u.TelegramID, name, events.Props{"via": events.ViaMiniApp})
 	return CreateOperation201JSONResponse(toAPIOperation(o)), nil
 }
 

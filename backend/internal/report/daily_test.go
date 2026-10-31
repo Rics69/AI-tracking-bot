@@ -148,3 +148,63 @@ func TestDailyReminderIsSentOnceAndRetriedOnFailure(t *testing.T) {
 		t.Errorf("next morning sent %d in total, want the plans reminded again", len(*out))
 	}
 }
+
+type fakeSpending struct {
+	spent int64
+	err   error
+}
+
+func (f *fakeSpending) Spent(context.Context) (int64, error) { return f.spent, f.err }
+
+func TestPackageAlert(t *testing.T) {
+	ctx := context.Background()
+	tx, err := texts.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	spending := &fakeSpending{}
+	runs := &fakeRuns{claimed: map[string]bool{}}
+	var sent []string
+	failing := false
+	send := func(_ context.Context, chatID int64, text string) error {
+		if chatID != 99 {
+			t.Errorf("sent to %d, want the owner", chatID)
+		}
+		if failing {
+			return errors.New("network")
+		}
+		sent = append(sent, text)
+		return nil
+	}
+	since := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	alert := NewPackageAlert(spending, runs, send, 99, 2500000, since, tx, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	spending.spent = 1249999
+	alert.Tick(ctx)
+	if len(sent) != 0 {
+		t.Fatalf("below 50%%: %q", sent)
+	}
+
+	spending.spent = 1300000
+	failing = true
+	alert.Tick(ctx) // not delivered: the next tick tries again
+	failing = false
+	alert.Tick(ctx)
+	alert.Tick(ctx)
+	if len(sent) != 1 || !strings.Contains(sent[0], "52%") || !strings.Contains(sent[0], "1 300 000 из 2 500 000") ||
+		!strings.Contains(sent[0], "осталось 1 200 000") {
+		t.Fatalf("at 52%%: %q", sent)
+	}
+
+	spending.spent = 2400000 // 96%: both levels passed since the last tick
+	alert.Tick(ctx)
+	if len(sent) != 3 {
+		t.Fatalf("at 96%%: %q", sent)
+	}
+
+	spending.spent = 2600000
+	alert.Tick(ctx)
+	if len(sent) != 4 || !strings.Contains(sent[3], "закончился") {
+		t.Fatalf("at the end: %q", sent)
+	}
+}

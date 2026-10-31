@@ -8,6 +8,63 @@
 # Dates are relative to the day of the run: today, yesterday, -N, a weekday
 # (the most recent one), day:N. Comments match by substring, case-insensitively.
 
+# ── After a quick record ───────────────────────────────────────────────────
+# `quick` is recorded without the LLM and stays in the history as plain text:
+# the agent must still see the record and must not answer as if it had saved
+# something itself.
+
+- name: быстрая запись, правка суммы
+  tags: [quick, edit]
+  quick: ["кофе 350"]
+  turns: ["ой, не 350, а 450"]
+  expect:
+    tools: [find_operations, update_operation]
+    operations:
+      - { amount: 450, category: food, date: today, comment: кофе }
+
+- name: быстрая запись, правка даты
+  tags: [quick, edit, dates]
+  quick: ["такси 640"]
+  turns: ["это было вчера"]
+  expect:
+    operations:
+      - { amount: 640, category: transport, date: yesterday, comment: такси }
+
+- name: быстрая запись, отмена
+  tags: [quick, delete]
+  quick: ["обед 450"]
+  turns: ["отмени"]
+  expect:
+    tools: [delete_operation]
+    operations: []
+
+- name: быстрая запись, смена категории
+  tags: [quick, edit]
+  quick: ["кроссовки 7.5к"]
+  turns: ["это подарок сестре, поменяй комментарий на подарок"]
+  expect:
+    operations:
+      - { amount: 7500, kind: expense, date: today, comment: подарок }
+
+- name: после быстрой записи агент сам вызывает инструмент
+  tags: [quick, add]
+  quick: ["кофе 350", "такси 640"]
+  turns: ["купил хлеб за 80"]
+  expect:
+    tools: [add_expense]
+    operations:
+      - { amount: 350, category: food, date: today, comment: кофе }
+      - { amount: 640, category: transport, date: today, comment: такси }
+      - { amount: 80, category: food, date: today, comment: хлеб }
+
+- name: быстрая запись видна в сводке
+  tags: [quick, summary]
+  quick: ["кофе 350", "зарплата 80000"]
+  turns: ["сколько у меня осталось в этом месяце?"]
+  expect:
+    tools: [get_summary]
+    reply_contains: ["79650"]
+
 # ── Adding ──────────────────────────────────────────────────────────────────
 
 - name: простая трата

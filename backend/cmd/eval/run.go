@@ -13,7 +13,9 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/llm"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/quick"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/memory"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
 )
 
 const (
@@ -63,6 +65,7 @@ type runner struct {
 	client llm.Client
 	loc    *time.Location
 	cfg    agent.Config
+	texts  texts.Bot
 	log    *slog.Logger
 }
 
@@ -113,6 +116,20 @@ func (rn runner) run(ctx context.Context, c Case) Result {
 	cfg := rn.cfg
 	cfg.Budget = budgets
 	a := agent.New(rec, svc, svc, agent.NewHistory(10, time.Hour), cfg, rn.log)
+	// Quick turns go the way of the bot: recorded without the LLM, then remembered.
+	records, err := quick.New(svc, budgets)
+	if err != nil {
+		res.Failures = append(res.Failures, err.Error())
+		return res
+	}
+	for _, turn := range c.Quick {
+		op, ok, err := records.Record(ctx, userID, turn, today)
+		if err != nil || !ok {
+			res.Failures = append(res.Failures, fmt.Sprintf("quick turn %q: recorded %v, %v", turn, ok, err))
+			return res
+		}
+		a.Remember(ctx, userID, turn, quick.Reply(rn.texts, op, today))
+	}
 	start := time.Now()
 	for _, turn := range c.Turns {
 		reply, err := a.Reply(ctx, agent.Caller{UserID: userID, Name: "Анна"}, turn)

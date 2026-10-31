@@ -226,7 +226,7 @@ func (a *Agent) getBudget(ctx context.Context, t turn) (any, error) {
 		return map[string]any{
 			"configured":       true,
 			"ready":            false,
-			"next_payday_text": humanDate(b.NextPayday, t.today),
+			"next_payday_text": HumanDate(b.NextPayday, t.today),
 			"hint": "no income is recorded or expected since the last payday: ask the user to record the income they got " +
 				"or to name the expected income (set_payday with expected_income)",
 			"goals": t.goalItems(goals),
@@ -239,7 +239,7 @@ func (a *Agent) getBudget(ctx context.Context, t turn) (any, error) {
 	}
 	upcoming := make([]due, len(b.Upcoming))
 	for i, u := range b.Upcoming {
-		upcoming[i] = due{Title: u.Payment.Title, Amount: money(u.Payment.Amount), DateText: humanDate(u.Date, t.today)}
+		upcoming[i] = due{Title: u.Payment.Title, Amount: money(u.Payment.Amount), DateText: HumanDate(u.Date, t.today)}
 	}
 	// The answer comes first and flat: the model quotes the first numbers it sees.
 	return struct {
@@ -258,7 +258,7 @@ func (a *Agent) getBudget(ctx context.Context, t turn) (any, error) {
 		Goals            []goalItem  `json:"goals"`
 	}{
 		true, money(b.Limit), money(b.SpentToday), money(b.Left()), money(b.Remaining()),
-		humanDate(b.NextPayday, t.today), b.DaysLeft, money(b.Income), b.IncomeExpected,
+		HumanDate(b.NextPayday, t.today), b.DaysLeft, money(b.Income), b.IncomeExpected,
 		money(b.Payments), money(b.Savings), upcoming, t.goalItems(goals),
 	}, nil
 }
@@ -343,7 +343,7 @@ func (a *Agent) addRegular(ctx context.Context, t turn, raw json.RawMessage) (an
 	}
 	return map[string]any{"added": map[string]any{
 		"id": p.ID, "title": p.Title, "amount": money(p.Amount), "day_of_month": p.Day,
-		"category": p.Category.Label(), "next_date_text": humanDate(p.Due(t.today), t.today),
+		"category": p.Category.Label(), "next_date_text": HumanDate(p.Due(t.today), t.today),
 	}}, nil
 }
 
@@ -446,7 +446,7 @@ func (t turn) goalItem(g budget.Goal) goalItem {
 	it := goalItem{ID: g.ID, Title: g.Title, Saved: money(g.Saved), Target: money(g.Target), Left: money(g.Left()),
 		Reached: !g.Left().IsPositive()}
 	if g.Deadline != nil {
-		it.Deadline = humanDate(*g.Deadline, t.today)
+		it.Deadline = HumanDate(*g.Deadline, t.today)
 	}
 	return it
 }

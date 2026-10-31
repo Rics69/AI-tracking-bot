@@ -14,6 +14,7 @@ import (
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/config"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/httpapi"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
@@ -58,6 +59,8 @@ func run() error {
 		log.Warn("AUTH_DEV_USER_ID is ignored: it works only with APP_ENV=dev")
 	}
 	operations := ledger.NewService(postgres.NewOperationRepository(pool), cfg.Location)
+	tracker := events.NewTracker(postgres.NewEventRepository(pool), log.With("component", "events"))
+	defer tracker.Wait()
 	handler := httpapi.NewHandler(httpapi.Deps{
 		Ledger: operations,
 		Family: families,
@@ -68,6 +71,7 @@ func run() error {
 			DevUserID: cfg.DevUser(),
 			Log:       log,
 		},
+		Events:   tracker,
 		Location: cfg.Location,
 		Health:   pool.Ping,
 		Log:      log,

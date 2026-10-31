@@ -9,7 +9,9 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/startparam"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
@@ -18,7 +20,7 @@ import (
 // ("join:<code>", "kick:<id>"), at most 64 bytes. It comes from the client,
 // so arguments are checked again like any input.
 const (
-	cbConsent  = "consent"  // [:invite code]
+	cbConsent  = "consent"  // [:invite code] (the code only on old messages)
 	cbJoin     = "join"     // :invite code
 	cbDecline  = "decline"  // stay out of the family
 	cbFamily   = "family"   // show the family
@@ -32,6 +34,9 @@ const (
 	cbTimezone = "tz"       // [:IANA name]
 	cbDelete   = "delete!"  // delete the account
 	cbCancel   = "cancel"
+
+	cbFix       = "fix"  // :operation ID, how to correct a quick record
+	cbFixDelete = "fix!" // :operation ID, delete it
 )
 
 // view is a message with optional inline buttons.
@@ -94,7 +99,7 @@ func (h *Handler) handleCallback(ctx context.Context, s Sender, cq *models.Callb
 		return
 	}
 	if !u.Consented() {
-		h.askConsent(ctx, s, chatID, "")
+		h.askConsent(ctx, s, chatID)
 		return
 	}
 
@@ -138,6 +143,16 @@ func (h *Handler) handleCallback(ctx context.Context, s Sender, cq *models.Callb
 		h.deleteAccount(ctx, s, chatID, messageID, u)
 	case cbCancel:
 		h.reply(ctx, s, chatID, messageID, view{text: h.t.Cancelled})
+	case cbFix, cbFixDelete:
+		id, err := strconv.ParseInt(arg, 10, 64)
+		if err != nil {
+			return
+		}
+		if action == cbFix {
+			h.quickFix(ctx, s, chatID, id)
+		} else {
+			h.quickDelete(ctx, s, chatID, messageID, u, id)
+		}
 	default:
 		h.log.WarnContext(ctx, "unknown callback", "user_id", u.TelegramID, "data", cq.Data)
 	}
@@ -153,32 +168,37 @@ func (h *Handler) replyOrFail(ctx context.Context, s Sender, chatID int64, messa
 
 // Consent.
 
-func (h *Handler) askConsent(ctx context.Context, s Sender, chatID int64, inviteCode string) {
+func (h *Handler) askConsent(ctx context.Context, s Sender, chatID int64) {
 	policy := "/privacy"
 	if h.cfg.PrivacyURL != "" {
 		policy = h.cfg.PrivacyURL
 	}
-	data := cbConsent
-	if inviteCode != "" {
-		data += ":" + inviteCode // the invitation is shown once the user has agreed
-	}
 	h.reply(ctx, s, chatID, 0, view{
 		text:    texts.Fill(h.t.Consent, "policy", policy),
-		buttons: [][]models.InlineKeyboardButton{row(button(h.t.ConsentButton, data))},
+		buttons: [][]models.InlineKeyboardButton{row(button(h.t.ConsentButton, cbConsent))},
 	})
 }
 
-func (h *Handler) consent(ctx context.Context, s Sender, chatID int64, messageID int, u user.User, inviteCode string) {
-	if !u.Consented() {
+func (h *Handler) consent(ctx context.Context, s Sender, chatID int64, messageID int, u user.User, oldCode string) {
+	first := !u.Consented()
+	if first {
 		if _, err := h.family.Consent(ctx, u.TelegramID); err != nil {
 			h.replyOrFail(ctx, s, chatID, messageID, view{}, err)
 			return
 		}
 		h.log.InfoContext(ctx, "user consented", "user_id", u.TelegramID)
 	}
+	raw := u.PendingStart // what the user came with, kept until now
+	if raw == "" {
+		raw = oldCode
+	}
+	p := h.landing(ctx, raw)
+	if first || raw != "" {
+		h.arrive(ctx, u, p, events.Consented)
+	}
 	h.reply(ctx, s, chatID, messageID, view{text: h.t.Welcome})
-	if inviteCode != "" {
-		h.offerInvitation(ctx, s, chatID, inviteCode)
+	if p.Kind == startparam.Invite {
+		h.offerInvitation(ctx, s, chatID, p.Raw) // shown once the user has agreed
 	}
 }
 

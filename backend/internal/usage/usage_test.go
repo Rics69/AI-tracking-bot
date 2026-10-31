@@ -30,6 +30,60 @@ func (m memStore) Get(_ context.Context, userID int64, _ time.Time) (Day, error)
 	return m[userID], nil
 }
 
+func (m memStore) Total(context.Context, time.Time) (int64, error) {
+	var total int64
+	for _, d := range m {
+		total += d.Tokens()
+	}
+	return total, nil
+}
+
+func TestExhausted(t *testing.T) {
+	ctx := context.Background()
+	day := time.Date(2026, 10, 21, 0, 0, 0, 0, time.UTC)
+	now := day
+	check := func(t *testing.T, m *Meter, want bool) {
+		t.Helper()
+		got, err := m.Exhausted(ctx, day)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Errorf("Exhausted = %v, want %v", got, want)
+		}
+	}
+	setup := func(p Package) *Meter {
+		m := NewMeter(memStore{}, Limits{}, 0, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		m.now = func() time.Time { return now }
+		m.SetPackage(p)
+		return m
+	}
+
+	t.Run("no package", func(t *testing.T) {
+		m := setup(Package{})
+		m.RecordUsage(ctx, 1, day, llm.Usage{PromptTokens: 1 << 40}, false, 0)
+		check(t, m, false)
+	})
+	t.Run("the answer lives a minute", func(t *testing.T) {
+		m := setup(Package{Tokens: 1000})
+		check(t, m, false)
+		m.RecordUsage(ctx, 1, day, llm.Usage{PromptTokens: 990, CachedTokens: 9000, CompletionTokens: 10}, false, 0)
+		check(t, m, false) // not asked again yet
+		now = now.Add(exhaustedTTL)
+		check(t, m, true)
+	})
+	t.Run("cached tokens are free", func(t *testing.T) {
+		m := setup(Package{Tokens: 1000})
+		m.RecordUsage(ctx, 1, day, llm.Usage{PromptTokens: 999, CachedTokens: 9000}, false, 0)
+		check(t, m, false)
+	})
+	t.Run("the daily ceiling", func(t *testing.T) {
+		m := setup(Package{Tokens: 1000000, Daily: 100})
+		m.RecordUsage(ctx, 1, day, llm.Usage{PromptTokens: 100}, false, 0)
+		check(t, m, true)
+	})
+}
+
 func TestLimits(t *testing.T) {
 	ctx := context.Background()
 	day := time.Date(2026, 10, 21, 0, 0, 0, 0, time.UTC)

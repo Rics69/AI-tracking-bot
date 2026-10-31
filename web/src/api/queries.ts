@@ -13,6 +13,7 @@ import {
   unwrap,
   type Bucket,
   type Category,
+  type ClientEvent,
   type GoalCreate,
   type GoalUpdate,
   type Kind,
@@ -72,6 +73,11 @@ export function useUpdateMe() {
     mutationFn: async (body: MeUpdate) => unwrap(await api.PATCH("/me", { body })),
     onSuccess: (me) => qc.setQueryData(keys.me, me),
   });
+}
+
+/** Fire and forget: statistics never bother the user. */
+export function trackEvent(body: ClientEvent) {
+  void api.POST("/events", { body }).catch(() => undefined);
 }
 
 export function useDeleteMe() {

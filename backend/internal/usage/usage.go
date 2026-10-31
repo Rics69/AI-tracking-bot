@@ -28,6 +28,8 @@ func (d Day) Tokens() int64 { return d.PromptTokens + d.CompletionTokens }
 type Store interface {
 	Add(ctx context.Context, userID int64, day time.Time, u llm.Usage, failed bool, took time.Duration) error
 	Get(ctx context.Context, userID int64, day time.Time) (Day, error)
+	// Total sums the tokens the provider bills, of everyone, from a calendar date on.
+	Total(ctx context.Context, from time.Time) (int64, error)
 }
 
 // Limits per user per day; zero means unlimited.
@@ -35,6 +37,18 @@ type Limits struct {
 	Messages int
 	Tokens   int64
 }
+
+// Package is the supply of tokens shared by all users; zero values mean no
+// such limit. Cached tokens do not count against it, as with the daily limits.
+type Package struct {
+	Tokens int64     // bought or given once
+	Since  time.Time // the calendar date it started; earlier usage is not its own
+	Daily  int64     // a ceiling per day, so a burst of new users does not eat it all at once
+}
+
+// exhaustedTTL is how long the answer of Exhausted is reused: it is asked on
+// every message that goes to the agent.
+const exhaustedTTL = time.Minute
 
 // Meter records usage and decides whether a user may ask the agent again today.
 // It implements agent.UsageRecorder.
@@ -45,6 +59,13 @@ type Meter struct {
 	outage *outage
 	now    func() time.Time
 	log    *slog.Logger
+
+	pack Package
+	// The last answer of Exhausted.
+	mu        sync.Mutex
+	checked   time.Time
+	checkedOn time.Time
+	exhausted bool
 }
 
 func NewMeter(store Store, limits Limits, exempt int64, log *slog.Logger) *Meter {
@@ -108,6 +129,54 @@ func (m *Meter) Allow(ctx context.Context, userID int64, day time.Time) (bool, e
 		return false, nil
 	}
 	return true, nil
+}
+
+// SetPackage turns on the shared supply of tokens.
+func (m *Meter) SetPackage(p Package) { m.pack = p }
+
+// Spent is how many tokens of the package are gone.
+func (m *Meter) Spent(ctx context.Context) (int64, error) {
+	return m.store.Total(ctx, m.pack.Since)
+}
+
+// Exhausted reports that the package or the day's ceiling is used up: the
+// agent is off for everyone, the owner included, until there are tokens again.
+func (m *Meter) Exhausted(ctx context.Context, day time.Time) (bool, error) {
+	if m.pack.Tokens == 0 && m.pack.Daily == 0 {
+		return false, nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	now := m.now()
+	if !m.checked.IsZero() && now.Sub(m.checked) < exhaustedTTL && day.Equal(m.checkedOn) {
+		return m.exhausted, nil
+	}
+	exhausted, err := m.spentAll(ctx, day)
+	if err != nil {
+		return false, err
+	}
+	m.checked, m.checkedOn, m.exhausted = now, day, exhausted
+	return exhausted, nil
+}
+
+func (m *Meter) spentAll(ctx context.Context, day time.Time) (bool, error) {
+	if m.pack.Tokens > 0 {
+		spent, err := m.Spent(ctx)
+		if err != nil {
+			return false, err
+		}
+		if spent >= m.pack.Tokens {
+			return true, nil
+		}
+	}
+	if m.pack.Daily > 0 {
+		spent, err := m.store.Total(ctx, day)
+		if err != nil {
+			return false, err
+		}
+		return spent >= m.pack.Daily, nil
+	}
+	return false, nil
 }
 
 // RecordUsage adds one agent reply to the user's day. A failure to save is

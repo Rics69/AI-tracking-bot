@@ -22,7 +22,12 @@ type User struct {
 	IsHead    bool   // the head sees the expenses of the whole family
 	// WeeklyReport: the bot sends the weekly summary (on by default).
 	WeeklyReport bool
-	Timezone     string     // IANA name; empty means the app default
+	Timezone     string // IANA name; empty means the app default
+	FirstSource  string // the content that brought the user here; written once
+	LastSource   string // the content of their latest start link
+	// PendingStart is the start parameter of a link opened before the data
+	// policy was accepted; it is acted on right after.
+	PendingStart string
 	ConsentedAt  *time.Time // accepted the data policy; nil: the bot asks first
 	BlockedAt    *time.Time // banned: the bot does not serve the user
 	LastSeenAt   *time.Time
@@ -62,6 +67,11 @@ type Repository interface {
 	// SetTimezone stores an IANA timezone name; empty resets to the app default.
 	SetTimezone(ctx context.Context, telegramID int64, tz string) (User, error)
 	SetConsent(ctx context.Context, telegramID int64, at time.Time) (User, error)
+	// SetSource records the content the user came from: LastSource always,
+	// FirstSource only if it is still empty.
+	SetSource(ctx context.Context, telegramID int64, source string) (User, error)
+	// SetPendingStart keeps a start parameter until consent; empty clears it.
+	SetPendingStart(ctx context.Context, telegramID int64, param string) (User, error)
 	// SetBlocked bans the user from the bot and the app since at; nil lifts the ban.
 	SetBlocked(ctx context.Context, telegramID int64, at *time.Time) (User, error)
 	// Detach moves the user out of their family into a new family of their

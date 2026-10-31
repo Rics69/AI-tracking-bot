@@ -14,9 +14,14 @@ import (
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
+	"github.com/shopspring/decimal"
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/agent"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/quick"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/stats"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/memory"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
@@ -44,12 +49,17 @@ type fakeSender struct {
 	out      []out
 	failures int // the first N sends fail with a network error
 	attempts int
+
+	forbidden bool // the user blocked the bot
 }
 
 func (f *fakeSender) SendMessage(_ context.Context, p *bot.SendMessageParams) (*models.Message, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.attempts++
+	if f.forbidden {
+		return nil, fmt.Errorf("%w: bot was blocked by the user", bot.ErrorForbidden)
+	}
 	if f.attempts <= f.failures {
 		return nil, errors.New("unexpected EOF")
 	}
@@ -107,6 +117,8 @@ type fakeAgent struct {
 	err     error
 	callers []agent.Caller
 	resets  []int64
+
+	remembered []string
 }
 
 func (f *fakeAgent) Reply(_ context.Context, c agent.Caller, _ string) (string, error) {
@@ -116,9 +128,18 @@ func (f *fakeAgent) Reply(_ context.Context, c agent.Caller, _ string) (string, 
 
 func (f *fakeAgent) Reset(_ context.Context, id int64) { f.resets = append(f.resets, id) }
 
-type fakeMeter struct{ allow bool }
+func (f *fakeAgent) Remember(_ context.Context, _ int64, text, reply string) {
+	f.remembered = append(f.remembered, text+" → "+reply)
+}
+
+type fakeMeter struct {
+	allow     bool
+	exhausted bool
+}
 
 func (f *fakeMeter) Allow(context.Context, int64, time.Time) (bool, error) { return f.allow, nil }
+
+func (f *fakeMeter) Exhausted(context.Context, time.Time) (bool, error) { return f.exhausted, nil }
 
 type env struct {
 	h      *Handler
@@ -128,6 +149,13 @@ type env struct {
 	family *family.Service
 	s      *fakeSender
 	t      texts.Bot
+	events *memory.Events
+}
+
+// tracked returns the events written so far.
+func (e *env) tracked(name string) []memory.Event {
+	e.h.cfg.Events.Wait()
+	return e.events.Named(name)
 }
 
 func setup(t *testing.T) *env {
@@ -140,10 +168,13 @@ func setup(t *testing.T) *env {
 	settings := memory.NewSettings()
 	_ = settings.Set(context.Background(), family.SettingBotUsername, "SavepointBot")
 	fam := family.NewService(users, users, settings)
-	e := &env{agent: &fakeAgent{reply: "Записано"}, meter: &fakeMeter{allow: true}, users: users, family: fam, s: &fakeSender{}, t: tx}
+	e := &env{agent: &fakeAgent{reply: "Записано"}, meter: &fakeMeter{allow: true}, users: users, family: fam, s: &fakeSender{}, t: tx,
+		events: memory.NewEvents()}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	e.h = NewHandler(e.agent, fam, e.meter, Config{
 		ReplyTimeout: time.Minute, Location: time.UTC, AdminID: admin, Texts: tx,
-	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		Events: events.NewTracker(e.events, log),
+	}, log)
 	e.h.retryDelay = time.Millisecond
 	return e
 }
@@ -221,10 +252,10 @@ func TestJoinFamilyByInviteLink(t *testing.T) {
 
 	// A new user opens the link: consent first, then the invitation.
 	e.message(boris, "/start "+code)
-	if got := e.s.last(t, boris); !slices.Equal(got.buttons, []string{cbConsent + ":" + code}) {
-		t.Fatalf("new user with an invite = %+v, want consent carrying the code", got)
+	if got := e.s.last(t, boris); !slices.Equal(got.buttons, []string{cbConsent}) {
+		t.Fatalf("new user with an invite = %+v, want consent", got)
 	}
-	e.press(boris, cbConsent+":"+code)
+	e.press(boris, cbConsent)
 	invitation := e.s.last(t, boris)
 	if !strings.Contains(invitation.text, "Анна приглашает") || invitation.buttons[0] != cbJoin+":"+code {
 		t.Fatalf("invitation = %+v", invitation)
@@ -246,6 +277,241 @@ func TestJoinFamilyByInviteLink(t *testing.T) {
 	e.message(boris, "/start "+code)
 	if got := e.s.last(t, boris); got.text != e.t.InviteInvalid {
 		t.Errorf("reused link = %q", got.text)
+	}
+}
+
+func TestConsentMessageSentBeforeTheUpdateStillCarriesTheCode(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	e.onboard(t, anna)
+	head, _ := e.users.Get(ctx, anna)
+	inv, err := e.family.CreateInvite(ctx, head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, code, _ := strings.Cut(inv.Link, "start=")
+	e.message(boris, "кофе 350")
+	e.press(boris, cbConsent+":"+code)
+	if got := e.s.last(t, boris); !strings.Contains(got.text, "Анна приглашает") {
+		t.Errorf("after an old consent button = %+v", got)
+	}
+}
+
+func TestLinkBeforeConsentKeepsItsLabel(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	long := "go_dream__" + strings.Repeat("r", 54) // does not fit into a button with the prefix
+	e.message(anna, "/start "+long)
+	got := e.s.last(t, anna)
+	if !slices.Equal(got.buttons, []string{cbConsent}) {
+		t.Fatalf("consent = %+v", got)
+	}
+	if u, _ := e.users.Get(ctx, anna); u.PendingStart != long || u.FirstSource != "" {
+		t.Fatalf("before consent = %+v", u)
+	}
+	start := e.tracked(events.Start)
+	if len(start) != 1 || start[0].UserID != 0 || start[0].Props["feature"] != "dream" {
+		t.Fatalf("start before consent must name nobody: %+v", start)
+	}
+
+	e.press(anna, cbConsent)
+	if got := e.s.last(t, anna); got.text != e.t.Welcome {
+		t.Errorf("after consent = %q", got.text)
+	}
+	u, _ := e.users.Get(ctx, anna)
+	if u.PendingStart != "" || u.FirstSource != strings.Repeat("r", 54) || u.LastSource != u.FirstSource {
+		t.Errorf("after consent = %+v", u)
+	}
+	consented := e.tracked(events.Consented)
+	if len(consented) != 1 || consented[0].UserID != anna || consented[0].Props["source"] != u.FirstSource {
+		t.Errorf("consented = %+v", consented)
+	}
+}
+
+func TestSources(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	e.message(anna, "/start")
+	e.press(anna, cbConsent)
+	if u, _ := e.users.Get(ctx, anna); u.FirstSource != "direct" || u.LastSource != "direct" {
+		t.Fatalf("no label = %+v", u)
+	}
+	e.message(anna, "/start go_goal__tg")
+	if got := e.s.last(t, anna); got.text != e.t.Welcome {
+		t.Errorf("a feature link = %q, want the welcome for now", got.text)
+	}
+	if u, _ := e.users.Get(ctx, anna); u.FirstSource != "direct" || u.LastSource != "tg" {
+		t.Errorf("after a label = %+v", u)
+	}
+	e.message(anna, "/start")
+	if u, _ := e.users.Get(ctx, anna); u.LastSource != "tg" {
+		t.Errorf("a plain /start erased the source: %+v", u)
+	}
+	e.message(anna, "/start ch_noshopping")
+	if got := e.s.last(t, anna); got.text != e.t.Welcome {
+		t.Errorf("a challenge link = %q, want the welcome for now", got.text)
+	}
+	e.message(anna, "/start ???")
+	if got := e.s.last(t, anna); got.text != e.t.Welcome {
+		t.Errorf("a broken link = %q", got.text)
+	}
+}
+
+// liveCode is a family where one code, whatever it looks like, is a live invite.
+type liveCode struct {
+	Family
+	code string
+	head user.User
+}
+
+func (f liveCode) Invitation(ctx context.Context, code string) (user.User, error) {
+	if code == f.code {
+		return f.head, nil
+	}
+	return f.Family.Invitation(ctx, code)
+}
+
+func TestInviteCodeThatLooksLikeALabel(t *testing.T) {
+	for _, code := range []string{"go_dream__x", "go_0aB-cD", "ch_0aB-cD", "ref_0aB-cD"} {
+		t.Run(code, func(t *testing.T) {
+			e := setup(t)
+			ctx := context.Background()
+			e.onboard(t, anna)
+			head, _ := e.users.Get(ctx, anna)
+			e.h.family = liveCode{Family: e.family, code: code, head: head}
+			e.onboard(t, boris)
+			e.message(boris, "/start "+code)
+			if got := e.s.last(t, boris); !strings.Contains(got.text, "Анна приглашает") {
+				t.Errorf("a live invite = %+v", got)
+			}
+			if u, _ := e.users.Get(ctx, boris); u.LastSource != "invite" {
+				t.Errorf("source = %+v", u)
+			}
+		})
+	}
+}
+
+func TestPolicyAcceptedInTheAppKeepsTheLink(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	e.message(anna, "/start go_limit__yt")
+	if _, err := e.family.Consent(ctx, anna); err != nil { // PATCH /me
+		t.Fatal(err)
+	}
+	e.message(anna, "/start")
+	if u, _ := e.users.Get(ctx, anna); u.PendingStart != "" || u.FirstSource != "yt" {
+		t.Errorf("after /start = %+v", u)
+	}
+}
+
+// setupQuick is setup with the fast path on.
+func setupQuick(t *testing.T) (*env, *budget.Service) {
+	t.Helper()
+	e := setup(t)
+	repo := memory.NewOperationRepository()
+	svc := ledger.NewService(repo, time.UTC)
+	budgets := budget.NewService(memory.NewBudget(repo), svc)
+	q, err := quick.New(svc, budgets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.h.cfg.Quick = q
+	e.onboard(t, anna)
+	return e, budgets
+}
+
+func TestQuickRecord(t *testing.T) {
+	e, _ := setupQuick(t)
+	e.meter.allow = false // limits do not touch it
+	e.meter.exhausted = true
+	e.message(anna, "кофе 350")
+	got := e.s.last(t, anna)
+	if !strings.Contains(got.text, "Записано: кофе — 350\u00a0₽, еда, сегодня.") {
+		t.Fatalf("reply = %q", got.text)
+	}
+	if len(got.buttons) != 1 || !strings.HasPrefix(got.buttons[0], cbFix+":") {
+		t.Fatalf("buttons = %+v", got.buttons)
+	}
+	if len(e.agent.callers) != 0 {
+		t.Error("the agent was called")
+	}
+	if len(e.agent.remembered) != 1 || !strings.HasPrefix(e.agent.remembered[0], "кофе 350 → Записано") {
+		t.Errorf("remembered = %q", e.agent.remembered)
+	}
+	if ev := e.tracked(events.ExpenseAdded); len(ev) != 1 || ev[0].UserID != anna || ev[0].Props["via"] != events.ViaFast {
+		t.Errorf("events = %+v", ev)
+	}
+
+	e.message(anna, "зарплата 80000")
+	if ev := e.tracked(events.IncomeAdded); len(ev) != 1 {
+		t.Errorf("income events = %+v", ev)
+	}
+
+	// Correcting: a hint, and deleting works once and only for the owner.
+	id := strings.TrimPrefix(got.buttons[0], cbFix+":")
+	e.press(anna, cbFix+":"+id)
+	hint := e.s.last(t, anna)
+	if hint.text != e.t.QuickFixHint || !slices.Equal(hint.buttons, []string{cbFixDelete + ":" + id}) {
+		t.Fatalf("hint = %+v", hint)
+	}
+	e.onboard(t, boris)
+	e.press(boris, cbFixDelete+":"+id)
+	if got := e.s.last(t, boris); got.text != e.t.QuickGone {
+		t.Errorf("someone else's record = %q", got.text)
+	}
+	e.press(anna, cbFixDelete+":"+id)
+	if got := e.s.last(t, anna); got.text != e.t.QuickDeleted {
+		t.Errorf("deleted = %q", got.text)
+	}
+	e.press(anna, cbFixDelete+":"+id)
+	if got := e.s.last(t, anna); got.text != e.t.QuickGone {
+		t.Errorf("deleted twice = %q", got.text)
+	}
+}
+
+func TestQuickLeavesTheRestToTheAgent(t *testing.T) {
+	e, budgets := setupQuick(t)
+	ctx := context.Background()
+	e.message(anna, "сколько потратил на кофе")
+	if len(e.agent.callers) != 1 {
+		t.Fatalf("a question must reach the agent: %+v", e.agent.callers)
+	}
+	if _, err := budgets.CreatePayment(ctx, budget.RegularPayment{
+		UserID: anna, Title: "Аренда", Amount: decimal.NewFromInt(45000), Day: 1, Category: ledger.CategoryHousing,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	e.message(anna, "аренда 45000")
+	if len(e.agent.callers) != 2 {
+		t.Errorf("a regular payment must reach the agent: %+v", e.agent.callers)
+	}
+}
+
+func TestPackageExhausted(t *testing.T) {
+	e := setup(t)
+	e.onboard(t, anna)
+	e.meter.exhausted = true
+	e.message(anna, "сколько потратил за неделю")
+	if len(e.agent.callers) != 0 {
+		t.Error("the agent was called with the package used up")
+	}
+	if got := e.s.last(t, anna); got.text != e.t.AgentResting {
+		t.Errorf("reply = %q", got.text)
+	}
+	if ev := e.tracked(events.AILimitHit); len(ev) != 1 || ev[0].Props["reason"] != "package" {
+		t.Errorf("events = %+v", ev)
+	}
+}
+
+func TestBlockedBotIsTracked(t *testing.T) {
+	e := setup(t)
+	e.s.forbidden = true
+	err := e.h.Send(context.Background(), e.s, anna, "итоги недели")
+	if !errors.Is(err, ErrUndeliverable) {
+		t.Fatalf("err = %v", err)
+	}
+	if ev := e.tracked(events.BotBlocked); len(ev) != 1 || ev[0].UserID != anna {
+		t.Errorf("events = %+v", ev)
 	}
 }
 
@@ -545,7 +811,7 @@ func TestAppCommand(t *testing.T) {
 func TestSendWithApp(t *testing.T) {
 	e := setup(t)
 	ctx := context.Background()
-	if err := e.h.SendWithApp(ctx, e.s, anna, "Сегодня можно потратить 1 300 ₽."); err != nil {
+	if err := e.h.SendWithApp(ctx, e.s, anna, "Сегодня можно потратить 1 300 ₽.", "morning"); err != nil {
 		t.Fatal(err)
 	}
 	if got := e.s.last(t, anna); len(got.buttons) != 0 {
@@ -553,17 +819,17 @@ func TestSendWithApp(t *testing.T) {
 	}
 	e.h.cfg.MiniAppURL = "https://app.example.com"
 	e.s.failures = e.s.attempts + 1 // the next attempt fails: retried like replies
-	if err := e.h.SendWithApp(ctx, e.s, anna, "Сегодня можно потратить 1 300 ₽."); err != nil {
+	if err := e.h.SendWithApp(ctx, e.s, anna, "Сегодня можно потратить 1 300 ₽.", "morning"); err != nil {
 		t.Fatal(err)
 	}
-	if got := e.s.last(t, anna); !slices.Equal(got.buttons, []string{"webapp:https://app.example.com"}) {
+	if got := e.s.last(t, anna); !slices.Equal(got.buttons, []string{"webapp:https://app.example.com?from=morning"}) {
 		t.Errorf("reminder buttons = %+v", got)
 	}
 }
 
 type fakeStats struct{ asked int }
 
-func (f *fakeStats) Snapshot(_ context.Context, now, _, _ time.Time) (stats.Snapshot, error) {
+func (f *fakeStats) Snapshot(_ context.Context, now, _, _, _ time.Time) (stats.Snapshot, error) {
 	f.asked++
 	return stats.Snapshot{At: now, Users: 3, Consented: 2}, nil
 }

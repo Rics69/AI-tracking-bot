@@ -22,8 +22,10 @@ type Case struct {
 	Plan     *PlanSpec     `yaml:"plan"`
 	Goals    []GoalSpec    `yaml:"goals"`
 	Payments []PaymentSpec `yaml:"payments"`
-	Turns    []string      `yaml:"turns"` // user messages, sent one by one in one conversation
-	Expect   Expect        `yaml:"expect"`
+	// Quick are messages recorded by the fast path before Turns, the way the bot does.
+	Quick  []string `yaml:"quick"`
+	Turns  []string `yaml:"turns"` // user messages, sent one by one in one conversation
+	Expect Expect   `yaml:"expect"`
 }
 
 // Expect lists the checks of a case. Empty fields are not checked.

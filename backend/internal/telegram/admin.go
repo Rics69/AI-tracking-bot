@@ -28,12 +28,13 @@ func (h *Handler) showStats(ctx context.Context, s Sender, chatID int64, u user.
 	now := h.now().In(u.Location(h.cfg.Location))
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
-	snap, err := h.cfg.Stats.Snapshot(ctx, now, today, monthStart)
+	snap, err := h.cfg.Stats.Snapshot(ctx, now, today, monthStart, h.cfg.PackageSince)
 	if err != nil {
 		h.log.ErrorContext(ctx, "stats", "err", err)
 		h.send(ctx, s, chatID, h.t.Failure)
 		return
 	}
+	snap.Package.Tokens = h.cfg.PackageTokens
 	h.send(ctx, s, chatID, stats.Render(snap))
 }
 

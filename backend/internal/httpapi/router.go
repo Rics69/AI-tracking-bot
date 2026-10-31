@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"runtime/debug"
 	"time"
+
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 )
 
 const basePath = "/api/v1"
@@ -17,6 +19,8 @@ type Deps struct {
 	Budget BudgetService
 	// Auth identifies the user of every API request.
 	Auth *Auth
+	// Events records what people do; nil records nothing.
+	Events *events.Tracker
 	// Location is the timezone of users who have not chosen one.
 	Location *time.Location
 	// Health reports whether the service can serve requests (e.g. the database is reachable).
@@ -29,7 +33,7 @@ type Deps struct {
 func NewHandler(d Deps) http.Handler {
 	mux := http.NewServeMux()
 
-	strict := NewStrictHandlerWithOptions(NewServer(d.Ledger, d.Family, d.Budget, d.Location), nil, StrictHTTPServerOptions{
+	strict := NewStrictHandlerWithOptions(NewServer(d.Ledger, d.Family, d.Budget, d.Events, d.Location), nil, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) { writeBadRequest(w, err) },
 		ResponseErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 			writeError(d.Log, w, r, err)
