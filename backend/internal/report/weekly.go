@@ -9,12 +9,15 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
 
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/game"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
 
@@ -60,9 +63,18 @@ type Weekly struct {
 	members  Members
 	runs     Runs
 	send     SendFunc
-	loc      *time.Location // timezone of users who have not chosen one
-	now      func() time.Time
-	log      *slog.Logger
+	// Facts adds the goal, the limit, the streak and a conclusion; optional,
+	// with Texts for their wording.
+	Facts WeekFacts
+	Texts texts.Bot
+	loc   *time.Location // timezone of users who have not chosen one
+	now   func() time.Time
+	log   *slog.Logger
+}
+
+// WeekFacts is what the report takes from the game; *game.Service implements it.
+type WeekFacts interface {
+	Week(ctx context.Context, userID int64, weekStart, today time.Time) (game.Week, error)
 }
 
 func NewWeekly(expenses Expenses, members Members, runs Runs, send SendFunc, loc *time.Location, log *slog.Logger) *Weekly {
@@ -169,10 +181,61 @@ func (w *Weekly) Build(ctx context.Context, userID int64, weekStart time.Time) (
 	if err != nil {
 		return "", false, err
 	}
-	return render(weekStart, cur, prev, top.Items), false, nil
+	var blocks []string
+	if w.Facts != nil {
+		info, err := w.Facts.Week(ctx, userID, weekStart, weekEnd.AddDate(0, 0, 1))
+		if err != nil {
+			return "", false, err
+		}
+		blocks = w.blocks(info, cur.Expense.Sum, prev.Expense.Sum, prev.Expense.Count > 0)
+	}
+	return render(weekStart, cur, prev, top.Items, blocks), false, nil
 }
 
-func render(weekStart time.Time, cur, prev ledger.Summary, top []ledger.Operation) string {
+// closeGoalPercent is when a goal counts as nearly reached.
+const closeGoalPercent = 80
+
+// blocks are the lines about the rest of the week, and one conclusion.
+func (w *Weekly) blocks(info game.Week, spent, before decimal.Decimal, comparable bool) []string {
+	t := w.Texts
+	var lines []string
+	if info.Goal != nil {
+		lines = append(lines, texts.Fill(t.WeekGoal, "title", info.Goal.Title, "percent", strconv.Itoa(percent(*info.Goal)),
+			"added", Money(info.GoalAdded)))
+	}
+	if info.DaysCounted > 0 {
+		lines = append(lines, texts.Fill(t.WeekLimit, "under", strconv.Itoa(info.DaysUnder), "counted", strconv.Itoa(info.DaysCounted)))
+	}
+	if info.Streak > 0 {
+		lines = append(lines, texts.Fill(t.WeekStreak, "days", Days(info.Streak)))
+	}
+	if info.QuestsDone > 0 {
+		lines = append(lines, texts.Fill(t.WeekQuests, "count", strconv.Itoa(info.QuestsDone)))
+	}
+	if c := conclusion(t, info, spent, before, comparable); c != "" {
+		lines = append(lines, "", c)
+	}
+	return lines
+}
+
+// conclusion picks one line by rule; what is closest to the person's goal
+// goes first.
+func conclusion(t texts.Bot, info game.Week, spent, before decimal.Decimal, comparable bool) string {
+	switch {
+	case info.Goal != nil && percent(*info.Goal) >= closeGoalPercent:
+		return texts.Fill(t.WeekGoalClose, "title", info.Goal.Title)
+	case info.StreakBroken:
+		return t.WeekStreakBroken
+	case comparable && spent.LessThan(before):
+		return t.WeekSpentLess
+	case comparable && spent.GreaterThan(before):
+		return t.WeekSpentMore
+	default:
+		return ""
+	}
+}
+
+func render(weekStart time.Time, cur, prev ledger.Summary, top []ledger.Operation, blocks []string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Итоги недели · %s\n\n", weekRange(weekStart))
 	spent := cur.Expense
@@ -200,6 +263,9 @@ func render(weekStart time.Time, cur, prev ledger.Summary, top []ledger.Operatio
 	}
 	if cur.Income.Count > 0 {
 		fmt.Fprintf(&b, "\n\nПолучено %s · баланс недели %s", Money(cur.Income.Sum), signed(cur.Balance()))
+	}
+	if len(blocks) > 0 {
+		b.WriteString("\n\n" + strings.Join(blocks, "\n"))
 	}
 	b.WriteString("\n\nОтключить итоги — /settings")
 	return b.String()

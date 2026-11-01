@@ -46,6 +46,9 @@ func (h *Handler) arrive(ctx context.Context, u user.User, p startparam.Param, e
 		}
 	}
 	h.cfg.Events.Track(ctx, u.TelegramID, event, startProps(p))
+	if event == events.Consented {
+		h.landOnReferral(ctx, u, p)
+	}
 }
 
 // start answers /start of a user who has accepted the policy: a link leads

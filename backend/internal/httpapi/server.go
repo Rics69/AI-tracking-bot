@@ -112,7 +112,7 @@ func (s *Server) UpdateMe(ctx context.Context, req UpdateMeRequestObject) (Updat
 		}
 	}
 	// The rest is personal data: only after the policy is accepted.
-	notifying := b.Reminders != nil || b.ReminderHour != nil || b.ShowRates != nil || b.GoalUpdates != nil
+	notifying := b.Reminders != nil || b.ReminderHour != nil || b.ShowRates != nil || b.GoalUpdates != nil || b.StreakReminder != nil
 	if (b.Timezone != nil || b.WeeklyReport != nil || notifying) && !u.Consented() {
 		return nil, ErrConsentRequired
 	}
@@ -132,6 +132,7 @@ func (s *Server) UpdateMe(ctx context.Context, req UpdateMeRequestObject) (Updat
 		n.ReminderHour = orElse(b.ReminderHour, n.ReminderHour)
 		n.ShowRates = orElse(b.ShowRates, n.ShowRates)
 		n.GoalUpdates = orElse(b.GoalUpdates, n.GoalUpdates)
+		n.StreakReminder = orElse(b.StreakReminder, n.StreakReminder)
 		if u, err = s.family.SetNotifications(ctx, u.TelegramID, n); err != nil {
 			return nil, err
 		}
@@ -184,6 +185,7 @@ func (s *Server) toAPIMe(u user.User) Me {
 		ReminderHour:      u.ReminderHour,
 		ShowRates:         u.ShowRates,
 		GoalUpdates:       u.GoalUpdates,
+		StreakReminder:    u.StreakReminder,
 		Timezone:          optional(u.Timezone),
 		EffectiveTimezone: u.Location(s.loc).String(),
 		Consented:         u.Consented(),

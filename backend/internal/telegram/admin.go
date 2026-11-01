@@ -77,5 +77,6 @@ func AdminCommands(t texts.Bot, withApp bool) []models.BotCommand {
 		models.BotCommand{Command: "stats", Description: t.CommandStats},
 		models.BotCommand{Command: "ban", Description: t.CommandBan},
 		models.BotCommand{Command: "unban", Description: t.CommandUnban},
+		models.BotCommand{Command: "reviews", Description: t.CommandReviews},
 	)
 }

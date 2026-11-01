@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -21,6 +22,7 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/flow"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/game"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/quick"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/report"
@@ -53,6 +55,10 @@ type fakeSender struct {
 	attempts int
 
 	forbidden bool // the user blocked the bot
+	limited   int  // the next N sends hit the rate limit
+
+	photos [][]byte
+	files  []string
 }
 
 func (f *fakeSender) SendMessage(_ context.Context, p *bot.SendMessageParams) (*models.Message, error) {
@@ -61,6 +67,10 @@ func (f *fakeSender) SendMessage(_ context.Context, p *bot.SendMessageParams) (*
 	f.attempts++
 	if f.forbidden {
 		return nil, fmt.Errorf("%w: bot was blocked by the user", bot.ErrorForbidden)
+	}
+	if f.limited > 0 {
+		f.limited--
+		return nil, &bot.TooManyRequestsError{Message: "too many requests", RetryAfter: 3}
 	}
 	if f.attempts <= f.failures {
 		return nil, errors.New("unexpected EOF")
@@ -73,6 +83,30 @@ func (f *fakeSender) EditMessageText(_ context.Context, p *bot.EditMessageTextPa
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.out = append(f.out, out{chat: p.ChatID.(int64), text: p.Text, buttons: callbacks(p.ReplyMarkup), edit: true})
+	return &models.Message{}, nil
+}
+
+func (f *fakeSender) SendPhoto(_ context.Context, p *bot.SendPhotoParams) (*models.Message, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	data, err := io.ReadAll(p.Photo.(*models.InputFileUpload).Data)
+	if err != nil {
+		return nil, err
+	}
+	f.photos = append(f.photos, data)
+	f.out = append(f.out, out{chat: p.ChatID.(int64), text: p.Caption, buttons: callbacks(p.ReplyMarkup)})
+	return &models.Message{}, nil
+}
+
+func (f *fakeSender) SendDocument(_ context.Context, p *bot.SendDocumentParams) (*models.Message, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	data, err := io.ReadAll(p.Document.(*models.InputFileUpload).Data)
+	if err != nil {
+		return nil, err
+	}
+	f.files = append(f.files, string(data))
+	f.out = append(f.out, out{chat: p.ChatID.(int64), text: p.Caption})
 	return &models.Message{}, nil
 }
 
@@ -178,6 +212,7 @@ func setup(t *testing.T) *env {
 		Events: events.NewTracker(e.events, log),
 	}, log)
 	e.h.retryDelay = time.Millisecond
+	e.h.rateUnit = time.Millisecond
 	return e
 }
 
@@ -1156,6 +1191,290 @@ func TestSendWithApp(t *testing.T) {
 
 type fakeStats struct{ asked int }
 
+func TestRateLimitWaitsAsLongAsTelegramSays(t *testing.T) {
+	e := setup(t)
+	e.s.limited = 2
+	if err := e.h.Send(context.Background(), e.s, anna, "итоги"); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.s.last(t, anna); got.text != "итоги" {
+		t.Errorf("sent = %+v", got)
+	}
+}
+
+// setupGame is setupFlows with the game on.
+func setupGame(t *testing.T) (*env, *budget.Service, *memory.Game) {
+	t.Helper()
+	e, budgets, _ := setupFlows(t)
+	catalog, err := game.LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := memory.NewOperationRepository()
+	store := memory.NewGame()
+	e.h.cfg.Game = game.NewService(catalog, store, ledger.NewService(repo, time.UTC), budgets)
+	e.h.cfg.BotUsername = "SavepointBot"
+	return e, budgets, store
+}
+
+func TestQuestsCommand(t *testing.T) {
+	e, _, _ := setupGame(t)
+	e.onboard(t, anna)
+	e.press(anna, flowButton(stepChoice, "just"))
+	e.press(anna, flowButton(stepRecord, valueSkip))
+	e.message(anna, "/quests")
+	got := e.s.last(t, anna)
+	if !strings.Contains(got.text, "Опыт: 0") || !strings.Contains(got.text, "Уровень 0") {
+		t.Fatalf("/quests = %q", got.text)
+	}
+	if !slices.Contains(got.buttons, game.ActQuest+":subscriptions") || !slices.Contains(got.buttons, game.ActNoSpend) {
+		t.Fatalf("buttons = %+v", got.buttons)
+	}
+	e.press(anna, game.ActQuest+":subscriptions")
+	if got := e.s.last(t, anna); !strings.Contains(got.text, "+20 опыта") {
+		t.Errorf("done = %q", got.text)
+	}
+	if p, _ := e.h.cfg.Game.Profile(context.Background(), anna); p.XP != 20 || p.Streak != 1 {
+		t.Errorf("profile = %+v", p)
+	}
+	e.press(anna, game.ActQuest+":subscriptions")
+	if got := e.s.last(t, anna); got.text != e.t.QuestAlready {
+		t.Errorf("twice = %q", got.text)
+	}
+	if p, _ := e.h.cfg.Game.Profile(context.Background(), anna); p.XP != 20 {
+		t.Errorf("experience was given twice: %+v", p)
+	}
+	e.press(anna, game.ActQuest+":log-three") // automatic quests do not take a word for it
+	if got := e.s.last(t, anna); got.text != e.t.FlowStale {
+		t.Errorf("a forged button = %q", got.text)
+	}
+}
+
+func TestLevelTest(t *testing.T) {
+	e, _, _ := setupGame(t)
+	ctx := context.Background()
+	e.onboard(t, anna)
+	e.press(anna, flowButton(stepChoice, "just"))
+	e.press(anna, flowButton(stepRecord, valueSkip))
+	e.message(anna, "/level")
+	if got := e.s.last(t, anna); got.text != e.t.LevelQuestions[0] {
+		t.Fatalf("/level = %q", got.text)
+	}
+	e.press(anna, flowButton(stepLevel, valueYes))
+	e.press(anna, flowButton(stepLevel, valueYes))
+	e.press(anna, flowButton(stepLevel, valueNo))
+	got := e.s.last(t, anna)
+	if !strings.Contains(got.text, "Ваш уровень 2: Броня") {
+		t.Fatalf("result = %q", got.text)
+	}
+	if p, _ := e.h.cfg.Game.Profile(ctx, anna); p.Level != 2 || !p.LevelTested {
+		t.Errorf("profile = %+v", p)
+	}
+	e.message(anna, "/level")
+	got = e.s.last(t, anna)
+	if !slices.Contains(got.buttons, game.ActLevelUp+":3") {
+		t.Fatalf("the next level is vouched for: %+v", got)
+	}
+	e.press(anna, game.ActLevelUp+":5") // forged: not the next one
+	if p, _ := e.h.cfg.Game.Profile(ctx, anna); p.Level != 2 {
+		t.Errorf("jumped to %d", p.Level)
+	}
+	e.press(anna, game.ActLevelUp+":3")
+	if p, _ := e.h.cfg.Game.Profile(ctx, anna); p.Level != 3 {
+		t.Errorf("level = %d", p.Level)
+	}
+	if len(e.s.photos) != 1 || len(e.s.photos[0]) == 0 {
+		t.Errorf("a new level comes with a card: %d", len(e.s.photos))
+	}
+	if got := e.s.last(t, anna); !strings.Contains(got.text, "t.me/SavepointBot?start=ref_") {
+		t.Errorf("caption = %q", got.text)
+	}
+}
+
+func TestChallengeFromALink(t *testing.T) {
+	e, _, _ := setupGame(t)
+	ctx := context.Background()
+	e.onboard(t, anna)
+	e.press(anna, flowButton(stepChoice, "just"))
+	e.press(anna, flowButton(stepRecord, valueSkip))
+	e.message(anna, "/start ch_no-spend-week")
+	got := e.s.last(t, anna)
+	if !strings.Contains(got.text, "Неделя осознанных трат") || !slices.Contains(got.buttons, game.ActJoin+":no-spend-week") {
+		t.Fatalf("a link to a challenge = %+v", got)
+	}
+	e.press(anna, game.ActJoin+":no-spend-week")
+	if got := e.s.last(t, anna); !strings.Contains(got.text, "Вы в челлендже") {
+		t.Fatalf("joined = %q", got.text)
+	}
+	e.press(anna, game.ActJoin+":no-spend-week")
+	if got := e.s.last(t, anna); got.text != e.t.ChallengeAlready {
+		t.Errorf("twice = %q", got.text)
+	}
+	e.message(anna, "/challenge")
+	got = e.s.last(t, anna)
+	if !strings.Contains(got.text, "день 1 из 7") {
+		t.Fatalf("/challenge = %q", got.text)
+	}
+	done := game.ActDay + ":no-spend-week:1:" + game.DayDone
+	if !slices.Contains(got.buttons, done) {
+		t.Fatalf("buttons = %+v", got.buttons)
+	}
+	e.press(anna, game.ActDay+":no-spend-week:2:"+game.DayDone) // not today's
+	if got := e.s.last(t, anna); got.text != e.t.FlowStale {
+		t.Errorf("another day = %q", got.text)
+	}
+	e.press(anna, done)
+	if got := e.s.last(t, anna); !strings.Contains(got.text, "+10 опыта") {
+		t.Errorf("done = %q", got.text)
+	}
+	if p, _ := e.h.cfg.Game.Profile(ctx, anna); p.XP != 10 {
+		t.Errorf("profile = %+v", p)
+	}
+	e.press(anna, game.ActLeave+":no-spend-week")
+	if got := e.s.last(t, anna); got.text != e.t.ChallengeLeft {
+		t.Errorf("left = %q", got.text)
+	}
+}
+
+func TestChallengeStatsForTheOwner(t *testing.T) {
+	e, _, _ := setupGame(t)
+	e.onboard(t, admin)
+	e.press(admin, flowButton(stepChoice, "just"))
+	e.press(admin, flowButton(stepRecord, valueSkip))
+	e.message(admin, "/challenge no-spend-week")
+	if got := e.s.last(t, admin); !strings.Contains(got.text, "Участников: 0") {
+		t.Errorf("stats = %q", got.text)
+	}
+	e.message(admin, "/challenge nothing")
+	if got := e.s.last(t, admin); got.text != e.t.AdminChallengeUnknown {
+		t.Errorf("unknown = %q", got.text)
+	}
+}
+
+func TestReferral(t *testing.T) {
+	e, _, _ := setupGame(t)
+	ctx := context.Background()
+	e.onboard(t, anna)
+	e.press(anna, flowButton(stepChoice, "just"))
+	e.press(anna, flowButton(stepRecord, valueSkip))
+	code, err := e.h.cfg.Game.ReferralCode(ctx, anna)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.message(boris, "/start ref_"+code)
+	e.press(boris, cbConsent)
+	if u, _ := e.users.Get(ctx, boris); u.FirstSource != "ref" {
+		t.Errorf("source = %+v", u)
+	}
+	if p, _ := e.h.cfg.Game.Profile(ctx, anna); p.XP != 0 {
+		t.Fatalf("paid before onboarding: %+v", p)
+	}
+	e.press(boris, flowButton(stepChoice, "just"))
+	e.press(boris, flowButton(stepRecord, valueSkip))
+	if p, _ := e.h.cfg.Game.Profile(ctx, anna); p.XP != 50 {
+		t.Errorf("after onboarding: %+v", p)
+	}
+	if got := e.s.last(t, anna); got.text != e.t.ReferralRewarded {
+		t.Errorf("referrer told = %q", got.text)
+	}
+}
+
+func TestDreamCardHidesMoneyUntilAsked(t *testing.T) {
+	e, _, _ := setupGame(t)
+	e.onboard(t, anna)
+	e.message(anna, "/dream")
+	e.message(anna, "Ноутбук")
+	e.message(anna, "120000")
+	e.press(anna, flowButton(stepDreamTerm, "12"))
+	e.press(anna, flowButton(stepDreamSaved, valueZero))
+	e.press(anna, flowButton(stepDreamResult, valueCard))
+	got := e.s.last(t, anna)
+	if len(e.s.photos) != 1 || strings.Contains(got.text, "120") {
+		t.Fatalf("a card by default: %d photos, caption %q", len(e.s.photos), got.text)
+	}
+	if !slices.Contains(got.buttons, flowButton(stepDreamResult, valueCardSums)) {
+		t.Fatalf("buttons = %+v", got.buttons)
+	}
+	e.press(anna, flowButton(stepDreamResult, valueCardSums))
+	if len(e.s.photos) != 2 {
+		t.Errorf("photos = %d", len(e.s.photos))
+	}
+}
+
+func TestReview(t *testing.T) {
+	e, budgets, store := setupGame(t)
+	ctx := context.Background()
+	e.onboard(t, admin)
+	e.press(admin, flowButton(stepChoice, "just"))
+	e.press(admin, flowButton(stepRecord, valueSkip))
+	e.onboard(t, anna)
+	e.press(anna, flowButton(stepChoice, "just"))
+	e.press(anna, flowButton(stepRecord, valueSkip))
+	if _, err := budgets.SetPlan(ctx, budget.Plan{UserID: anna, Paydays: []int{5}, ExpectedIncome: new(decimal.NewFromInt(90000))}); err != nil {
+		t.Fatal(err)
+	}
+	e.message(anna, "/review")
+	e.press(anna, flowButton(stepReviewStart, valueMine))
+	e.press(anna, flowButton(stepReviewAge, "1"))
+	if got := e.s.last(t, anna); got.text != e.t.ReviewExpenses {
+		t.Fatalf("income from the data is not asked again: %q", got.text)
+	}
+	e.message(anna, "много")
+	if got := e.s.last(t, anna); got.text != e.t.RetryAmount {
+		t.Fatalf("a wrong amount = %q", got.text)
+	}
+	e.message(anna, "40к")
+	e.message(anna, "300000")
+	e.message(anna, "24,9 %")
+	e.message(anna, "500к")
+	e.message(anna, "Квартира")
+	e.message(anna, strings.Repeat("я", 501))
+	if got := e.s.last(t, anna); got.text != e.t.RetryLong {
+		t.Fatalf("a long question = %q", got.text)
+	}
+	e.message(anna, "С чего начать?")
+	if got := e.s.last(t, anna); got.text != e.t.ReviewConsent {
+		t.Fatalf("consent = %q", got.text)
+	}
+	if reviews, _ := store.Reviews(ctx); len(reviews) != 0 {
+		t.Fatal("kept before the consent")
+	}
+	e.press(anna, flowButton(stepReviewConsent, valueYes))
+	if got := e.s.last(t, anna); got.text != e.t.ReviewThanks {
+		t.Errorf("thanks = %q", got.text)
+	}
+	if got := e.s.last(t, admin); got.text != e.t.AdminReviewNew {
+		t.Errorf("owner told = %q", got.text)
+	}
+
+	e.message(anna, "/reviews")
+	if len(e.s.files) != 0 {
+		t.Fatal("reviews are the owner's")
+	}
+	e.message(admin, "/reviews")
+	if len(e.s.files) != 1 {
+		t.Fatalf("files = %d", len(e.s.files))
+	}
+	csv := e.s.files[0]
+	for _, want := range []string{"25–34", "90000", "24.9", "Квартира", "С чего начать?"} {
+		if !strings.Contains(csv, want) {
+			t.Errorf("export lacks %q:\n%s", want, csv)
+		}
+	}
+	for _, leak := range []string{"Анна", "анна", strconv.FormatInt(anna, 10) + ","} {
+		if strings.Contains(csv, leak) {
+			t.Errorf("export gives away %q:\n%s", leak, csv)
+		}
+	}
+	if got := e.s.last(t, admin); !strings.Contains(got.text, "новых 1") {
+		t.Errorf("caption = %q", got.text)
+	}
+	e.message(admin, "/reviews")
+	if got := e.s.last(t, admin); !strings.Contains(got.text, "новых 0") {
+		t.Errorf("after seeing = %q", got.text)
+	}
+}
+
 func (f *fakeStats) Snapshot(_ context.Context, now, _, _, _ time.Time) (stats.Snapshot, error) {
 	f.asked++
 	return stats.Snapshot{At: now, Users: 3, Consented: 2}, nil
@@ -1205,7 +1524,7 @@ func TestAdminCommands(t *testing.T) {
 	if got := e.s.last(t, anna); got.text != "Записано" {
 		t.Errorf("unbanned user: %q", got.text)
 	}
-	if len(AdminCommands(e.t, true)) != len(Commands(e.t, true))+3 {
+	if len(AdminCommands(e.t, true)) != len(Commands(e.t, true))+4 {
 		t.Error("the owner's menu must add /stats, /ban and /unban")
 	}
 }

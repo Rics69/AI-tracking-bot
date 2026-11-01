@@ -733,7 +733,7 @@ components:
 
     Me:
       type: object
-      required: [telegram_id, first_name, family_id, is_head, weekly_report, reminders, reminder_hour, show_rates, goal_updates, effective_timezone, consented, created_at]
+      required: [telegram_id, first_name, family_id, is_head, weekly_report, reminders, reminder_hour, show_rates, goal_updates, streak_reminder, effective_timezone, consented, created_at]
       properties:
         telegram_id: { type: integer, format: int64, example: 123456789 }
         first_name: { type: string, example: Данил }
@@ -745,6 +745,7 @@ components:
         reminder_hour: { type: integer, minimum: 0, maximum: 23, description: Час утреннего сообщения по поясу пользователя }
         show_rates: { type: boolean, description: Показывать курсы доллара и евро в утреннем сообщении }
         goal_updates: { type: boolean, description: 'Сообщать о прогрессе цели на 25, 50, 75 и 100%' }
+        streak_reminder: { type: boolean, description: 'Напоминать в 21:00, если серия вот-вот прервётся' }
         timezone:
           type: string
           example: Asia/Novosibirsk
@@ -763,6 +764,7 @@ components:
         reminder_hour: { type: integer, minimum: 0, maximum: 23 }
         show_rates: { type: boolean }
         goal_updates: { type: boolean }
+        streak_reminder: { type: boolean }
         consent: { type: boolean, description: '`true` — принять политику данных; отозвать согласие можно только удалением аккаунта' }
 
     Operation:

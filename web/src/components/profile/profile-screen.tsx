@@ -383,6 +383,19 @@ function SettingsSection({ me }: { me: Me }) {
       </label>
       <label className="flex min-h-14 items-center justify-between gap-4 border-t px-4 py-2">
         <span className="flex flex-col">
+          <span className="text-[15px]">Напоминание о серии</span>
+          <span className="text-[13px] text-muted-foreground">
+            Вечером, если за день нет записей
+          </span>
+        </span>
+        <Switch
+          checked={me.streak_reminder}
+          disabled={update.isPending}
+          onCheckedChange={(on) => save({ streak_reminder: on })}
+        />
+      </label>
+      <label className="flex min-h-14 items-center justify-between gap-4 border-t px-4 py-2">
+        <span className="flex flex-col">
           <span className="text-[15px]">Часовой пояс</span>
           <span className="text-[13px] text-muted-foreground">
             От него зависит, какой день «сегодня»

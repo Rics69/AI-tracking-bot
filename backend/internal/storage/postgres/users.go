@@ -13,7 +13,7 @@ import (
 )
 
 const userColumns = `telegram_id, family_id, first_name, COALESCE(username, ''), is_head, weekly_report,
-	reminder_hour, reminders, show_rates, goal_updates, COALESCE(timezone, ''), COALESCE(first_source, ''), COALESCE(last_source, ''), COALESCE(pending_start, ''),
+	reminder_hour, reminders, show_rates, goal_updates, streak_reminder, COALESCE(timezone, ''), COALESCE(first_source, ''), COALESCE(last_source, ''), COALESCE(pending_start, ''),
 	consented_at, blocked_at, last_seen_at, created_at, updated_at`
 
 // UserRepository implements user.Repository.
@@ -113,9 +113,10 @@ func (r *UserRepository) SetWeeklyReport(ctx context.Context, telegramID int64, 
 
 func (r *UserRepository) SetNotifications(ctx context.Context, telegramID int64, n user.Notifications) (user.User, error) {
 	u, err := scanUser(r.pool.QueryRow(ctx, `
-		UPDATE users SET reminder_hour = $2, reminders = $3, show_rates = $4, goal_updates = $5, updated_at = now()
+		UPDATE users SET reminder_hour = $2, reminders = $3, show_rates = $4, goal_updates = $5,
+		    streak_reminder = $6, updated_at = now()
 		WHERE telegram_id = $1
-		RETURNING `+userColumns, telegramID, n.ReminderHour, n.Reminders, n.ShowRates, n.GoalUpdates))
+		RETURNING `+userColumns, telegramID, n.ReminderHour, n.Reminders, n.ShowRates, n.GoalUpdates, n.StreakReminder))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return user.User{}, user.ErrNotFound
 	}
@@ -240,6 +241,6 @@ func (r *UserRepository) Delete(ctx context.Context, telegramID int64) error {
 func scanUser(row pgx.Row) (user.User, error) {
 	var u user.User
 	err := row.Scan(&u.TelegramID, &u.FamilyID, &u.FirstName, &u.Username, &u.IsHead, &u.WeeklyReport,
-		&u.ReminderHour, &u.Reminders, &u.ShowRates, &u.GoalUpdates, &u.Timezone, &u.FirstSource, &u.LastSource, &u.PendingStart, &u.ConsentedAt, &u.BlockedAt, &u.LastSeenAt, &u.CreatedAt, &u.UpdatedAt)
+		&u.ReminderHour, &u.Reminders, &u.ShowRates, &u.GoalUpdates, &u.StreakReminder, &u.Timezone, &u.FirstSource, &u.LastSource, &u.PendingStart, &u.ConsentedAt, &u.BlockedAt, &u.LastSeenAt, &u.CreatedAt, &u.UpdatedAt)
 	return u, err
 }

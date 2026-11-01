@@ -51,7 +51,7 @@ func (r *Users) Admit(_ context.Context, u user.User) (user.User, error) {
 		saved = user.User{
 			TelegramID: u.TelegramID, FamilyID: r.newFamily(), IsHead: true,
 			WeeklyReport:  true,
-			Notifications: user.Notifications{ReminderHour: user.DefaultReminderHour, Reminders: true, ShowRates: true, GoalUpdates: true}, CreatedAt: now,
+			Notifications: user.Notifications{ReminderHour: user.DefaultReminderHour, Reminders: true, ShowRates: true, GoalUpdates: true, StreakReminder: true}, CreatedAt: now,
 		}
 	}
 	if saved.FirstName != u.FirstName || saved.Username != u.Username {

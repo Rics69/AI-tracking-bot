@@ -18,10 +18,12 @@ import (
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/agent"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/card"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/config"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/flow"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/game"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/llm/provider"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/logger"
@@ -100,6 +102,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	catalog, err := game.LoadCatalog()
+	if err != nil {
+		return err
+	}
+	play := game.NewService(catalog, postgres.NewGameRepository(pool), expenses, budgets)
 	handler := telegram.NewHandler(assistant, members, meter, telegram.Config{
 		ReplyTimeout: cfg.ReplyTimeout,
 		Location:     cfg.Location,
@@ -112,6 +119,7 @@ func run() error {
 		Events:       tracker,
 		Flows:        flows,
 		Budget:       budgets,
+		Game:         play,
 
 		PackageTokens: cfg.LLMTokenPackage,
 		PackageSince:  packageSince,
@@ -140,6 +148,7 @@ func run() error {
 	if err := members.SetBotUsername(ctx, me.Username); err != nil {
 		return err
 	}
+	handler.SetBotUsername(me.Username)
 	if _, err := b.SetMyCommands(ctx, &bot.SetMyCommandsParams{Commands: telegram.Commands(botTexts, cfg.MiniAppURL != "")}); err != nil {
 		log.Warn("set bot commands", "err", err) // the bot works without the menu
 	}
@@ -186,15 +195,25 @@ func run() error {
 			return undeliverable(handler.Send(ctx, b, chatID, text))
 		},
 		cfg.Location, log.With("component", "report"))
+	weekly.Facts, weekly.Texts = play, botTexts
 	go weekly.Run(ctx)
 	rateStore := postgres.NewRateRepository(pool)
 	updater := rates.NewUpdater(rateStore, log.With("component", "rates"))
 	go every(ctx, time.Hour, func() { updater.Update(ctx) })
-	go report.NewGoalProgress(budgets, users, runs,
+	sendRows := func(ctx context.Context, chatID int64, text string, rows [][]game.Action) error {
+		return undeliverable(handler.SendActions(ctx, b, chatID, text, fromGame, rows))
+	}
+	sendCard := func(ctx context.Context, chatID int64, c card.Card, caption string, rows [][]game.Action) error {
+		return undeliverable(handler.SendCard(ctx, b, chatID, c, caption, rows))
+	}
+	milestones := report.NewGoalProgress(budgets, users, runs,
 		func(ctx context.Context, chatID int64, text string) error {
 			return undeliverable(handler.SendWithApp(ctx, b, chatID, text, fromGoal))
 		},
-		botTexts, log.With("component", "goals")).Run(ctx)
+		botTexts, log.With("component", "goals"))
+	milestones.SendCard = sendCard
+	go milestones.Run(ctx)
+	go report.NewGame(play, users, runs, sendRows, sendCard, botTexts, cfg.Location, log.With("component", "game")).Run(ctx)
 	daily := report.NewDaily(budgets, users, runs, rateStore,
 		func(ctx context.Context, chatID int64, text string) error {
 			err := handler.SendWithApp(ctx, b, chatID, text, fromMorning)
@@ -204,6 +223,14 @@ func run() error {
 			return undeliverable(err)
 		},
 		botTexts, cfg.Location, log.With("component", "reminder"))
+	daily.Extras = report.GameMorning{Game: play, Texts: botTexts}
+	daily.SendRows = func(ctx context.Context, chatID int64, text string, rows [][]game.Action) error {
+		err := handler.SendActions(ctx, b, chatID, text, fromMorning, rows)
+		if err == nil {
+			tracker.Track(ctx, chatID, events.MorningSent, nil)
+		}
+		return undeliverable(err)
+	}
 	go daily.Run(ctx)
 
 	if cfg.AdminID == 0 {
@@ -224,8 +251,12 @@ const telegramPollTimeout = time.Minute
 // reports the click.
 const fromMorning = "morning"
 
-// fromGoal marks the mini app button of a goal milestone.
-const fromGoal = "goal"
+// fromGoal and fromGame mark the mini app button of a goal milestone and of
+// the messages of the game.
+const (
+	fromGoal = "goal"
+	fromGame = "game"
+)
 
 // every runs fn now and then at each interval until ctx is cancelled.
 func every(ctx context.Context, interval time.Duration, fn func()) {

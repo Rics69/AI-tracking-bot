@@ -521,6 +521,8 @@ export interface components {
             show_rates: boolean;
             /** @description Сообщать о прогрессе цели на 25, 50, 75 и 100% */
             goal_updates: boolean;
+            /** @description Напоминать в 21:00, если серия вот-вот прервётся */
+            streak_reminder: boolean;
             /**
              * @description Выбранный часовой пояс; нет — пользователь не выбирал (mini app может подставить пояс устройства)
              * @example Asia/Novosibirsk
@@ -548,6 +550,7 @@ export interface components {
             reminder_hour?: number;
             show_rates?: boolean;
             goal_updates?: boolean;
+            streak_reminder?: boolean;
             /** @description `true` — принять политику данных; отозвать согласие можно только удалением аккаунта */
             consent?: boolean;
         };

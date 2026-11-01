@@ -20,6 +20,8 @@ type Notifications struct {
 	Reminders    bool // the morning message
 	ShowRates    bool // exchange rates in the morning message
 	GoalUpdates  bool // a message at 25, 50, 75 and 100% of a goal
+	// StreakReminder: a nudge at 21:00 when a streak is about to break.
+	StreakReminder bool
 }
 
 // User is a person identified by their Telegram ID.

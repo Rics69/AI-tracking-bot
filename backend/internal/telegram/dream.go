@@ -9,8 +9,10 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/agent"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/card"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/dream"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/game"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/quick"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/report"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
@@ -30,6 +32,9 @@ const (
 	valueZero   = "zero"
 	valueGoal   = "goal"
 	valueBoost  = "boost"
+
+	valueCard     = "card"
+	valueCardSums = "cardsums"
 )
 
 // termMonths go with the labels of dream_terms in texts.yaml.
@@ -215,7 +220,38 @@ func askDreamResult(se *session) view {
 	if r.Verdict != dream.Unknown && !boosted {
 		buttons = append(buttons, stepButton(t.DreamBoostButton, stepDreamResult, valueBoost))
 	}
-	return view{text: strings.Join(lines, "\n"), buttons: [][]models.InlineKeyboardButton{buttons, later}}
+	rows := [][]models.InlineKeyboardButton{buttons}
+	if se.h.gameOn() {
+		rows = append(rows, row(stepButton(t.CardButton, stepDreamResult, valueCard)))
+	}
+	return view{text: strings.Join(lines, "\n"), buttons: append(rows, later)}
+}
+
+// dreamCard sends the result for a story: the time and the share of income by
+// default, money only after the button.
+func (se *session) dreamCard(amounts bool) string {
+	t := se.h.t
+	in, deadline, err := se.dreamInput()
+	if err != nil {
+		return se.fail(err)
+	}
+	r := dream.Compute(in)
+	c := card.Card{Pose: card.PoseProud, Glow: card.GlowOrange, Eyebrow: t.CardDream,
+		Value: texts.Fill(t.CardDreamMonths, "months", strconv.Itoa(in.Months)), Title: se.st.Data[keyTitle],
+		Lines: []string{texts.Fill(t.CardDreamDeadline, "deadline", agent.HumanDate(deadline, se.day))}}
+	if r.Verdict != dream.Unknown {
+		c.Lines = append(c.Lines, texts.Fill(t.CardDreamShare, "share", strconv.Itoa(r.Share)))
+	}
+	var rows [][]game.Action
+	if amounts {
+		c.Lines = append(c.Lines, texts.Fill(t.CardDreamAmounts, "price", report.Money(in.Price), "month", report.Money(r.PerMonth)))
+	} else {
+		rows = [][]game.Action{{{Label: t.CardShowAmounts, Data: cbFlow + ":" + stepDreamResult + ":" + valueCardSums}}}
+	}
+	if err := se.h.SendCard(se.ctx, se.s, se.chatID, c, se.st.Data[keyTitle], rows); err != nil {
+		return se.fail(err)
+	}
+	return stay
 }
 
 func verdict(t texts.Bot, v dream.Verdict) string {
@@ -236,6 +272,10 @@ func pressDreamResult(se *session, value string) string {
 		return stepDreamResult
 	case valueGoal:
 		return se.makeGoal()
+	case valueCard:
+		return se.dreamCard(false)
+	case valueCardSums:
+		return se.dreamCard(true)
 	default:
 		return se.afterGoal()
 	}

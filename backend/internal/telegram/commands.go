@@ -11,6 +11,7 @@ import (
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/game"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/startparam"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
@@ -158,6 +159,20 @@ func (h *Handler) handleCallback(ctx context.Context, s Sender, cq *models.Callb
 		h.setHour(ctx, s, chatID, messageID, u, arg)
 	case cbFlow:
 		h.flowPress(ctx, s, chatID, messageID, u, arg)
+	case game.ActQuest:
+		h.questDone(ctx, s, chatID, messageID, u, arg)
+	case game.ActNoSpend:
+		h.noSpend(ctx, s, chatID, messageID, u)
+	case game.ActDay:
+		h.markTask(ctx, s, chatID, messageID, u, arg)
+	case game.ActJoin:
+		h.joinChallenge(ctx, s, chatID, messageID, u, arg)
+	case game.ActLeave:
+		h.leaveChallenge(ctx, s, chatID, messageID, u, arg)
+	case game.ActLevelUp:
+		h.confirmLevel(ctx, s, chatID, messageID, u, arg)
+	case game.ActGoalCard:
+		h.goalCard(ctx, s, chatID, u, arg)
 	case cbFix, cbFixDelete:
 		id, err := strconv.ParseInt(arg, 10, 64)
 		if err != nil {
@@ -448,6 +463,7 @@ func (h *Handler) settingsView(u user.User) view {
 	}
 	rates, ratesButton := toggle(u.ShowRates, notifyRates, h.t.RatesButtonOn, h.t.RatesButtonOff)
 	goals, goalsButton := toggle(u.GoalUpdates, notifyGoals, h.t.GoalsButtonOn, h.t.GoalsButtonOff)
+	streak, streakButton := toggle(u.StreakReminder, notifyStreak, h.t.StreakButtonOn, h.t.StreakButtonOff)
 	morning := h.t.MorningOff
 	buttons := [][]models.InlineKeyboardButton{row(weeklyButton)}
 	if u.Reminders {
@@ -459,9 +475,9 @@ func (h *Handler) settingsView(u user.User) view {
 	} else {
 		buttons = append(buttons, row(button(h.t.MorningButtonOff, cbNotify+":"+notifyMorning+":on")))
 	}
-	buttons = append(buttons, row(goalsButton), row(button(h.t.TimezoneButton, cbTimezone)))
+	buttons = append(buttons, row(goalsButton), row(streakButton), row(button(h.t.TimezoneButton, cbTimezone)))
 	return view{
-		text: texts.Fill(h.t.Settings, "weekly", weekly, "morning", morning, "rates", rates, "goals", goals,
+		text: texts.Fill(h.t.Settings, "weekly", weekly, "morning", morning, "rates", rates, "goals", goals, "streak", streak,
 			"timezone", timezoneName(u.Location(h.cfg.Location))),
 		buttons: buttons,
 	}
@@ -472,6 +488,7 @@ const (
 	notifyMorning = "morning"
 	notifyRates   = "rates"
 	notifyGoals   = "goals"
+	notifyStreak  = "streak"
 )
 
 func (h *Handler) toggleNotification(ctx context.Context, s Sender, chatID int64, messageID int, u user.User, name string, on bool) {
@@ -483,6 +500,8 @@ func (h *Handler) toggleNotification(ctx context.Context, s Sender, chatID int64
 		n.ShowRates = on
 	case notifyGoals:
 		n.GoalUpdates = on
+	case notifyStreak:
+		n.StreakReminder = on
 	default:
 		return
 	}
@@ -619,7 +638,12 @@ func Commands(t texts.Bot, withApp bool) []models.BotCommand {
 	if withApp {
 		commands = append(commands, models.BotCommand{Command: "app", Description: t.CommandApp})
 	}
-	commands = append(commands, models.BotCommand{Command: "dream", Description: t.CommandDream})
+	commands = append(commands,
+		models.BotCommand{Command: "dream", Description: t.CommandDream},
+		models.BotCommand{Command: "quests", Description: t.CommandQuests},
+		models.BotCommand{Command: "level", Description: t.CommandLevel},
+		models.BotCommand{Command: "challenge", Description: t.CommandChallenge},
+		models.BotCommand{Command: "review", Description: t.CommandReview})
 	return append(commands, []models.BotCommand{
 		{Command: "family", Description: t.CommandFamily},
 		{Command: "settings", Description: t.CommandSettings},

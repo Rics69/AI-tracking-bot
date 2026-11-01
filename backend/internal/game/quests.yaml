@@ -1,0 +1,85 @@
+# Каталог квестов. Новый квест — это коммит: миграция не нужна.
+#
+# kind: daily — квест дня, weekly — на неделю, once — разовый на уровне.
+# check: manual — кнопка «Сделал», auto — код проверяет правило (только у daily).
+# rule.type: operations_logged {count}, under_daily_limit, goal_contribution,
+#            no_spend {category, text}.
+# levels: [от, до] — для каких уровней квест, включительно.
+# slug остаётся в базе: не меняйте его у уже выданного квеста, и он должен быть
+# короче 32 символов — он едет в кнопке.
+
+- slug: log-three
+  title: Записать все траты за день
+  text: Запишите минимум три траты за сегодня.
+  levels: [0, 1]
+  kind: daily
+  check: auto
+  rule: { type: operations_logged, count: 3 }
+  xp: 10
+
+- slug: under-limit
+  title: Уложиться в дневной лимит
+  text: Потратьте сегодня не больше лимита. Засчитается завтра утром.
+  levels: [0, 2]
+  kind: daily
+  check: auto
+  rule: { type: under_daily_limit }
+  xp: 15
+
+- slug: save-any
+  title: Отложить любую сумму на цель
+  text: Даже 100 ₽ считаются. Напишите, например, «отложил 500 на отпуск».
+  levels: [0, 5]
+  kind: daily
+  check: auto
+  rule: { type: goal_contribution }
+  xp: 15
+
+- slug: no-delivery
+  title: День без доставки еды
+  text: Сегодня без доставки. Засчитается завтра утром, если вы записывали траты.
+  levels: [0, 3]
+  kind: daily
+  check: auto
+  rule: { type: no_spend, category: food, text: доставк }
+  xp: 15
+
+- slug: subscriptions
+  title: Проверить подписки
+  text: Откройте список подписок и отмените ненужную.
+  levels: [0, 2]
+  kind: once
+  check: manual
+  xp: 20
+
+- slug: list-debts
+  title: Выписать все долги
+  text: "По каждому: сумма, ставка, дата платежа."
+  levels: [0, 1]
+  kind: once
+  check: manual
+  xp: 25
+
+- slug: auto-transfer
+  title: Поставить автоперевод
+  text: Настройте в банке перевод на накопительный счёт в день зарплаты.
+  levels: [1, 3]
+  kind: once
+  check: manual
+  xp: 30
+
+- slug: market-rate
+  title: Узнать свою цену на рынке
+  text: Найдите 20 вакансий своей роли и запишите вилки.
+  levels: [2, 4]
+  kind: once
+  check: manual
+  xp: 30
+
+- slug: hr-benefits
+  title: Спросить про льготы
+  text: Спросите HR, какие льготы и компенсации вам положены.
+  levels: [2, 4]
+  kind: once
+  check: manual
+  xp: 20

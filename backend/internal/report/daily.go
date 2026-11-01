@@ -13,6 +13,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/game"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/rates"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/savik"
@@ -38,6 +39,12 @@ type Rates interface {
 	Latest(ctx context.Context, codes []string) ([]rates.Rate, error)
 }
 
+// MorningExtras is what other parts add to the morning message.
+type MorningExtras interface {
+	Reminded(ctx context.Context) ([]int64, error)
+	Morning(ctx context.Context, m user.User, today time.Time) (MorningExtra, error)
+}
+
 // Daily sends the morning message: today's limit for those who set a payday,
 // the main goal, regular payments due tomorrow and exchange rates. Like the
 // weekly report, the text is built by code from a phrase bank, so the numbers
@@ -48,11 +55,15 @@ type Daily struct {
 	runs    Runs
 	rates   Rates    // nil: no rates
 	send    SendFunc // delivers with a button that opens the mini app
-	t       texts.Bot
-	loc     *time.Location // timezone of users who have not chosen one
-	now     func() time.Time
-	pick    func(n int) int // random phrase index
-	log     *slog.Logger
+	// Extras adds what the game has for the morning, and SendRows delivers it
+	// with its buttons; both optional.
+	Extras   MorningExtras
+	SendRows ActionSend
+	t        texts.Bot
+	loc      *time.Location // timezone of users who have not chosen one
+	now      func() time.Time
+	pick     func(n int) int // random phrase index
+	log      *slog.Logger
 }
 
 func NewDaily(budgets Budgets, members Members, runs Runs, r Rates, send SendFunc, t texts.Bot, loc *time.Location, log *slog.Logger) *Daily {
@@ -81,6 +92,13 @@ func (d *Daily) Tick(ctx context.Context) {
 	if err != nil {
 		d.log.ErrorContext(ctx, "daily reminder: list users", "err", err)
 		return
+	}
+	if d.Extras != nil {
+		more, err := d.Extras.Reminded(ctx)
+		if err != nil {
+			d.log.ErrorContext(ctx, "daily reminder: list challenge users", "err", err)
+		}
+		ids = append(ids, more...)
 	}
 	if len(ids) == 0 {
 		return
@@ -136,11 +154,11 @@ func (d *Daily) sendOne(ctx context.Context, m user.User, now time.Time) error {
 	if err != nil || !claimed {
 		return err
 	}
-	text, err := d.Build(ctx, m, today)
+	text, rows, err := d.Build(ctx, m, today)
 	if err == nil && text == "" {
 		return nil // nothing to say today: stay quiet, but mark the day as handled
 	}
-	return d.deliver(ctx, kindDaily, period, m.TelegramID, text, err)
+	return d.deliver(ctx, kindDaily, period, m.TelegramID, text, rows, err)
 }
 
 // comeback says goodbye once and leaves the user alone.
@@ -155,12 +173,16 @@ func (d *Daily) comeback(ctx context.Context, m user.User, today, lastSeen time.
 	if g := budget.MainGoal(goals); g != nil {
 		text = texts.Fill(d.t.ComebackGoal, "title", g.Title, "percent", strconv.Itoa(percent(*g)))
 	}
-	return d.deliver(ctx, kindComeback, period, m.TelegramID, text, err)
+	return d.deliver(ctx, kindComeback, period, m.TelegramID, text, nil, err)
 }
 
 // deliver sends what was claimed, and gives the claim back if it failed.
-func (d *Daily) deliver(ctx context.Context, kind, period string, userID int64, text string, err error) error {
-	if err == nil {
+func (d *Daily) deliver(ctx context.Context, kind, period string, userID int64, text string, rows [][]game.Action, err error) error {
+	switch {
+	case err != nil:
+	case len(rows) > 0 && d.SendRows != nil:
+		err = d.SendRows(ctx, userID, text, rows)
+	default:
 		err = d.send(ctx, userID, text)
 	}
 	if errors.Is(err, ErrUndeliverable) {
@@ -179,27 +201,27 @@ func (d *Daily) deliver(ctx context.Context, kind, period string, userID int64, 
 
 // Build renders the message of a day; empty when there is nothing to say.
 // Rates alone are not a reason to write.
-func (d *Daily) Build(ctx context.Context, m user.User, today time.Time) (string, error) {
+func (d *Daily) Build(ctx context.Context, m user.User, today time.Time) (string, [][]game.Action, error) {
 	userID := m.TelegramID
 	plan, err := d.budgets.Plan(ctx, userID)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	goals, err := d.budgets.Goals(ctx, userID)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	var lines []string
 	if plan != nil {
 		b, err := d.budgets.Budget(ctx, userID, today)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 		// In the morning today's spending is usually zero: it counts as over
 		// the limit when yesterday went over the limit yesterday had.
 		yesterday, err := d.budgets.Budget(ctx, userID, today.AddDate(0, 0, -1))
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 		lines = append(lines, d.limitLine(b, yesterday != nil && yesterday.Overspent(), goals, today))
 	}
@@ -208,7 +230,7 @@ func (d *Daily) Build(ctx context.Context, m user.User, today time.Time) (string
 	}
 	payments, err := d.budgets.Payments(ctx, userID)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	tomorrow := today.AddDate(0, 0, 1)
 	for _, p := range payments {
@@ -216,15 +238,22 @@ func (d *Daily) Build(ctx context.Context, m user.User, today time.Time) (string
 			lines = append(lines, texts.Fill(d.t.ReminderPayment, "title", p.Title, "amount", Money(p.Amount)))
 		}
 	}
-	if len(lines) == 0 {
-		return "", nil
+	var extra MorningExtra
+	if d.Extras != nil {
+		if extra, err = d.Extras.Morning(ctx, m, today); err != nil {
+			d.log.WarnContext(ctx, "daily reminder: game", "user_id", userID, "err", err) // the money part still goes out
+		}
 	}
+	if len(lines) == 0 && !extra.Alone {
+		return "", nil, nil
+	}
+	lines = append(lines, extra.Lines...)
 	if m.ShowRates {
 		if line := d.ratesLine(ctx); line != "" {
 			lines = append(lines, line)
 		}
 	}
-	return strings.Join(lines, "\n"), nil
+	return strings.Join(lines, "\n"), extra.Rows, nil
 }
 
 // ratesLine is empty when there are no rates: the message goes out without them.

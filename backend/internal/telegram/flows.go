@@ -30,6 +30,9 @@ type Budget interface {
 	Budget(ctx context.Context, userID int64, today time.Time) (*budget.Budget, error)
 	CreateGoal(ctx context.Context, g budget.Goal, today time.Time) (budget.Goal, error)
 	Deposit(ctx context.Context, userID, goalID int64, amount decimal.Decimal, date *time.Time, today time.Time) (budget.Goal, error)
+	Goal(ctx context.Context, userID, id int64) (budget.Goal, error)
+	Goals(ctx context.Context, userID int64) ([]budget.Goal, error)
+	Payments(ctx context.Context, userID int64) ([]budget.RegularPayment, error)
 }
 
 const (
@@ -95,6 +98,27 @@ func init() {
 		stepDreamDate:   {ask: askDreamDate, text: textDreamDate, press: pressSkipGoal, retry: retryDate},
 		stepDreamSaved:  {ask: askDreamSaved, text: textDreamSaved, press: pressDreamSaved, retry: retryAmount},
 		stepDreamResult: {ask: askDreamResult, press: pressDreamResult, retry: retryButton},
+
+		stepLevel: {ask: askLevel, press: pressLevel, retry: retryButton},
+
+		stepReviewStart:    {ask: askReviewStart, press: pressReviewStart, retry: retryButton},
+		stepReviewAge:      {ask: askReviewAge, press: pressReviewAge, retry: retryButton},
+		stepReviewDebts:    {ask: askReviewDebts, text: textReviewDebts, press: pressReviewDebts, retry: retryAmount},
+		stepReviewRate:     {ask: askReviewRate, text: textReviewRate, retry: retryRate},
+		stepReviewGoal:     {ask: askReviewGoal, text: textReviewGoal, retry: retryLong},
+		stepReviewQuestion: {ask: askReviewQuestion, text: textReviewQuestion, retry: retryLong},
+		stepReviewConsent:  {ask: askReviewConsent, press: pressReviewConsent, retry: retryButton},
+	}
+	for _, q := range []struct {
+		step, key string
+		text      func(texts.Bot) string
+	}{
+		{stepReviewIncome, keyIncome, func(t texts.Bot) string { return t.ReviewIncome }},
+		{stepReviewExpenses, keyExpenses, func(t texts.Bot) string { return t.ReviewExpenses }},
+		{stepReviewSavings, keySavings, func(t texts.Bot) string { return t.ReviewSavings }},
+	} {
+		ask, answer := amountStep(q.text, q.step, q.key)
+		steps[q.step] = step{ask: ask, text: answer, retry: retryAmount}
 	}
 }
 
@@ -103,6 +127,8 @@ func retryAmount(t texts.Bot) string { return t.RetryAmount }
 func retryPayday(t texts.Bot) string { return t.RetryPayday }
 func retryDate(t texts.Bot) string   { return t.RetryDate }
 func retryButton(t texts.Bot) string { return t.RetryButton }
+func retryRate(t texts.Bot) string   { return t.RetryRate }
+func retryLong(t texts.Bot) string   { return t.RetryLong }
 
 // Dialog mechanics.
 
@@ -183,6 +209,7 @@ func (se *session) finish() {
 	h.dropFlow(se.ctx, se.u.TelegramID)
 	if se.isNew() {
 		h.cfg.Events.Track(se.ctx, se.u.TelegramID, events.OnboardingDone, nil)
+		h.rewardReferral(se.ctx, se.s, se.u)
 	}
 	text := h.t.FlowDone
 	b, err := h.cfg.Budget.Budget(se.ctx, se.u.TelegramID, se.day)
@@ -271,6 +298,9 @@ func (h *Handler) route(ctx context.Context, s Sender, chatID int64, u user.User
 		h.begin(ctx, s, chatID, u, flowOnboarding, stepGoalTitle, isNew)
 	case p.Feature == startparam.FeatureLimit:
 		h.begin(ctx, s, chatID, u, flowOnboarding, stepPayday, isNew)
+	case p.Feature == startparam.FeatureReview && h.gameOn():
+		h.begin(ctx, s, chatID, u, flowReview, stepReviewStart, false)
+	case p.Kind == startparam.Challenge && h.gameOn() && h.offerChallenge(ctx, s, chatID, p.Slug):
 	case isNew:
 		h.begin(ctx, s, chatID, u, flowOnboarding, stepChoice, isNew)
 	default:

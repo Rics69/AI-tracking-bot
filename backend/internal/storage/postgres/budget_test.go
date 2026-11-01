@@ -13,6 +13,7 @@ import (
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/flow"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/game"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/rates"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
@@ -228,6 +229,149 @@ func TestFlows(t *testing.T) {
 	}
 	if err := r.Delete(ctx, 1); err != nil {
 		t.Errorf("delete of nothing: %v", err)
+	}
+}
+
+func TestGameStore(t *testing.T) {
+	setup(t)
+	ctx := context.Background()
+	r := NewGameRepository(testPool)
+	if ok, err := r.AddXP(ctx, 1, 10, "quest", "a:1"); err != nil || !ok {
+		t.Fatalf("xp = %v, %v", ok, err)
+	}
+	if ok, err := r.AddXP(ctx, 1, 10, "quest", "a:1"); err != nil || ok {
+		t.Errorf("the same experience twice: %v, %v", ok, err)
+	}
+	if _, err := r.AddXP(ctx, 1, 5, "quest", "b:1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.RaiseLevel(ctx, 1, 3, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.RaiseLevel(ctx, 1, 1, false); err != nil {
+		t.Fatal(err)
+	}
+	if p, err := r.Profile(ctx, 1); err != nil || p.XP != 15 || p.Level != 3 || !p.LevelTested {
+		t.Errorf("profile = %+v, %v", p, err)
+	}
+
+	for i, want := range []struct {
+		streak  int
+		advance bool
+	}{{1, true}, {2, true}, {2, false}} {
+		p, advanced, err := r.TouchStreak(ctx, 1, day(10+min(i, 1)))
+		if err != nil || p.Streak != want.streak || advanced != want.advance {
+			t.Errorf("touch %d = %+v, %v, %v", i, p, advanced, err)
+		}
+	}
+	if p, _, _ := r.TouchStreak(ctx, 1, day(20)); p.Streak != 1 || p.BestStreak != 2 {
+		t.Errorf("after a gap = %+v", p)
+	}
+
+	code, err := r.SetReferralCode(ctx, 1, "abc")
+	if err != nil || code != "abc" {
+		t.Fatalf("code = %q, %v", code, err)
+	}
+	if code, _ = r.SetReferralCode(ctx, 1, "other"); code != "abc" {
+		t.Errorf("the code changed to %q", code)
+	}
+	if id, err := r.ReferrerOf(ctx, "abc"); err != nil || id != 1 {
+		t.Errorf("referrer = %d, %v", id, err)
+	}
+	if err := r.AddReferral(ctx, 1, 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.AddReferral(ctx, 2, 2); err != nil {
+		t.Fatal(err)
+	}
+	if id, _ := r.Referrer(ctx, 2); id != 1 {
+		t.Errorf("the first referrer stays: %d", id)
+	}
+
+	if err := r.OfferQuest(ctx, 1, "a", "2026-10-24"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.OfferQuest(ctx, 1, "a", "2026-10-24"); err != nil {
+		t.Fatal(err)
+	}
+	open, err := r.OpenQuests(ctx)
+	if err != nil || len(open) != 1 {
+		t.Fatalf("open = %+v, %v", open, err)
+	}
+	if ok, err := r.CloseQuest(ctx, 1, "a", "2026-10-24", game.StatusDone, time.Now()); err != nil || !ok {
+		t.Errorf("close = %v, %v", ok, err)
+	}
+	if ok, _ := r.CloseQuest(ctx, 1, "a", "2026-10-24", game.StatusMissed, time.Now()); ok {
+		t.Error("a closed quest closed again")
+	}
+	if rows, _ := r.UserQuests(ctx, 1); len(rows) != 1 || rows[0].Status != game.StatusDone || rows[0].DoneAt == nil {
+		t.Errorf("rows = %+v", rows)
+	}
+
+	if ok, err := r.Join(ctx, "c", 1, day(10)); err != nil || !ok {
+		t.Fatalf("join = %v, %v", ok, err)
+	}
+	if ok, _ := r.Join(ctx, "c", 1, day(11)); ok {
+		t.Error("joined twice")
+	}
+	if _, err := r.Join(ctx, "c", 2, day(10)); err != nil {
+		t.Fatal(err)
+	}
+	mark := game.DayMark{Slug: "c", UserID: 1, DayNo: 1, Date: day(10), Status: game.DayLater}
+	if ok, err := r.MarkDay(ctx, mark); err != nil || !ok {
+		t.Fatalf("mark = %v, %v", ok, err)
+	}
+	if later, _ := r.LaterMarks(ctx, day(10)); len(later) != 1 {
+		t.Errorf("later = %+v", later)
+	}
+	mark.Status = game.DayDone
+	if ok, _ := r.MarkDay(ctx, mark); !ok {
+		t.Error("a postponed day was not done")
+	}
+	mark.Status = game.DaySkipped
+	if ok, _ := r.MarkDay(ctx, mark); ok {
+		t.Error("a done day changed")
+	}
+	if done, total, err := r.DayShare(ctx, "c", day(10)); err != nil || done != 1 || total != 2 {
+		t.Errorf("share = %d of %d, %v", done, total, err)
+	}
+	parts, err := r.Participations(ctx, 1)
+	if err != nil || len(parts) != 1 || parts[0].DoneDays != 1 {
+		t.Fatalf("parts = %+v, %v", parts, err)
+	}
+	if err := r.SetParticipant(ctx, "c", 1, game.ParticipantFinished); err != nil {
+		t.Fatal(err)
+	}
+	if active, _ := r.Participants(ctx); len(active) != 1 || active[0].UserID != 2 {
+		t.Errorf("active = %+v", active)
+	}
+	st, err := r.ChallengeStats(ctx, "c")
+	if err != nil || st.Participants != 2 || st.Finished != 1 || st.DoneByDay[1] != 1 {
+		t.Errorf("stats = %+v, %v", st, err)
+	}
+
+	if err := r.AddReview(ctx, 1, map[string]string{"question": "С чего начать?"}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	reviews, err := r.Reviews(ctx)
+	if err != nil || len(reviews) != 1 || reviews[0].Status != "new" || reviews[0].Answers["question"] != "С чего начать?" {
+		t.Fatalf("reviews = %+v, %v", reviews, err)
+	}
+	if err := r.MarkReviewsSeen(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if reviews, _ = r.Reviews(ctx); reviews[0].Status != "seen" {
+		t.Errorf("after seeing = %+v", reviews)
+	}
+}
+
+func TestActiveSince(t *testing.T) {
+	ops, _ := setup(t)
+	ctx := context.Background()
+	mustCreate(t, ops, 1, "350", ledger.CategoryFood, 20, "кофе")
+	active, err := NewGameRepository(testPool).ActiveSince(ctx, time.Now().Add(-time.Hour))
+	if err != nil || len(active) != 1 || active[1].IsZero() {
+		t.Errorf("active = %+v, %v", active, err)
 	}
 }
 

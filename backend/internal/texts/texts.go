@@ -87,6 +87,99 @@ type Bot struct {
 	DreamLater       string   `yaml:"dream_later"`
 	DreamGoalSaved   string   `yaml:"dream_goal_saved"`
 
+	QuestsHeader    string `yaml:"quests_header"`
+	QuestLine       string `yaml:"quest_line"`
+	QuestClosedLine string `yaml:"quest_closed_line"`
+	QuestListButton string `yaml:"quest_list_button"`
+	QuestDoneButton string `yaml:"quest_done_button"`
+	QuestDone       string `yaml:"quest_done"`
+	QuestAlready    string `yaml:"quest_already"`
+	NoSpendButton   string `yaml:"no_spend_button"`
+	NoSpendDone     string `yaml:"no_spend_done"`
+	StreakNudge     string `yaml:"streak_nudge"`
+	StreakMark      string `yaml:"streak_mark"`
+	MorningQuest    string `yaml:"morning_quest"`
+
+	LevelNames         []string `yaml:"level_names"`
+	LevelConditions    []string `yaml:"level_conditions"`
+	LevelQuestions     []string `yaml:"level_questions"`
+	LevelTop           string   `yaml:"level_top"`
+	LevelYes           string   `yaml:"level_yes"`
+	LevelNo            string   `yaml:"level_no"`
+	LevelResult        string   `yaml:"level_result"`
+	LevelView          string   `yaml:"level_view"`
+	LevelUp            string   `yaml:"level_up"`
+	LevelConfirmButton string   `yaml:"level_confirm_button"`
+
+	MorningChallenge       string `yaml:"morning_challenge"`
+	MorningShare           string `yaml:"morning_share"`
+	ChallengeDoneButton    string `yaml:"challenge_done_button"`
+	ChallengeLaterButton   string `yaml:"challenge_later_button"`
+	ChallengeSkipButton    string `yaml:"challenge_skip_button"`
+	ChallengeLaterOK       string `yaml:"challenge_later_ok"`
+	ChallengeSkipped       string `yaml:"challenge_skipped"`
+	ChallengeEvening       string `yaml:"challenge_evening"`
+	ChallengeItem          string `yaml:"challenge_item"`
+	ChallengeNone          string `yaml:"challenge_none"`
+	ChallengeNotStarted    string `yaml:"challenge_not_started"`
+	ChallengeCurrent       string `yaml:"challenge_current"`
+	ChallengeJoinButton    string `yaml:"challenge_join_button"`
+	ChallengeLeaveButton   string `yaml:"challenge_leave_button"`
+	ChallengeJoined        string `yaml:"challenge_joined"`
+	ChallengeAlready       string `yaml:"challenge_already"`
+	ChallengeClosed        string `yaml:"challenge_closed"`
+	ChallengeLeft          string `yaml:"challenge_left"`
+	ChallengeFinished      string `yaml:"challenge_finished"`
+	ChallengeFinishedLimit string `yaml:"challenge_finished_limit"`
+
+	ReferralLine     string `yaml:"referral_line"`
+	ReferralRewarded string `yaml:"referral_rewarded"`
+
+	CardGoal            string `yaml:"card_goal"`
+	CardAmounts         string `yaml:"card_amounts"`
+	CardLevel           string `yaml:"card_level"`
+	CardLevelValue      string `yaml:"card_level_value"`
+	CardStreak          string `yaml:"card_streak"`
+	CardChallenge       string `yaml:"card_challenge"`
+	CardChallengeDays   string `yaml:"card_challenge_days"`
+	CardDream           string `yaml:"card_dream"`
+	CardDreamMonths     string `yaml:"card_dream_months"`
+	CardDreamDeadline   string `yaml:"card_dream_deadline"`
+	CardDreamShare      string `yaml:"card_dream_share"`
+	CardDreamAmounts    string `yaml:"card_dream_amounts"`
+	CardButton          string `yaml:"card_button"`
+	CardShowAmounts     string `yaml:"card_show_amounts"`
+	GoalProgressCaption string `yaml:"goal_progress_caption"`
+	GoalReachedCaption  string `yaml:"goal_reached_caption"`
+
+	WeekGoal         string `yaml:"week_goal"`
+	WeekLimit        string `yaml:"week_limit"`
+	WeekStreak       string `yaml:"week_streak"`
+	WeekQuests       string `yaml:"week_quests"`
+	WeekGoalClose    string `yaml:"week_goal_close"`
+	WeekStreakBroken string `yaml:"week_streak_broken"`
+	WeekSpentLess    string `yaml:"week_spent_less"`
+	WeekSpentMore    string `yaml:"week_spent_more"`
+
+	ReviewIntro         string   `yaml:"review_intro"`
+	ReviewFromData      string   `yaml:"review_from_data"`
+	ReviewManual        string   `yaml:"review_manual"`
+	ReviewAge           string   `yaml:"review_age"`
+	ReviewAges          []string `yaml:"review_ages"`
+	ReviewIncome        string   `yaml:"review_income"`
+	ReviewExpenses      string   `yaml:"review_expenses"`
+	ReviewDebts         string   `yaml:"review_debts"`
+	ReviewNoDebts       string   `yaml:"review_no_debts"`
+	ReviewRate          string   `yaml:"review_rate"`
+	ReviewSavings       string   `yaml:"review_savings"`
+	ReviewGoal          string   `yaml:"review_goal"`
+	ReviewQuestion      string   `yaml:"review_question"`
+	ReviewConsent       string   `yaml:"review_consent"`
+	ReviewConsentButton string   `yaml:"review_consent_button"`
+	ReviewThanks        string   `yaml:"review_thanks"`
+	RetryRate           string   `yaml:"retry_rate"`
+	RetryLong           string   `yaml:"retry_long"`
+
 	Invitation     string `yaml:"invitation"`
 	JoinButton     string `yaml:"join_button"`
 	DeclineButton  string `yaml:"decline_button"`
@@ -129,6 +222,8 @@ type Bot struct {
 	RatesButtonOff   string `yaml:"rates_button_off"`
 	GoalsButtonOn    string `yaml:"goals_button_on"`
 	GoalsButtonOff   string `yaml:"goals_button_off"`
+	StreakButtonOn   string `yaml:"streak_button_on"`
+	StreakButtonOff  string `yaml:"streak_button_off"`
 	FlagOn           string `yaml:"flag_on"`
 	FlagOff          string `yaml:"flag_off"`
 	TimezoneButton   string `yaml:"timezone_button"`
@@ -157,31 +252,42 @@ type Bot struct {
 	GoalProgress     string    `yaml:"goal_progress"`
 	GoalReached      string    `yaml:"goal_reached"`
 
-	AdminBanUsage    string `yaml:"admin_ban_usage"`
-	AdminBanned      string `yaml:"admin_banned"`
-	AdminUnbanned    string `yaml:"admin_unbanned"`
-	AdminUnknownUser string `yaml:"admin_unknown_user"`
-	AdminSelf        string `yaml:"admin_self"`
-	LLMAlert         string `yaml:"llm_alert"`
-	PackageAlert     string `yaml:"package_alert"`
-	PackageOut       string `yaml:"package_out"`
+	AdminBanUsage         string `yaml:"admin_ban_usage"`
+	AdminBanned           string `yaml:"admin_banned"`
+	AdminUnbanned         string `yaml:"admin_unbanned"`
+	AdminUnknownUser      string `yaml:"admin_unknown_user"`
+	AdminSelf             string `yaml:"admin_self"`
+	LLMAlert              string `yaml:"llm_alert"`
+	AdminChallenge        string `yaml:"admin_challenge"`
+	AdminChallengeUsage   string `yaml:"admin_challenge_usage"`
+	AdminChallengeUnknown string `yaml:"admin_challenge_unknown"`
+	AdminReviews          string `yaml:"admin_reviews"`
+	AdminNoReviews        string `yaml:"admin_no_reviews"`
+	AdminReviewNew        string `yaml:"admin_review_new"`
+	PackageAlert          string `yaml:"package_alert"`
+	PackageOut            string `yaml:"package_out"`
 
 	FeedbackUsage   string `yaml:"feedback_usage"`
 	FeedbackThanks  string `yaml:"feedback_thanks"`
 	FeedbackToAdmin string `yaml:"feedback_to_admin"`
 
-	CommandStart    string `yaml:"command_start"`
-	CommandApp      string `yaml:"command_app"`
-	CommandDream    string `yaml:"command_dream"`
-	CommandFamily   string `yaml:"command_family"`
-	CommandSettings string `yaml:"command_settings"`
-	CommandPrivacy  string `yaml:"command_privacy"`
-	CommandFeedback string `yaml:"command_feedback"`
-	CommandDeleteMe string `yaml:"command_delete_me"`
-	CommandHelp     string `yaml:"command_help"`
-	CommandStats    string `yaml:"command_stats"`
-	CommandBan      string `yaml:"command_ban"`
-	CommandUnban    string `yaml:"command_unban"`
+	CommandStart     string `yaml:"command_start"`
+	CommandApp       string `yaml:"command_app"`
+	CommandDream     string `yaml:"command_dream"`
+	CommandQuests    string `yaml:"command_quests"`
+	CommandLevel     string `yaml:"command_level"`
+	CommandChallenge string `yaml:"command_challenge"`
+	CommandReview    string `yaml:"command_review"`
+	CommandReviews   string `yaml:"command_reviews"`
+	CommandFamily    string `yaml:"command_family"`
+	CommandSettings  string `yaml:"command_settings"`
+	CommandPrivacy   string `yaml:"command_privacy"`
+	CommandFeedback  string `yaml:"command_feedback"`
+	CommandDeleteMe  string `yaml:"command_delete_me"`
+	CommandHelp      string `yaml:"command_help"`
+	CommandStats     string `yaml:"command_stats"`
+	CommandBan       string `yaml:"command_ban"`
+	CommandUnban     string `yaml:"command_unban"`
 }
 
 // Reminders are the phrases of the morning message by the state of the money;

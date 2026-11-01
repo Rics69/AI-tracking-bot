@@ -53,6 +53,23 @@ func (g Goal) Left() decimal.Decimal {
 	return decimal.Max(g.Target.Sub(g.Saved), decimal.Zero)
 }
 
+// cushionWords start the names people give to an emergency fund.
+var cushionWords = []string{"подушк", "резерв", "нз", "запас", "неприкосновенн"}
+
+// IsCushion reports a goal that is an emergency fund. It is told by the name,
+// so a goal counts however it was created: in the calculator, by the agent or
+// in the mini app.
+func (g Goal) IsCushion() bool {
+	for _, word := range strings.Fields(strings.ToLower(g.Title)) {
+		for _, stem := range cushionWords {
+			if strings.HasPrefix(word, stem) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // Share is the saved part of the target, from 0 to 1 and above.
 func (g Goal) Share() decimal.Decimal {
 	if !g.Target.IsPositive() {

@@ -111,6 +111,30 @@ func (s *Service) Budget(ctx context.Context, userID int64, today time.Time) (*B
 	return &b, nil
 }
 
+// Saved is the net amount put aside for goals between two dates, inclusive.
+func (s *Service) Saved(ctx context.Context, userID int64, from, to time.Time) (decimal.Decimal, error) {
+	return s.repo.Saved(ctx, userID, from, to)
+}
+
+// DaysUnderLimit counts the days between two dates that stayed within the
+// limit, of the days the limit was known.
+func (s *Service) DaysUnderLimit(ctx context.Context, userID int64, from, to time.Time) (under, counted int, err error) {
+	for d := from; !d.After(to); d = d.AddDate(0, 0, 1) {
+		b, err := s.Budget(ctx, userID, d)
+		if err != nil {
+			return 0, 0, err
+		}
+		if b == nil || !b.Ready {
+			continue
+		}
+		counted++
+		if !b.Overspent() {
+			under++
+		}
+	}
+	return under, counted, nil
+}
+
 // operations loads all the user's operations between two dates, page by page.
 func (s *Service) operations(ctx context.Context, userID int64, from, to time.Time) ([]ledger.Operation, error) {
 	var out []ledger.Operation

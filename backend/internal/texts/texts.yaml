@@ -42,6 +42,10 @@ help: |-
   • сколько можно потратить сегодня
 
   /dream — посчитать, сколько откладывать на цель
+  /quests — квесты, опыт и серия
+  /level — уровень
+  /challenge — челленджи
+  /review — заявка на разбор в ролике
   /app — открыть приложение
   /family — семья: вести расходы вместе
   /settings — итоги недели и часовой пояс
@@ -133,6 +137,139 @@ dream_boost_button: А если доход +10%?
 dream_later: Не сейчас
 dream_goal_saved: Цель «{title}» создана. Прогресс виден в приложении и в утреннем сообщении.
 
+# Квесты, опыт и серия. {title}, {text}, {xp} — квест, {level}, {name} — уровень,
+# {days} — «7 дней», {streak} — то же для текущей серии.
+quests_header: "Опыт: {xp} · Уровень {level}: {name} · Серия: {streak}"
+quest_line: "• {title} (+{xp})\n{text}"
+quest_closed_line: "✓ {title}"
+quest_list_button: "Сделал: {title}"
+quest_done_button: Сделал
+quest_done: "Засчитано: {title}. +{xp} опыта."
+quest_already: Это уже засчитано.
+no_spend_button: Сегодня без трат
+no_spend_done: "Отмечено. Серия: {days}."
+streak_nudge: "Сегодня ещё нет записей. Запишите трату или отметьте день без трат, чтобы серия из {days} не прервалась."
+streak_mark: "Серия: {days} подряд. +{xp} опыта."
+morning_quest: "Квест дня: {title} (+{xp})."
+
+# Уровень. Шесть названий и пять условий: что нужно для следующего уровня.
+level_names:
+  - От зарплаты до зарплаты
+  - Под контролем
+  - Броня
+  - Апгрейд дохода
+  - Капитал работает
+  - Свобода
+level_conditions:
+  - "записывать траты 10 дней из 14"
+  - "накопить на цель «подушка» три месячных расхода"
+  - "подтвердить, что доход вырос"
+  - "откладывать на цели три месяца подряд"
+  - "подтвердить, что капитал покрывает расходы"
+level_top: "это вершина лестницы"
+# Тест из пяти вопросов: уровень — сколько ответов «да» подряд.
+level_questions:
+  - Вы знаете, сколько потратили за прошлый месяц?
+  - Подушка покрывает хотя бы три месяца расходов?
+  - Ваш доход вырос за последний год?
+  - Вы откладываете каждый месяц, три месяца подряд?
+  - Доход с капитала покрывает ваши расходы?
+level_yes: Да
+level_no: Нет
+level_result: |-
+  Ваш уровень {level}: {name}.
+  Дальше: {next}.
+level_view: |-
+  Уровень {level}: {name}
+  Опыт: {xp}
+  Дальше: {next}.
+level_up: "Новый уровень {level}: {name}. Квесты теперь другие — /quests."
+level_confirm_button: "Подтвердить: {name}"
+
+# Челленджи. {title}, {day}, {total}, {task}; {percent} — доля участников, без имён.
+morning_challenge: "{title}, день {day} из {total}: {task}"
+morning_share: "Вчера задание сделали {percent}% участников."
+challenge_done_button: Сделал
+challenge_later_button: Напомни вечером
+challenge_skip_button: Пропустить
+challenge_later_ok: Хорошо, напомню в 20:00.
+challenge_skipped: День пропущен. Завтра новое задание.
+challenge_evening: "Задание на сегодня: {task}"
+# {description}, {days} — длительность.
+challenge_item: |-
+  {title} · {days}
+  {description}
+challenge_none: Сейчас нет открытых челленджей.
+challenge_not_started: скоро старт
+challenge_current: "{title}, день {day} из {total}: {task}"
+challenge_join_button: "Участвовать: {title}"
+challenge_leave_button: Выйти из челленджа
+# {date} — день старта, {hour} — час утреннего сообщения.
+challenge_joined: "Вы в челлендже «{title}». Первое задание придёт {date} в {hour}."
+challenge_already: Вы уже участвуете.
+challenge_closed: Запись на этот челлендж закрыта.
+challenge_left: Вы вышли из челленджа.
+# {done}, {total} — дни, {saved} — отложено за это время, {xp} — опыт.
+challenge_finished: "Челлендж «{title}» пройден: {done} из {total}. Отложено {saved}. +{xp} опыта."
+# {under} из {counted} дней.
+challenge_finished_limit: "В лимите: {under} из {counted} дней."
+
+# Приглашения. {link} — ссылка пользователя.
+referral_line: "Пригласить друга: {link}"
+referral_rewarded: Ваш друг прошёл знакомство с ботом. +50 опыта.
+
+# Карточки для сторис. По умолчанию без сумм: они появляются только по кнопке.
+card_goal: Цель
+card_amounts: "{saved} из {target}"
+card_level: Новый уровень
+card_level_value: "Уровень {level}"
+card_streak: Серия дней подряд
+card_challenge: Челлендж пройден
+card_challenge_days: "{done} из {total} дней"
+card_dream: Цена мечты
+card_dream_months: "{months} мес."
+card_dream_deadline: "К {deadline}"
+card_dream_share: "{share}% дохода"
+card_dream_amounts: "{price}, {month} в месяц"
+card_button: Карточка для сторис
+card_show_amounts: Показать суммы
+goal_progress_caption: "Цель «{title}»: {percent}%."
+goal_reached_caption: "Цель «{title}» накоплена."
+
+# Итоги недели, новые блоки и один вывод. {added} — отложено за неделю.
+week_goal: "Цель «{title}»: {percent}%, за неделю отложено {added}."
+week_limit: "В лимите: {under} из {counted} дней."
+week_streak: "Серия: {days}."
+week_quests: "Квестов выполнено: {count}."
+week_goal_close: Цель «{title}» совсем близко.
+week_streak_broken: Серия прервалась. Начать новую можно сегодня.
+week_spent_less: Траты снизились, так держать.
+week_spent_more: Траты выросли. Посмотрите, что было крупнее всего.
+
+# Заявка на разбор в ролике: ответы хранятся без имени.
+review_intro: "Заявка на анонимный разбор ваших финансов в ролике. Несколько вопросов: можно взять цифры из ваших данных или заполнить вручную."
+review_from_data: Взять из моих данных
+review_manual: Заполнить вручную
+review_age: Сколько вам лет?
+review_ages:
+  - до 25
+  - 25–34
+  - 35–44
+  - 45 и старше
+review_income: "Какой доход в месяц? Например: 80000 или 80к."
+review_expenses: "Сколько в месяц уходит на обязательные расходы?"
+review_debts: Какая общая сумма долгов?
+review_no_debts: Долгов нет
+review_rate: Какая самая высокая ставка по долгам, в процентах?
+review_savings: Сколько накоплено?
+review_goal: К какой цели идёте? Коротко.
+review_question: Главный вопрос к разбору, до 500 символов.
+review_consent: Согласны, чтобы ваши цифры анонимно разобрали в ролике? Имя и аккаунт не показываются.
+review_consent_button: Согласен
+review_thanks: Заявка принята. Спасибо!
+retry_rate: "Напишите ставку числом, например: 24,9."
+retry_long: Слишком длинно, напишите короче.
+
 # Семья. {head} — имя главы семьи, {name} — имя участника.
 invitation: |-
   {head} приглашает вас вести расходы вместе.
@@ -181,7 +318,7 @@ you_were_removed: Вас исключили из семьи. Ваши траты
 no_button: Отмена
 
 # Настройки. {weekly} — weekly_on / weekly_off, {morning} — morning_at / morning_off,
-# {rates} и {goals} — flag_on / flag_off, {timezone} — название пояса.
+# {rates}, {goals} и {streak} — flag_on / flag_off, {timezone} — название пояса.
 settings: |-
   Настройки
 
@@ -189,6 +326,7 @@ settings: |-
   Утреннее сообщение: {morning}
   Курсы в нём: {rates}
   Прогресс цели: {goals}
+  Напоминание о серии: {streak}
   Часовой пояс: {timezone}
 weekly_on: включены
 weekly_off: выключены
@@ -204,6 +342,8 @@ rates_button_on: Убрать курсы
 rates_button_off: Показывать курсы
 goals_button_on: Выключить прогресс цели
 goals_button_off: Включить прогресс цели
+streak_button_on: Выключить напоминание о серии
+streak_button_off: Включить напоминание о серии
 flag_on: включены
 flag_off: выключены
 timezone_button: Сменить часовой пояс
@@ -290,10 +430,26 @@ package_out: |-
   Пакет токенов GigaChat закончился: {spent} из {total}.
   Агент выключен, работают только короткие записи. Когда подключите новый тариф, обновите LLM_TOKEN_PACKAGE и LLM_PACKAGE_SINCE в .env на сервере.
 
+# Владелец. {slug}, {participants}, {finished}, {worst} — день с самым большим оттоком;
+# {new}, {total} — заявки.
+admin_challenge: |-
+  Челлендж {slug}
+  Участников: {participants}, дошли до конца: {finished}
+  Больше всего отвалилось на дне: {worst}
+admin_challenge_usage: "Укажите челлендж: /challenge {slugs}"
+admin_challenge_unknown: Такого челленджа нет.
+admin_reviews: "Заявки на разбор: новых {new}, всего {total}. В файле нет имён и Telegram ID."
+admin_no_reviews: Заявок на разбор пока нет.
+admin_review_new: Новая заявка на разбор. Посмотреть — /reviews
+
 # Меню команд (кнопка «/» в Telegram).
 command_start: Начать
 command_app: Открыть приложение
 command_dream: Посчитать цену мечты
+command_quests: Квесты и серия
+command_level: Мой уровень
+command_challenge: Челленджи
+command_review: Заявка на разбор
 command_family: Семья
 command_settings: Настройки
 command_privacy: Как хранятся данные
@@ -304,3 +460,4 @@ command_help: Помощь
 command_stats: Статистика сервиса
 command_ban: Заблокировать пользователя
 command_unban: Разблокировать пользователя
+command_reviews: Заявки на разбор

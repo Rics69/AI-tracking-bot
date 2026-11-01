@@ -18,17 +18,22 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/flow"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/game"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/stats"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
+
+// SetBotUsername tells the handler the bot's name, known only once it has
+// connected to Telegram.
+func (h *Handler) SetBotUsername(name string) { h.cfg.BotUsername = name }
 
 const (
 	maxInputRunes   = 1000 // longer messages are not expense notes; also caps token spend
 	maxMessageRunes = 4096 // Telegram limit
 	typingInterval  = 4 * time.Second
 	sendAttempts    = 3
-	sendTimeout     = 20 * time.Second
+	sendTimeout     = 60 * time.Second // long enough to sit out a rate limit
 )
 
 // ErrUndeliverable means retrying will not help: the chat does not exist,
@@ -80,6 +85,8 @@ type Sender interface {
 	SendChatAction(ctx context.Context, params *bot.SendChatActionParams) (bool, error)
 	EditMessageText(ctx context.Context, params *bot.EditMessageTextParams) (*models.Message, error)
 	AnswerCallbackQuery(ctx context.Context, params *bot.AnswerCallbackQueryParams) (bool, error)
+	SendPhoto(ctx context.Context, params *bot.SendPhotoParams) (*models.Message, error)
+	SendDocument(ctx context.Context, params *bot.SendDocumentParams) (*models.Message, error)
 }
 
 // Config tunes the handler.
@@ -95,6 +102,8 @@ type Config struct {
 	Events       *events.Tracker
 	Flows        flow.Store // dialogs on buttons; nil, or no Budget: they are off
 	Budget       Budget
+	Game         *game.Service // quests, levels, challenges; nil: off
+	BotUsername  string        // for referral links; set once the bot knows its name
 
 	PackageTokens int64     // the token package, for /stats; 0: none
 	PackageSince  time.Time // the date it started
@@ -108,6 +117,7 @@ type Handler struct {
 	cfg        Config
 	t          texts.Bot
 	retryDelay time.Duration // first pause between send attempts
+	rateUnit   time.Duration // what Telegram's retry_after counts in
 	now        func() time.Time
 	log        *slog.Logger
 
@@ -120,7 +130,7 @@ type Handler struct {
 func NewHandler(a Replier, f Family, m Meter, cfg Config, log *slog.Logger) *Handler {
 	return &Handler{
 		agent: a, family: f, meter: m, cfg: cfg, t: cfg.Texts,
-		retryDelay: time.Second, now: time.Now, log: log,
+		retryDelay: time.Second, rateUnit: time.Second, now: time.Now, log: log,
 	}
 }
 
@@ -186,6 +196,25 @@ func (h *Handler) handleMessage(ctx context.Context, s Sender, msg *models.Messa
 		return
 	case isCommand(text, "/dream"):
 		h.startDream(ctx, s, chatID, u)
+		return
+	case isCommand(text, "/quests"):
+		h.showQuests(ctx, s, chatID, u)
+		return
+	case isCommand(text, "/level"):
+		h.showLevel(ctx, s, chatID, u)
+		return
+	case isCommand(text, "/review"):
+		h.startReview(ctx, s, chatID, u)
+		return
+	case h.isAdmin(u) && isCommand(text, "/reviews"):
+		h.showReviews(ctx, s, chatID)
+		return
+	case isCommand(text, "/challenge"):
+		if arg, _ := commandArg(text, "/challenge"); h.isAdmin(u) && arg != "" {
+			h.challengeStats(ctx, s, chatID, arg)
+			return
+		}
+		h.showChallenges(ctx, s, chatID, u)
 		return
 	case isCommand(text, "/help"):
 		h.agent.Reset(ctx, u.TelegramID)
@@ -349,6 +378,17 @@ func (h *Handler) sendMessage(ctx context.Context, s Sender, params *bot.SendMes
 		_, err := s.SendMessage(ctx, params)
 		if err == nil {
 			return nil
+		}
+		var limited *bot.TooManyRequestsError
+		if errors.As(err, &limited) && attempt < sendAttempts {
+			// Telegram says how long to wait; a shorter pause only makes it worse.
+			h.log.WarnContext(ctx, "telegram rate limit", "chat_id", chatID, "retry_after", limited.RetryAfter)
+			select {
+			case <-time.After(time.Duration(limited.RetryAfter) * h.rateUnit):
+				continue
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		}
 		if permanent(err) {
 			h.log.WarnContext(ctx, "message undeliverable", "chat_id", chatID, "err", err)

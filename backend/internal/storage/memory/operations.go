@@ -154,6 +154,13 @@ func (r *OperationRepository) Aggregate(_ context.Context, s ledger.Scope, f led
 }
 
 // All returns every stored operation ordered by ID, regardless of scope.
+// SetClock moves the creation timestamps, for tests of what happens on a given day.
+func (r *OperationRepository) SetClock(t time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.clock = t
+}
+
 func (r *OperationRepository) All() []ledger.Operation {
 	r.mu.Lock()
 	defer r.mu.Unlock()

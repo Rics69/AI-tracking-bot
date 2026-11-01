@@ -26,6 +26,14 @@ const (
 	DreamCalculated = "dream_calculated"
 	GoalCreated     = "goal_created"
 	BudgetSet       = "budget_set"
+
+	QuestDone        = "quest_done"
+	LevelUp          = "level_up"
+	ChallengeJoined  = "challenge_joined"
+	ChallengeDayDone = "challenge_day_done"
+	CardGenerated    = "card_generated"
+	ReferralJoined   = "referral_joined"
+	ReviewGiven      = "review_given"
 )
 
 // Ways an operation gets recorded, the "via" property.
