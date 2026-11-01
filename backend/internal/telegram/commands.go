@@ -35,6 +35,10 @@ const (
 	cbDelete   = "delete!"  // delete the account
 	cbCancel   = "cancel"
 
+	cbFlow   = "fl"     // :step:value of a dialog
+	cbNotify = "notify" // :morning|rates|goals:on|off
+	cbHour   = "hour"   // [:hour of the morning message]
+
 	cbFix       = "fix"  // :operation ID, how to correct a quick record
 	cbFixDelete = "fix!" // :operation ID, delete it
 )
@@ -143,6 +147,17 @@ func (h *Handler) handleCallback(ctx context.Context, s Sender, cq *models.Callb
 		h.deleteAccount(ctx, s, chatID, messageID, u)
 	case cbCancel:
 		h.reply(ctx, s, chatID, messageID, view{text: h.t.Cancelled})
+	case cbNotify:
+		name, value, _ := strings.Cut(arg, ":")
+		h.toggleNotification(ctx, s, chatID, messageID, u, name, value == "on")
+	case cbHour:
+		if arg == "" {
+			h.reply(ctx, s, chatID, messageID, h.hourView())
+			return
+		}
+		h.setHour(ctx, s, chatID, messageID, u, arg)
+	case cbFlow:
+		h.flowPress(ctx, s, chatID, messageID, u, arg)
 	case cbFix, cbFixDelete:
 		id, err := strconv.ParseInt(arg, 10, 64)
 		if err != nil {
@@ -199,6 +214,10 @@ func (h *Handler) consent(ctx context.Context, s Sender, chatID int64, messageID
 	h.reply(ctx, s, chatID, messageID, view{text: h.t.Welcome})
 	if p.Kind == startparam.Invite {
 		h.offerInvitation(ctx, s, chatID, p.Raw) // shown once the user has agreed
+		return
+	}
+	if first {
+		h.route(ctx, s, chatID, u, p, true)
 	}
 }
 
@@ -421,14 +440,89 @@ func (h *Handler) settingsView(u user.User) view {
 	if u.WeeklyReport {
 		weekly, weeklyButton = h.t.WeeklyOn, button(h.t.WeeklyButtonOn, cbWeekly+":off")
 	}
+	toggle := func(on bool, name, onLabel, offLabel string) (string, models.InlineKeyboardButton) {
+		if on {
+			return h.t.FlagOn, button(onLabel, cbNotify+":"+name+":off")
+		}
+		return h.t.FlagOff, button(offLabel, cbNotify+":"+name+":on")
+	}
+	rates, ratesButton := toggle(u.ShowRates, notifyRates, h.t.RatesButtonOn, h.t.RatesButtonOff)
+	goals, goalsButton := toggle(u.GoalUpdates, notifyGoals, h.t.GoalsButtonOn, h.t.GoalsButtonOff)
+	morning := h.t.MorningOff
+	buttons := [][]models.InlineKeyboardButton{row(weeklyButton)}
+	if u.Reminders {
+		morning = texts.Fill(h.t.MorningAt, "hour", hourLabel(u.ReminderHour))
+		buttons = append(buttons,
+			row(button(h.t.MorningButtonOn, cbNotify+":"+notifyMorning+":off")),
+			row(button(h.t.MorningHour, cbHour)),
+			row(ratesButton))
+	} else {
+		buttons = append(buttons, row(button(h.t.MorningButtonOff, cbNotify+":"+notifyMorning+":on")))
+	}
+	buttons = append(buttons, row(goalsButton), row(button(h.t.TimezoneButton, cbTimezone)))
 	return view{
-		text: texts.Fill(h.t.Settings, "weekly", weekly, "timezone", timezoneName(u.Location(h.cfg.Location))),
-		buttons: [][]models.InlineKeyboardButton{
-			row(weeklyButton),
-			row(button(h.t.TimezoneButton, cbTimezone)),
-		},
+		text: texts.Fill(h.t.Settings, "weekly", weekly, "morning", morning, "rates", rates, "goals", goals,
+			"timezone", timezoneName(u.Location(h.cfg.Location))),
+		buttons: buttons,
 	}
 }
+
+// Names of the switches in /settings.
+const (
+	notifyMorning = "morning"
+	notifyRates   = "rates"
+	notifyGoals   = "goals"
+)
+
+func (h *Handler) toggleNotification(ctx context.Context, s Sender, chatID int64, messageID int, u user.User, name string, on bool) {
+	n := u.Notifications
+	switch name {
+	case notifyMorning:
+		n.Reminders = on
+	case notifyRates:
+		n.ShowRates = on
+	case notifyGoals:
+		n.GoalUpdates = on
+	default:
+		return
+	}
+	updated, err := h.family.SetNotifications(ctx, u.TelegramID, n)
+	h.replyOrFail(ctx, s, chatID, messageID, h.settingsView(updated), err)
+}
+
+func (h *Handler) setHour(ctx context.Context, s Sender, chatID int64, messageID int, u user.User, arg string) {
+	hour, err := strconv.Atoi(arg)
+	if err != nil {
+		return
+	}
+	n := u.Notifications
+	n.ReminderHour = hour
+	updated, err := h.family.SetNotifications(ctx, u.TelegramID, n)
+	h.replyOrFail(ctx, s, chatID, messageID, h.settingsView(updated), err)
+}
+
+// Hours of the picker: the morning and a little around it.
+const (
+	firstHour = 6
+	lastHour  = 23
+	hourRow   = 3
+)
+
+func (h *Handler) hourView() view {
+	var buttons [][]models.InlineKeyboardButton
+	for hour := firstHour; hour <= lastHour; hour++ {
+		b := button(hourLabel(hour), cbHour+":"+strconv.Itoa(hour))
+		if (hour-firstHour)%hourRow == 0 {
+			buttons = append(buttons, row(b))
+		} else {
+			buttons[len(buttons)-1] = append(buttons[len(buttons)-1], b)
+		}
+	}
+	buttons = append(buttons, row(button(h.t.BackButton, cbSettings)))
+	return view{text: h.t.HourPick, buttons: buttons}
+}
+
+func hourLabel(hour int) string { return strconv.Itoa(hour) + ":00" }
 
 func (h *Handler) timezoneView() view {
 	var buttons [][]models.InlineKeyboardButton
@@ -525,6 +619,7 @@ func Commands(t texts.Bot, withApp bool) []models.BotCommand {
 	if withApp {
 		commands = append(commands, models.BotCommand{Command: "app", Description: t.CommandApp})
 	}
+	commands = append(commands, models.BotCommand{Command: "dream", Description: t.CommandDream})
 	return append(commands, []models.BotCommand{
 		{Command: "family", Description: t.CommandFamily},
 		{Command: "settings", Description: t.CommandSettings},

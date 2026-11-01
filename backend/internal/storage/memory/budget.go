@@ -71,6 +71,17 @@ func (r *Budget) DeletePlan(_ context.Context, userID int64) error {
 	return nil
 }
 
+func (r *Budget) AllGoals(context.Context) ([]budget.Goal, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]budget.Goal, 0, len(r.goals))
+	for _, g := range r.goals {
+		out = append(out, r.withSaved(g))
+	}
+	slices.SortFunc(out, func(a, b budget.Goal) int { return cmp.Compare(a.ID, b.ID) })
+	return out, nil
+}
+
 func (r *Budget) Goals(_ context.Context, userID int64) ([]budget.Goal, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -256,8 +267,11 @@ func (r *Budget) Reminded(context.Context) ([]int64, error) {
 	defer r.mu.Unlock()
 	var ids []int64
 	for _, p := range r.plans {
-		if p.Reminders {
-			ids = append(ids, p.UserID)
+		ids = append(ids, p.UserID)
+	}
+	for _, g := range r.goals {
+		if g.AchievedOn == nil {
+			ids = append(ids, g.UserID)
 		}
 	}
 	for _, p := range r.payments {
@@ -267,7 +281,7 @@ func (r *Budget) Reminded(context.Context) ([]int64, error) {
 	return slices.Compact(ids), nil
 }
 
-// AllPayments and AllGoals return everything stored, for checks in evals.
+// AllPayments and StoredGoals return everything stored, for checks in evals.
 func (r *Budget) AllPayments() []budget.RegularPayment {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -279,7 +293,7 @@ func (r *Budget) AllPayments() []budget.RegularPayment {
 	return out
 }
 
-func (r *Budget) AllGoals() []budget.Goal {
+func (r *Budget) StoredGoals() []budget.Goal {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	out := make([]budget.Goal, 0, len(r.goals))

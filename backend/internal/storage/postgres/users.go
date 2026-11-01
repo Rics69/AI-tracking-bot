@@ -13,7 +13,7 @@ import (
 )
 
 const userColumns = `telegram_id, family_id, first_name, COALESCE(username, ''), is_head, weekly_report,
-	COALESCE(timezone, ''), COALESCE(first_source, ''), COALESCE(last_source, ''), COALESCE(pending_start, ''),
+	reminder_hour, reminders, show_rates, goal_updates, COALESCE(timezone, ''), COALESCE(first_source, ''), COALESCE(last_source, ''), COALESCE(pending_start, ''),
 	consented_at, blocked_at, last_seen_at, created_at, updated_at`
 
 // UserRepository implements user.Repository.
@@ -109,6 +109,20 @@ func (r *UserRepository) list(ctx context.Context, where string, args ...any) ([
 
 func (r *UserRepository) SetWeeklyReport(ctx context.Context, telegramID int64, on bool) (user.User, error) {
 	return r.set(ctx, telegramID, `weekly_report = $2`, on)
+}
+
+func (r *UserRepository) SetNotifications(ctx context.Context, telegramID int64, n user.Notifications) (user.User, error) {
+	u, err := scanUser(r.pool.QueryRow(ctx, `
+		UPDATE users SET reminder_hour = $2, reminders = $3, show_rates = $4, goal_updates = $5, updated_at = now()
+		WHERE telegram_id = $1
+		RETURNING `+userColumns, telegramID, n.ReminderHour, n.Reminders, n.ShowRates, n.GoalUpdates))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return user.User{}, user.ErrNotFound
+	}
+	if err != nil {
+		return user.User{}, fmt.Errorf("update notifications: %w", err)
+	}
+	return u, nil
 }
 
 func (r *UserRepository) SetTimezone(ctx context.Context, telegramID int64, tz string) (user.User, error) {
@@ -226,6 +240,6 @@ func (r *UserRepository) Delete(ctx context.Context, telegramID int64) error {
 func scanUser(row pgx.Row) (user.User, error) {
 	var u user.User
 	err := row.Scan(&u.TelegramID, &u.FamilyID, &u.FirstName, &u.Username, &u.IsHead, &u.WeeklyReport,
-		&u.Timezone, &u.FirstSource, &u.LastSource, &u.PendingStart, &u.ConsentedAt, &u.BlockedAt, &u.LastSeenAt, &u.CreatedAt, &u.UpdatedAt)
+		&u.ReminderHour, &u.Reminders, &u.ShowRates, &u.GoalUpdates, &u.Timezone, &u.FirstSource, &u.LastSource, &u.PendingStart, &u.ConsentedAt, &u.BlockedAt, &u.LastSeenAt, &u.CreatedAt, &u.UpdatedAt)
 	return u, err
 }

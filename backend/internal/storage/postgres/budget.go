@@ -27,7 +27,7 @@ func NewBudgetRepository(pool *pgxpool.Pool) *BudgetRepository {
 
 // Plan.
 
-const planColumns = `user_id, paydays, expected_income, goal_contribution, reminder_hour, reminders, updated_at`
+const planColumns = `user_id, paydays, expected_income, goal_contribution, updated_at`
 
 func (r *BudgetRepository) Plan(ctx context.Context, userID int64) (budget.Plan, error) {
 	p, err := scanPlan(r.pool.QueryRow(ctx, `SELECT `+planColumns+` FROM budget_plans WHERE user_id = $1`, userID))
@@ -46,14 +46,13 @@ func (r *BudgetRepository) SavePlan(ctx context.Context, p budget.Plan) (budget.
 		days[i] = int32(d)
 	}
 	saved, err := scanPlan(r.pool.QueryRow(ctx, `
-		INSERT INTO budget_plans (user_id, paydays, expected_income, goal_contribution, reminder_hour, reminders)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO budget_plans (user_id, paydays, expected_income, goal_contribution)
+		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (user_id) DO UPDATE SET
 			paydays = excluded.paydays, expected_income = excluded.expected_income,
-			goal_contribution = excluded.goal_contribution, reminder_hour = excluded.reminder_hour,
-			reminders = excluded.reminders, updated_at = now()
+			goal_contribution = excluded.goal_contribution, updated_at = now()
 		RETURNING `+planColumns,
-		p.UserID, days, p.ExpectedIncome, p.GoalContribution, p.ReminderHour, p.Reminders))
+		p.UserID, days, p.ExpectedIncome, p.GoalContribution))
 	if err != nil {
 		return budget.Plan{}, mapBudgetError("save plan", err)
 	}
@@ -76,7 +75,7 @@ func scanPlan(row pgx.Row) (budget.Plan, error) {
 		p    budget.Plan
 		days []int32
 	)
-	err := row.Scan(&p.UserID, &days, &p.ExpectedIncome, &p.GoalContribution, &p.ReminderHour, &p.Reminders, &p.UpdatedAt)
+	err := row.Scan(&p.UserID, &days, &p.ExpectedIncome, &p.GoalContribution, &p.UpdatedAt)
 	p.Paydays = make([]int, len(days))
 	for i, d := range days {
 		p.Paydays[i] = int(d)
@@ -92,6 +91,18 @@ const goalSelect = `
 	       COALESCE((SELECT sum(amount) FROM goal_deposits d WHERE d.goal_id = g.id), 0),
 	       g.deadline, g.achieved_on, g.created_at, g.updated_at
 	FROM goals g`
+
+func (r *BudgetRepository) AllGoals(ctx context.Context) ([]budget.Goal, error) {
+	rows, err := r.pool.Query(ctx, goalSelect+` ORDER BY g.id`)
+	if err != nil {
+		return nil, fmt.Errorf("list all goals: %w", err)
+	}
+	goals, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (budget.Goal, error) { return scanGoal(row) })
+	if err != nil {
+		return nil, fmt.Errorf("scan goals: %w", err)
+	}
+	return goals, nil
+}
 
 func (r *BudgetRepository) Goals(ctx context.Context, userID int64) ([]budget.Goal, error) {
 	rows, err := r.pool.Query(ctx, goalSelect+` WHERE g.user_id = $1 ORDER BY g.created_at, g.id`, userID)
@@ -275,9 +286,11 @@ func scanPayment(row pgx.Row) (budget.RegularPayment, error) {
 
 func (r *BudgetRepository) Reminded(ctx context.Context) ([]int64, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT user_id FROM budget_plans WHERE reminders
+		SELECT user_id FROM budget_plans
 		UNION
-		SELECT DISTINCT user_id FROM regular_payments`)
+		SELECT user_id FROM goals WHERE achieved_on IS NULL
+		UNION
+		SELECT user_id FROM regular_payments`)
 	if err != nil {
 		return nil, fmt.Errorf("list reminded users: %w", err)
 	}

@@ -277,7 +277,7 @@ func (a *Agent) setPayday(ctx context.Context, t turn, raw json.RawMessage) (any
 	if len(args.Days) == 0 {
 		return nil, badArgs("days is required: one or two days of the month")
 	}
-	plan := budget.Plan{UserID: t.userID, ReminderHour: budget.DefaultReminderHour, Reminders: true}
+	plan := budget.Plan{UserID: t.userID}
 	if old, err := a.budget.Plan(ctx, t.userID); err != nil {
 		return nil, err
 	} else if old != nil {

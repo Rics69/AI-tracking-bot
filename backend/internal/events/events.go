@@ -20,6 +20,12 @@ const (
 	MorningSent    = "morning_sent"
 	MorningClicked = "morning_clicked"
 	MiniAppOpen    = "miniapp_open"
+
+	OnboardingStep  = "onboarding_step"
+	OnboardingDone  = "onboarding_done"
+	DreamCalculated = "dream_calculated"
+	GoalCreated     = "goal_created"
+	BudgetSet       = "budget_set"
 )
 
 // Ways an operation gets recorded, the "via" property.

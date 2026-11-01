@@ -303,6 +303,17 @@ func (s *Service) SetWeeklyReport(ctx context.Context, by user.User, telegramID 
 	return s.users.SetWeeklyReport(ctx, telegramID, on)
 }
 
+// ErrBadHour: a reminder hour is outside the day.
+var ErrBadHour = errors.New("reminder hour must be from 0 to 23")
+
+// SetNotifications replaces the settings of the messages the bot starts itself.
+func (s *Service) SetNotifications(ctx context.Context, telegramID int64, n user.Notifications) (user.User, error) {
+	if n.ReminderHour < 0 || n.ReminderHour > 23 {
+		return user.User{}, ErrBadHour
+	}
+	return s.users.SetNotifications(ctx, telegramID, n)
+}
+
 // SetTimezone sets the user's timezone by IANA name ("Asia/Novosibirsk").
 func (s *Service) SetTimezone(ctx context.Context, telegramID int64, tz string) (user.User, error) {
 	if tz == "" || tz == "Local" {

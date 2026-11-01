@@ -38,8 +38,16 @@ const (
 	maxAmount     = 100_000_000
 )
 
-// entry is the end of the message: a sum and maybe a day.
-var entry = regexp.MustCompile(`^(.+?) (\d{1,3}(?: \d{3})+|\d+)([.,]\d{1,2})? ?(к|тыс)?\.? ?(₽|р|руб|рублей|рубля)?\.?(?: (сегодня|вчера|позавчера))?$`)
+// sum is an amount as people write it; its groups are the whole part, the
+// fraction and the multiplier.
+const sum = `(\d{1,3}(?: \d{3})+|\d+)([.,]\d{1,2})? ?(к|тыс|тысяч|тысячи|млн|миллион|миллиона|миллионов)?\.? ?(?:₽|р|руб|рублей|рубля)?\.?`
+
+var (
+	// entry is the end of the message: a sum and maybe a day.
+	entry = regexp.MustCompile(`^(.+?) ` + sum + `(?: (сегодня|вчера|позавчера))?$`)
+	// bare is a message that is only a sum.
+	bare = regexp.MustCompile(`^` + sum + `$`)
+)
 
 // Parsed is a message the parser is sure about.
 type Parsed struct {
@@ -106,24 +114,17 @@ func fold(s string) string {
 
 // Parse understands "<слово из словаря> <сумма> [сегодня|вчера|позавчера]".
 func (s *Service) Parse(text string, today time.Time) (Parsed, bool) {
-	line := strings.Join(strings.FieldsFunc(strings.ToLower(text), unicode.IsSpace), " ")
-	m := entry.FindStringSubmatch(strings.TrimRight(line, ".!"))
+	m := entry.FindStringSubmatch(normalize(text))
 	if m == nil {
 		return Parsed{}, false
 	}
-	phrase, whole, fraction, thousands, day := m[1], m[2], m[3], m[4], m[6]
+	phrase, whole, fraction, multiplier, day := m[1], m[2], m[3], m[4], m[5]
 	category, ok := s.dictionary[fold(phrase)]
 	if !ok {
 		return Parsed{}, false
 	}
-	amount, err := decimal.NewFromString(strings.ReplaceAll(whole, " ", "") + strings.ReplaceAll(fraction, ",", "."))
-	if err != nil {
-		return Parsed{}, false
-	}
-	if thousands != "" {
-		amount = amount.Mul(decimal.NewFromInt(1000))
-	}
-	if !plausible(amount, category, fraction != "" && thousands == "") {
+	amount, ok := toAmount(whole, fraction, multiplier)
+	if !ok || !plausible(amount, category, fraction != "" && multiplier == "") {
 		return Parsed{}, false
 	}
 	date := today
@@ -133,7 +134,38 @@ func (s *Service) Parse(text string, today time.Time) (Parsed, bool) {
 	case "позавчера":
 		date = today.AddDate(0, 0, -2)
 	}
-	return Parsed{Amount: amount.Round(2), Category: category, Comment: phrase, Date: date}, true
+	return Parsed{Amount: amount, Category: category, Comment: phrase, Date: date}, true
+}
+
+// Amount reads a message that is only a sum: "120к", "1,5 млн", "45 000 ₽".
+func Amount(text string) (decimal.Decimal, bool) {
+	m := bare.FindStringSubmatch(normalize(text))
+	if m == nil {
+		return decimal.Zero, false
+	}
+	amount, ok := toAmount(m[1], m[2], m[3])
+	return amount, ok && amount.IsPositive() && amount.LessThan(decimal.NewFromInt(maxAmount*10))
+}
+
+func toAmount(whole, fraction, multiplier string) (decimal.Decimal, bool) {
+	amount, err := decimal.NewFromString(strings.ReplaceAll(whole, " ", "") + strings.ReplaceAll(fraction, ",", "."))
+	if err != nil {
+		return decimal.Zero, false
+	}
+	switch multiplier {
+	case "":
+	case "млн", "миллион", "миллиона", "миллионов":
+		amount = amount.Mul(decimal.NewFromInt(1_000_000))
+	default:
+		amount = amount.Mul(decimal.NewFromInt(1000))
+	}
+	return amount.Round(2), true
+}
+
+// normalize lowers the case and collapses spaces, and drops the final dot.
+func normalize(text string) string {
+	line := strings.Join(strings.FieldsFunc(strings.ToLower(text), unicode.IsSpace), " ")
+	return strings.TrimRight(line, ".!")
 }
 
 func plausible(amount decimal.Decimal, c ledger.Category, fractional bool) bool {

@@ -282,7 +282,6 @@ func TestPlanValidation(t *testing.T) {
 		{"day 32", Plan{Paydays: []int{32}}, "paydays"},
 		{"zero income", Plan{Paydays: []int{5}, ExpectedIncome: ptr(decimal.Zero)}, "expected_income"},
 		{"kopecks of kopecks", Plan{Paydays: []int{5}, GoalContribution: ptr(dec("1.005"))}, "goal_contribution"},
-		{"hour 24", Plan{Paydays: []int{5}, ReminderHour: 24}, "reminder_hour"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			p := tt.plan

@@ -21,7 +21,7 @@ var otherGoal = GoalSpec{Title: "Яхта", Target: "900000", Saved: "1000"}
 // and another member's goal. It returns the user's payment IDs by title.
 func seedBudget(ctx context.Context, b *budget.Service, c Case, today time.Time) (map[string]int64, error) {
 	if c.Plan != nil {
-		plan := budget.Plan{UserID: userID, Paydays: c.Plan.Paydays, ReminderHour: budget.DefaultReminderHour, Reminders: true}
+		plan := budget.Plan{UserID: userID, Paydays: c.Plan.Paydays}
 		if c.Plan.ExpectedIncome != "" {
 			income, err := decimal.NewFromString(c.Plan.ExpectedIncome)
 			if err != nil {

@@ -87,7 +87,7 @@ func TestSetPaydayAndGetBudget(t *testing.T) {
 		t.Errorf("after set_payday: %s", res)
 	}
 	plan, _ := e.budget.Plan(ctx, anna.UserID)
-	if plan == nil || plan.Paydays[0] != 5 || !plan.Reminders || plan.ReminderHour != budget.DefaultReminderHour {
+	if plan == nil || plan.Paydays[0] != 5 {
 		t.Errorf("plan = %+v", plan)
 	}
 	// The plan is in the prompt of the next request.

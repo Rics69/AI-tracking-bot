@@ -39,6 +39,54 @@ type Bot struct {
 	QuickGone         string `yaml:"quick_gone"`
 	AgentResting      string `yaml:"agent_resting"`
 
+	SkipButton string `yaml:"skip_button"`
+	ExitButton string `yaml:"exit_button"`
+	FlowLeft   string `yaml:"flow_left"`
+	FlowStale  string `yaml:"flow_stale"`
+
+	FlowDone      string `yaml:"flow_done"`
+	FlowDoneLimit string `yaml:"flow_done_limit"`
+
+	OnboardChoice     string `yaml:"onboard_choice"`
+	OnboardDream      string `yaml:"onboard_dream"`
+	OnboardGoal       string `yaml:"onboard_goal"`
+	OnboardJust       string `yaml:"onboard_just"`
+	OnboardGoalTitle  string `yaml:"onboard_goal_title"`
+	OnboardGoalAmount string `yaml:"onboard_goal_amount"`
+	OnboardGoalSaved  string `yaml:"onboard_goal_saved"`
+	OnboardPayday     string `yaml:"onboard_payday"`
+	OnboardIncome     string `yaml:"onboard_income"`
+	OnboardMorning    string `yaml:"onboard_morning"`
+	OnboardNoMorning  string `yaml:"onboard_no_morning"`
+	OnboardRecord     string `yaml:"onboard_record"`
+
+	RetryTitle  string `yaml:"retry_title"`
+	RetryAmount string `yaml:"retry_amount"`
+	RetryPayday string `yaml:"retry_payday"`
+	RetryDate   string `yaml:"retry_date"`
+	RetryButton string `yaml:"retry_button"`
+
+	DreamTitle       string   `yaml:"dream_title"`
+	DreamPresets     []string `yaml:"dream_presets"`
+	DreamPrice       string   `yaml:"dream_price"`
+	DreamTerm        string   `yaml:"dream_term"`
+	DreamTerms       []string `yaml:"dream_terms"`
+	DreamCustomDate  string   `yaml:"dream_custom_date"`
+	DreamDate        string   `yaml:"dream_date"`
+	DreamSaved       string   `yaml:"dream_saved"`
+	DreamZero        string   `yaml:"dream_zero"`
+	DreamResult      string   `yaml:"dream_result"`
+	DreamShare       string   `yaml:"dream_share"`
+	DreamRealistic   string   `yaml:"dream_realistic"`
+	DreamAmbitious   string   `yaml:"dream_ambitious"`
+	DreamStretch     string   `yaml:"dream_stretch"`
+	DreamAllThere    string   `yaml:"dream_all_there"`
+	DreamBoostNote   string   `yaml:"dream_boost_note"`
+	DreamMakeGoal    string   `yaml:"dream_make_goal"`
+	DreamBoostButton string   `yaml:"dream_boost_button"`
+	DreamLater       string   `yaml:"dream_later"`
+	DreamGoalSaved   string   `yaml:"dream_goal_saved"`
+
 	Invitation     string `yaml:"invitation"`
 	JoinButton     string `yaml:"join_button"`
 	DeclineButton  string `yaml:"decline_button"`
@@ -66,14 +114,26 @@ type Bot struct {
 	YouWereRemoved string `yaml:"you_were_removed"`
 	NoButton       string `yaml:"no_button"`
 
-	Settings        string `yaml:"settings"`
-	WeeklyOn        string `yaml:"weekly_on"`
-	WeeklyOff       string `yaml:"weekly_off"`
-	WeeklyButtonOn  string `yaml:"weekly_button_on"`
-	WeeklyButtonOff string `yaml:"weekly_button_off"`
-	TimezoneButton  string `yaml:"timezone_button"`
-	TimezonePick    string `yaml:"timezone_pick"`
-	BackButton      string `yaml:"back_button"`
+	Settings         string `yaml:"settings"`
+	WeeklyOn         string `yaml:"weekly_on"`
+	WeeklyOff        string `yaml:"weekly_off"`
+	WeeklyButtonOn   string `yaml:"weekly_button_on"`
+	WeeklyButtonOff  string `yaml:"weekly_button_off"`
+	MorningAt        string `yaml:"morning_at"`
+	MorningOff       string `yaml:"morning_off"`
+	MorningButtonOn  string `yaml:"morning_button_on"`
+	MorningButtonOff string `yaml:"morning_button_off"`
+	MorningHour      string `yaml:"morning_hour"`
+	HourPick         string `yaml:"hour_pick"`
+	RatesButtonOn    string `yaml:"rates_button_on"`
+	RatesButtonOff   string `yaml:"rates_button_off"`
+	GoalsButtonOn    string `yaml:"goals_button_on"`
+	GoalsButtonOff   string `yaml:"goals_button_off"`
+	FlagOn           string `yaml:"flag_on"`
+	FlagOff          string `yaml:"flag_off"`
+	TimezoneButton   string `yaml:"timezone_button"`
+	TimezonePick     string `yaml:"timezone_pick"`
+	BackButton       string `yaml:"back_button"`
 
 	Privacy     string `yaml:"privacy"`
 	PrivacyLink string `yaml:"privacy_link"`
@@ -90,6 +150,12 @@ type Bot struct {
 	Reminders        Reminders `yaml:"reminders"`
 	ReminderNoIncome string    `yaml:"reminder_no_income"`
 	ReminderPayment  string    `yaml:"reminder_payment"`
+	ReminderGoal     string    `yaml:"reminder_goal"`
+	ReminderRates    string    `yaml:"reminder_rates"`
+	Comeback         string    `yaml:"comeback"`
+	ComebackGoal     string    `yaml:"comeback_goal"`
+	GoalProgress     string    `yaml:"goal_progress"`
+	GoalReached      string    `yaml:"goal_reached"`
 
 	AdminBanUsage    string `yaml:"admin_ban_usage"`
 	AdminBanned      string `yaml:"admin_banned"`
@@ -106,6 +172,7 @@ type Bot struct {
 
 	CommandStart    string `yaml:"command_start"`
 	CommandApp      string `yaml:"command_app"`
+	CommandDream    string `yaml:"command_dream"`
 	CommandFamily   string `yaml:"command_family"`
 	CommandSettings string `yaml:"command_settings"`
 	CommandPrivacy  string `yaml:"command_privacy"`
@@ -117,8 +184,8 @@ type Bot struct {
 	CommandUnban    string `yaml:"command_unban"`
 }
 
-// Reminders are the phrases of the morning reminder by Savik's state; one is
-// picked at random.
+// Reminders are the phrases of the morning message by the state of the money;
+// one is picked at random.
 type Reminders struct {
 	Neutral []string `yaml:"neutral"`
 	Full    []string `yaml:"full"`

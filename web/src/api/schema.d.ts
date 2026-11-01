@@ -513,6 +513,14 @@ export interface components {
             is_head: boolean;
             /** @description Присылать итоги недели в бот по понедельникам */
             weekly_report: boolean;
+            /** @description Присылать утреннее сообщение */
+            reminders: boolean;
+            /** @description Час утреннего сообщения по поясу пользователя */
+            reminder_hour: number;
+            /** @description Показывать курсы доллара и евро в утреннем сообщении */
+            show_rates: boolean;
+            /** @description Сообщать о прогрессе цели на 25, 50, 75 и 100% */
+            goal_updates: boolean;
             /**
              * @description Выбранный часовой пояс; нет — пользователь не выбирал (mini app может подставить пояс устройства)
              * @example Asia/Novosibirsk
@@ -536,6 +544,10 @@ export interface components {
              */
             timezone?: string;
             weekly_report?: boolean;
+            reminders?: boolean;
+            reminder_hour?: number;
+            show_rates?: boolean;
+            goal_updates?: boolean;
             /** @description `true` — принять политику данных; отозвать согласие можно только удалением аккаунта */
             consent?: boolean;
         };
@@ -669,10 +681,6 @@ export interface components {
             paydays: number[];
             expected_income?: components["schemas"]["Money"];
             goal_contribution?: components["schemas"]["Money"];
-            /** @description Час ежедневного напоминания по поясу пользователя */
-            reminder_hour: number;
-            /** @description Присылать ежедневное напоминание о лимите */
-            reminders: boolean;
             /** Format: date-time */
             updated_at: string;
         };
@@ -682,10 +690,6 @@ export interface components {
             expected_income?: components["schemas"]["Money"];
             /** @description Сколько откладывать на цели за период */
             goal_contribution?: components["schemas"]["Money"];
-            /** @default 9 */
-            reminder_hour: number;
-            /** @default true */
-            reminders: boolean;
         };
         BudgetOverview: {
             plan?: components["schemas"]["Plan"];

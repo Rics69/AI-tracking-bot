@@ -69,6 +69,7 @@ func TestParseCertain(t *testing.T) {
 		{"продукты 2,5 к", "2500", ledger.CategoryFood, "продукты", 0},
 		{"кроссовки 7.5к", "7500", ledger.CategoryShopping, "кроссовки", 0},
 		{"продукты 3 тыс", "3000", ledger.CategoryFood, "продукты", 0},
+		{"зарплата 1,5 млн", "1500000", ledger.CategorySalary, "зарплата", 0},
 		{"яндекс такси 640", "640", ledger.CategoryTransport, "яндекс такси", 0},
 		{"перекрёсток 1200", "1200", ledger.CategoryFood, "перекрёсток", 0},
 		{"пятёрочка 800", "800", ledger.CategoryFood, "пятёрочка", 0},
@@ -127,6 +128,33 @@ func TestParseLeavesTheRestToTheAgent(t *testing.T) {
 	} {
 		if got, ok := s.Parse(text, today); ok {
 			t.Errorf("Parse(%q) = %+v, want it left to the agent", text, got)
+		}
+	}
+}
+
+func TestAmount(t *testing.T) {
+	for text, want := range map[string]string{
+		"120000":        "120000",
+		"120 000":       "120000",
+		"120к":          "120000",
+		"120 к":         "120000",
+		"120 тыс.":      "120000",
+		"120 тысяч":     "120000",
+		"1,5 млн":       "1500000",
+		"1.5млн":        "1500000",
+		"2 миллиона":    "2000000",
+		"45 000 ₽":      "45000",
+		"1 250,50 руб.": "1250.5",
+		" 350 ":         "350",
+	} {
+		got, ok := Amount(text)
+		if !ok || !got.Equal(decimal.RequireFromString(want)) {
+			t.Errorf("Amount(%q) = %v, %v, want %s", text, got, ok, want)
+		}
+	}
+	for _, text := range []string{"", "0", "много", "кофе 350", "350 и 400", "-5", "99999999999"} {
+		if got, ok := Amount(text); ok {
+			t.Errorf("Amount(%q) = %v", text, got)
 		}
 	}
 }

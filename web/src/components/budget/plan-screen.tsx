@@ -25,7 +25,6 @@ import { confirm } from "@/components/operations/operation-sheet";
 import { Input } from "@/components/ui/input";
 import { useTelegramBack } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Switch } from "@/components/ui/switch";
 import { texts } from "@/content/texts";
 import { amountInput, parseAmount } from "@/lib/amount";
 import { capitalize, categoryIcons, useCategoryInfo } from "@/lib/categories";
@@ -154,7 +153,6 @@ function PlanPanel({ plan }: { plan?: Plan }) {
             <dt className="text-muted-foreground">На цели за период</dt>
             <dd className="text-right">{plan.goal_contribution ? formatMoney(plan.goal_contribution) : "—"}</dd>
           </dl>
-          <Reminders plan={plan} />
           <div className="flex gap-2">
             <PillButton variant="outline" className="h-11 flex-1" onClick={() => setEditing(true)}>
               Изменить
@@ -212,8 +210,6 @@ function PaydayForm({ plan, submit, onSaved }: { plan?: Plan; submit: string; on
         paydays: [...days].sort((a, b) => a - b),
         expected_income: expected,
         goal_contribution: goal,
-        reminder_hour: plan?.reminder_hour ?? 9,
-        reminders: plan?.reminders ?? true,
       });
       haptic.success();
       onSaved();
@@ -273,51 +269,6 @@ function PaydayForm({ plan, submit, onSaved }: { plan?: Plan; submit: string; on
         {save.isPending ? "Сохранение…" : submit}
       </PillButton>
     </form>
-  );
-}
-
-const HOURS = Array.from({ length: 17 }, (_, i) => i + 6); // 6:00–22:00
-
-function Reminders({ plan }: { plan: Plan }) {
-  const save = useSetPlan();
-  const update = (change: { reminders?: boolean; reminder_hour?: number }) =>
-    save.mutate(
-      {
-        paydays: plan.paydays,
-        expected_income: plan.expected_income,
-        goal_contribution: plan.goal_contribution,
-        reminders: plan.reminders,
-        reminder_hour: plan.reminder_hour,
-        ...change,
-      },
-      { onError: (err) => toast.error(err instanceof Error ? err.message : "Не удалось сохранить") },
-    );
-  return (
-    <div className="flex flex-col gap-3 rounded-2xl bg-muted p-3">
-      <label className="flex items-center justify-between gap-3">
-        <span className="flex flex-col">
-          <span className="text-[15px]">Напоминать о лимите</span>
-          <span className="text-[13px] text-muted-foreground">Бот утром пришлёт лимит и платежи на завтра</span>
-        </span>
-        <Switch checked={plan.reminders} onCheckedChange={(on) => update({ reminders: on })} disabled={save.isPending} />
-      </label>
-      {plan.reminders && (
-        <label className="flex items-center justify-between gap-3">
-          <span className="text-[15px]">Во сколько</span>
-          <select
-            value={plan.reminder_hour}
-            onChange={(e) => update({ reminder_hour: Number(e.target.value) })}
-            className="h-10 rounded-full bg-card px-4 text-[15px] tabular-nums outline-none"
-          >
-            {HOURS.map((h) => (
-              <option key={h} value={h}>
-                {String(h).padStart(2, "0")}:00
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-    </div>
   );
 }
 

@@ -37,6 +37,7 @@ type FamilyService interface {
 	Consent(ctx context.Context, telegramID int64) (user.User, error)
 	SetTimezone(ctx context.Context, telegramID int64, tz string) (user.User, error)
 	SetWeeklyReport(ctx context.Context, by user.User, telegramID int64, on bool) (user.User, error)
+	SetNotifications(ctx context.Context, telegramID int64, n user.Notifications) (user.User, error)
 	DeleteAccount(ctx context.Context, telegramID int64) error
 	Members(ctx context.Context, familyID int64) ([]user.User, error)
 	Remove(ctx context.Context, head user.User, telegramID int64) error
@@ -111,7 +112,8 @@ func (s *Server) UpdateMe(ctx context.Context, req UpdateMeRequestObject) (Updat
 		}
 	}
 	// The rest is personal data: only after the policy is accepted.
-	if (b.Timezone != nil || b.WeeklyReport != nil) && !u.Consented() {
+	notifying := b.Reminders != nil || b.ReminderHour != nil || b.ShowRates != nil || b.GoalUpdates != nil
+	if (b.Timezone != nil || b.WeeklyReport != nil || notifying) && !u.Consented() {
 		return nil, ErrConsentRequired
 	}
 	if b.Timezone != nil {
@@ -121,6 +123,16 @@ func (s *Server) UpdateMe(ctx context.Context, req UpdateMeRequestObject) (Updat
 	}
 	if b.WeeklyReport != nil {
 		if u, err = s.family.SetWeeklyReport(ctx, u, u.TelegramID, *b.WeeklyReport); err != nil {
+			return nil, err
+		}
+	}
+	if notifying {
+		n := u.Notifications
+		n.Reminders = orElse(b.Reminders, n.Reminders)
+		n.ReminderHour = orElse(b.ReminderHour, n.ReminderHour)
+		n.ShowRates = orElse(b.ShowRates, n.ShowRates)
+		n.GoalUpdates = orElse(b.GoalUpdates, n.GoalUpdates)
+		if u, err = s.family.SetNotifications(ctx, u.TelegramID, n); err != nil {
 			return nil, err
 		}
 	}
@@ -168,6 +180,10 @@ func (s *Server) toAPIMe(u user.User) Me {
 		FamilyId:          u.FamilyID,
 		IsHead:            u.IsHead,
 		WeeklyReport:      u.WeeklyReport,
+		Reminders:         u.Reminders,
+		ReminderHour:      u.ReminderHour,
+		ShowRates:         u.ShowRates,
+		GoalUpdates:       u.GoalUpdates,
 		Timezone:          optional(u.Timezone),
 		EffectiveTimezone: u.Location(s.loc).String(),
 		Consented:         u.Consented(),

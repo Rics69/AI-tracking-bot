@@ -733,7 +733,7 @@ components:
 
     Me:
       type: object
-      required: [telegram_id, first_name, family_id, is_head, weekly_report, effective_timezone, consented, created_at]
+      required: [telegram_id, first_name, family_id, is_head, weekly_report, reminders, reminder_hour, show_rates, goal_updates, effective_timezone, consented, created_at]
       properties:
         telegram_id: { type: integer, format: int64, example: 123456789 }
         first_name: { type: string, example: Данил }
@@ -741,6 +741,10 @@ components:
         family_id: { type: integer, format: int64 }
         is_head: { type: boolean, description: Глава семьи }
         weekly_report: { type: boolean, description: Присылать итоги недели в бот по понедельникам }
+        reminders: { type: boolean, description: Присылать утреннее сообщение }
+        reminder_hour: { type: integer, minimum: 0, maximum: 23, description: Час утреннего сообщения по поясу пользователя }
+        show_rates: { type: boolean, description: Показывать курсы доллара и евро в утреннем сообщении }
+        goal_updates: { type: boolean, description: 'Сообщать о прогрессе цели на 25, 50, 75 и 100%' }
         timezone:
           type: string
           example: Asia/Novosibirsk
@@ -755,6 +759,10 @@ components:
       properties:
         timezone: { type: string, description: IANA-имя часового пояса, example: Asia/Novosibirsk }
         weekly_report: { type: boolean }
+        reminders: { type: boolean }
+        reminder_hour: { type: integer, minimum: 0, maximum: 23 }
+        show_rates: { type: boolean }
+        goal_updates: { type: boolean }
         consent: { type: boolean, description: '`true` — принять политику данных; отозвать согласие можно только удалением аккаунта' }
 
     Operation:
@@ -892,7 +900,7 @@ components:
 
     Plan:
       type: object
-      required: [paydays, reminder_hour, reminders, updated_at]
+      required: [paydays, updated_at]
       properties:
         paydays:
           type: array
@@ -901,8 +909,6 @@ components:
           example: [5, 20]
         expected_income: { $ref: '#/components/schemas/Money' }
         goal_contribution: { $ref: '#/components/schemas/Money' }
-        reminder_hour: { type: integer, minimum: 0, maximum: 23, description: Час ежедневного напоминания по поясу пользователя }
-        reminders: { type: boolean, description: Присылать ежедневное напоминание о лимите }
         updated_at: { type: string, format: date-time }
 
     PlanInput:
@@ -920,8 +926,6 @@ components:
         goal_contribution:
           allOf: [{ $ref: '#/components/schemas/Money' }]
           description: Сколько откладывать на цели за период
-        reminder_hour: { type: integer, minimum: 0, maximum: 23, default: 9 }
-        reminders: { type: boolean, default: true }
 
     BudgetOverview:
       type: object

@@ -34,8 +34,15 @@ const (
 	prefixReferral  = "ref_"
 )
 
-// features are the destinations of go_ links.
-var features = []string{"dream", "goal", "limit", "review"}
+// Features: the destinations of go_ links.
+const (
+	FeatureDream  = "dream"
+	FeatureGoal   = "goal"
+	FeatureLimit  = "limit"
+	FeatureReview = "review"
+)
+
+var features = []string{FeatureDream, FeatureGoal, FeatureLimit, FeatureReview}
 
 // valid is what Telegram accepts in a start parameter.
 var valid = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)

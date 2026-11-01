@@ -14,6 +14,14 @@ func deref[T any](p *T) T {
 	return *p
 }
 
+// orElse is the value of a field a client may leave out.
+func orElse[T any](p *T, def T) T {
+	if p == nil {
+		return def
+	}
+	return *p
+}
+
 // optional maps the domain's "empty string means absent" to an omitted JSON field.
 func optional(s string) *string {
 	if s == "" {

@@ -36,9 +36,11 @@ type Repository interface {
 	UpdatePayment(ctx context.Context, p RegularPayment) (RegularPayment, error)
 	DeletePayment(ctx context.Context, userID, id int64) error
 
-	// Reminded lists users who may get a daily reminder: with reminders on in
-	// their plan, or with regular payments.
+	// Reminded lists users the morning message has something to say to: with
+	// a plan, a goal not reached yet or a regular payment.
 	Reminded(ctx context.Context) ([]int64, error)
+	// AllGoals lists the goals of every user.
+	AllGoals(ctx context.Context) ([]Goal, error)
 }
 
 // Ledger is the part of ledger.Service the budget needs.
@@ -134,6 +136,11 @@ func (s *Service) Goals(ctx context.Context, userID int64) ([]Goal, error) {
 
 func (s *Service) Goal(ctx context.Context, userID, id int64) (Goal, error) {
 	return s.repo.Goal(ctx, userID, id)
+}
+
+// AllGoals lists the goals of every user, for messages the bot starts itself.
+func (s *Service) AllGoals(ctx context.Context) ([]Goal, error) {
+	return s.repo.AllGoals(ctx)
 }
 
 // CreateGoal adds a goal; today is the user's date, for the deadline check.

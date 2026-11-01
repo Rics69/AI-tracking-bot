@@ -428,6 +428,26 @@ func TestErrors(t *testing.T) {
 	}
 }
 
+func TestNotificationSettings(t *testing.T) {
+	e := newEnv(t)
+	if status, body := e.do(t, anna, http.MethodPatch, "/api/v1/me", `{"reminders":false}`); status != 403 || errorCode(body) != "consent_required" {
+		t.Errorf("before consent: %d %v", status, body)
+	}
+	e.onboard(t, anna)
+	me := e.ok(t, anna, 200, http.MethodGet, "/api/v1/me", "")
+	if me["reminders"] != true || me["reminder_hour"] != float64(9) || me["show_rates"] != true || me["goal_updates"] != true {
+		t.Errorf("defaults = %v", me)
+	}
+	me = e.ok(t, anna, 200, http.MethodPatch, "/api/v1/me", `{"reminder_hour":8,"show_rates":false}`)
+	if me["reminders"] != true || me["reminder_hour"] != float64(8) || me["show_rates"] != false || me["goal_updates"] != true {
+		t.Errorf("only what was sent changes: %v", me)
+	}
+	me = e.ok(t, anna, 200, http.MethodPatch, "/api/v1/me", `{"reminders":false,"goal_updates":false}`)
+	if me["reminders"] != false || me["reminder_hour"] != float64(8) || me["goal_updates"] != false {
+		t.Errorf("after turning off = %v", me)
+	}
+}
+
 func TestEvents(t *testing.T) {
 	e := newEnv(t)
 	if status, _ := e.do(t, 0, http.MethodPost, "/api/v1/events", `{"name":"miniapp_open"}`); status != 401 {
@@ -480,8 +500,8 @@ func TestBudgetEndpoints(t *testing.T) {
 
 	// Payday today: the period starts today.
 	plan := e.ok(t, anna, 200, http.MethodPut, "/api/v1/budget/plan", fmt.Sprintf(`{"paydays":[%d]}`, today.Day()))
-	if plan["reminders"] != true || plan["reminder_hour"] != float64(9) {
-		t.Errorf("plan defaults = %v", plan)
+	if _, ok := plan["reminder_hour"]; ok {
+		t.Errorf("the hour of the morning message moved to /me: %v", plan)
 	}
 	if b := e.ok(t, anna, 200, http.MethodGet, "/api/v1/budget", "")["today"].(map[string]any); b["ready"] != false {
 		t.Errorf("no income yet, the limit must be unknown: %v", b)
@@ -547,7 +567,7 @@ func TestBudgetEndpoints(t *testing.T) {
 
 	for _, tt := range []struct{ method, path, body, field string }{
 		{http.MethodPut, "/api/v1/budget/plan", `{"paydays":[]}`, "paydays"},
-		{http.MethodPut, "/api/v1/budget/plan", `{"paydays":[5],"reminder_hour":25}`, "reminder_hour"},
+		{http.MethodPatch, "/api/v1/me", `{"reminder_hour":25}`, "reminder_hour"},
 		{http.MethodPost, "/api/v1/regular-payments", `{"title":"Зарплата","amount":1,"day":5,"category":"salary"}`, "category"},
 		{http.MethodPost, "/api/v1/goals", `{"title":" ","target":100}`, "title"},
 		{http.MethodPost, "/api/v1/goals", `{"title":"Вчера","target":100,"deadline":"2000-01-01"}`, "deadline"},

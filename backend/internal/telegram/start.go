@@ -48,8 +48,8 @@ func (h *Handler) arrive(ctx context.Context, u user.User, p startparam.Param, e
 	h.cfg.Events.Track(ctx, u.TelegramID, event, startProps(p))
 }
 
-// start answers /start of a user who has accepted the policy. Links to
-// features lead to the welcome until those features exist; the source is kept.
+// start answers /start of a user who has accepted the policy: a link leads
+// where it says, a plain /start goes back to the dialog left unfinished.
 func (h *Handler) start(ctx context.Context, s Sender, chatID int64, u user.User, raw string) {
 	if raw == "" {
 		raw = u.PendingStart // the policy was accepted in the mini app
@@ -61,6 +61,12 @@ func (h *Handler) start(ctx context.Context, s Sender, chatID int64, u user.User
 		return
 	}
 	h.agent.Reset(ctx, u.TelegramID)
+	if p.Kind == startparam.Plain && h.resume(ctx, s, chatID, u) {
+		return
+	}
+	if h.route(ctx, s, chatID, u, p, false) {
+		return
+	}
 	h.send(ctx, s, chatID, h.t.Welcome)
 }
 

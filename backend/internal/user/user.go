@@ -11,6 +11,17 @@ import (
 // ErrNotFound means there is no user with the given Telegram ID.
 var ErrNotFound = errors.New("user not found")
 
+// DefaultReminderHour is when the morning message goes out, in the user's timezone.
+const DefaultReminderHour = 9
+
+// Notifications are the messages the bot starts by itself.
+type Notifications struct {
+	ReminderHour int  // 0–23, the user's timezone
+	Reminders    bool // the morning message
+	ShowRates    bool // exchange rates in the morning message
+	GoalUpdates  bool // a message at 25, 50, 75 and 100% of a goal
+}
+
 // User is a person identified by their Telegram ID.
 type User struct {
 	TelegramID int64
@@ -22,9 +33,10 @@ type User struct {
 	IsHead    bool   // the head sees the expenses of the whole family
 	// WeeklyReport: the bot sends the weekly summary (on by default).
 	WeeklyReport bool
-	Timezone     string // IANA name; empty means the app default
-	FirstSource  string // the content that brought the user here; written once
-	LastSource   string // the content of their latest start link
+	Notifications
+	Timezone    string // IANA name; empty means the app default
+	FirstSource string // the content that brought the user here; written once
+	LastSource  string // the content of their latest start link
 	// PendingStart is the start parameter of a link opened before the data
 	// policy was accepted; it is acted on right after.
 	PendingStart string
@@ -64,6 +76,7 @@ type Repository interface {
 	// All lists every user.
 	All(ctx context.Context) ([]User, error)
 	SetWeeklyReport(ctx context.Context, telegramID int64, on bool) (User, error)
+	SetNotifications(ctx context.Context, telegramID int64, n Notifications) (User, error)
 	// SetTimezone stores an IANA timezone name; empty resets to the app default.
 	SetTimezone(ctx context.Context, telegramID int64, tz string) (User, error)
 	SetConsent(ctx context.Context, telegramID int64, at time.Time) (User, error)

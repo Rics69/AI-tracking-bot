@@ -21,10 +21,12 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/config"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/flow"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/llm/provider"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/logger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/quick"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/rates"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/report"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/postgres"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/telegram"
@@ -66,12 +68,16 @@ func run() error {
 	expenses := ledger.NewService(postgres.NewOperationRepository(pool), cfg.Location)
 	// History lives in PostgreSQL: a restart or redeploy does not cut dialogs short.
 	history := postgres.NewChatHistoryRepository(pool, cfg.HistoryTurns, cfg.HistoryTTL)
+	flows := postgres.NewFlowRepository(pool)
 	go every(ctx, time.Hour, func() {
 		n, err := history.DeleteOlderThan(ctx, cfg.HistoryRetention)
 		if err != nil {
 			log.Warn("history cleanup", "err", err)
 		} else if n > 0 {
 			log.Info("history cleanup", "deleted_turns", n)
+		}
+		if _, err := flows.DeleteOlderThan(ctx, flow.TTL); err != nil {
+			log.Warn("flow cleanup", "err", err)
 		}
 	})
 	meter := usage.NewMeter(postgres.NewUsageRepository(pool),
@@ -104,6 +110,8 @@ func run() error {
 		Stats:        postgres.NewStatsRepository(pool),
 		Quick:        records,
 		Events:       tracker,
+		Flows:        flows,
+		Budget:       budgets,
 
 		PackageTokens: cfg.LLMTokenPackage,
 		PackageSince:  packageSince,
@@ -179,7 +187,15 @@ func run() error {
 		},
 		cfg.Location, log.With("component", "report"))
 	go weekly.Run(ctx)
-	daily := report.NewDaily(budgets, users, runs,
+	rateStore := postgres.NewRateRepository(pool)
+	updater := rates.NewUpdater(rateStore, log.With("component", "rates"))
+	go every(ctx, time.Hour, func() { updater.Update(ctx) })
+	go report.NewGoalProgress(budgets, users, runs,
+		func(ctx context.Context, chatID int64, text string) error {
+			return undeliverable(handler.SendWithApp(ctx, b, chatID, text, fromGoal))
+		},
+		botTexts, log.With("component", "goals")).Run(ctx)
+	daily := report.NewDaily(budgets, users, runs, rateStore,
 		func(ctx context.Context, chatID int64, text string) error {
 			err := handler.SendWithApp(ctx, b, chatID, text, fromMorning)
 			if err == nil {
@@ -207,6 +223,9 @@ const telegramPollTimeout = time.Minute
 // fromMorning marks the mini app button of the morning reminder: the app
 // reports the click.
 const fromMorning = "morning"
+
+// fromGoal marks the mini app button of a goal milestone.
+const fromGoal = "goal"
 
 // every runs fn now and then at each interval until ctx is cancelled.
 func every(ctx context.Context, interval time.Duration, fn func()) {

@@ -12,7 +12,10 @@ import (
 	"github.com/pressly/goose/v3"
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/flow"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/rates"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
 
 func TestBudgetPlan(t *testing.T) {
@@ -24,7 +27,7 @@ func TestBudgetPlan(t *testing.T) {
 		t.Fatalf("no plan yet: %v", err)
 	}
 	income := amount("80000")
-	p, err := r.SavePlan(ctx, budget.Plan{UserID: 1, Paydays: []int{5, 20}, ExpectedIncome: &income, ReminderHour: 9, Reminders: true})
+	p, err := r.SavePlan(ctx, budget.Plan{UserID: 1, Paydays: []int{5, 20}, ExpectedIncome: &income})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,10 +35,10 @@ func TestBudgetPlan(t *testing.T) {
 		t.Errorf("saved plan = %+v", p)
 	}
 	// Saving again replaces the plan.
-	if p, err = r.SavePlan(ctx, budget.Plan{UserID: 1, Paydays: []int{10}, ReminderHour: 8}); err != nil {
+	if p, err = r.SavePlan(ctx, budget.Plan{UserID: 1, Paydays: []int{10}}); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := r.Plan(ctx, 1); !slices.Equal(got.Paydays, []int{10}) || got.ExpectedIncome != nil || got.Reminders {
+	if got, _ := r.Plan(ctx, 1); !slices.Equal(got.Paydays, []int{10}) || got.ExpectedIncome != nil {
 		t.Errorf("replaced plan = %+v", got)
 	}
 	if _, err := r.SavePlan(ctx, budget.Plan{UserID: 404, Paydays: []int{1}}); !errors.Is(err, ledger.ErrUnknownUser) {
@@ -163,18 +166,126 @@ func TestRegularPayments(t *testing.T) {
 	}
 }
 
-func TestRemindedFollowsPlans(t *testing.T) {
-	setup(t)
+func TestRemindedIsWhoHasSomethingToHear(t *testing.T) {
+	_, users := setup(t)
 	ctx := context.Background()
 	r := NewBudgetRepository(testPool)
-	if _, err := r.SavePlan(ctx, budget.Plan{UserID: 1, Paydays: []int{5}, Reminders: true}); err != nil {
+	if ids, _ := r.Reminded(ctx); len(ids) != 0 {
+		t.Errorf("nothing set up: reminded = %v", ids)
+	}
+	if _, err := r.SavePlan(ctx, budget.Plan{UserID: 1, Paydays: []int{5}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.SavePlan(ctx, budget.Plan{UserID: 2, Paydays: []int{5}, Reminders: false}); err != nil {
+	if _, err := r.CreateGoal(ctx, budget.Goal{UserID: 2, Title: "Отпуск", Target: amount("1000")}); err != nil {
 		t.Fatal(err)
 	}
-	if ids, _ := r.Reminded(ctx); !slices.Equal(ids, []int64{1}) {
-		t.Errorf("reminded = %v, want only Anna", ids)
+	ids, _ := r.Reminded(ctx)
+	slices.Sort(ids)
+	if !slices.Equal(ids, []int64{1, 2}) {
+		t.Errorf("reminded = %v", ids)
+	}
+	all, err := r.AllGoals(ctx)
+	if err != nil || len(all) != 1 || all[0].UserID != 2 {
+		t.Errorf("all goals = %+v, %v", all, err)
+	}
+
+	u, err := users.SetNotifications(ctx, 1, user.Notifications{ReminderHour: 8, Reminders: true, GoalUpdates: true})
+	if err != nil || u.ReminderHour != 8 || u.ShowRates || !u.GoalUpdates {
+		t.Errorf("notifications = %+v, %v", u.Notifications, err)
+	}
+	if u, _ = users.Get(ctx, 2); u.ReminderHour != user.DefaultReminderHour || !u.Reminders || !u.ShowRates || !u.GoalUpdates {
+		t.Errorf("defaults = %+v", u.Notifications)
+	}
+}
+
+func TestFlows(t *testing.T) {
+	setup(t)
+	ctx := context.Background()
+	r := NewFlowRepository(testPool)
+	if _, err := r.Get(ctx, 1); !errors.Is(err, flow.ErrNone) {
+		t.Fatalf("no flow yet: %v", err)
+	}
+	s := flow.State{UserID: 1, Flow: "dream", Step: "dprice", Data: map[string]string{"title": "Ноутбук"}}
+	if err := r.Save(ctx, s); err != nil {
+		t.Fatal(err)
+	}
+	s.Step, s.Data["price"] = "dterm", "120000.5"
+	if err := r.Save(ctx, s); err != nil {
+		t.Fatal(err)
+	}
+	got, err := r.Get(ctx, 1)
+	if err != nil || got.Step != "dterm" || got.Data["title"] != "Ноутбук" || got.Data["price"] != "120000.5" || got.Expired(time.Now()) {
+		t.Fatalf("flow = %+v, %v", got, err)
+	}
+	if n, err := r.DeleteOlderThan(ctx, time.Hour); err != nil || n != 0 {
+		t.Errorf("a fresh flow was cleaned up: %d, %v", n, err)
+	}
+	if _, err := testPool.Exec(ctx, `UPDATE user_flows SET updated_at = now() - interval '2 days'`); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := r.DeleteOlderThan(ctx, flow.TTL); err != nil || n != 1 {
+		t.Errorf("an old flow stayed: %d, %v", n, err)
+	}
+	if err := r.Delete(ctx, 1); err != nil {
+		t.Errorf("delete of nothing: %v", err)
+	}
+}
+
+func TestRates(t *testing.T) {
+	setup(t)
+	ctx := context.Background()
+	r := NewRateRepository(testPool)
+	d := func(n int) time.Time { return time.Date(2026, 10, n, 0, 0, 0, 0, time.UTC) }
+	if err := r.Save(ctx, []rates.Rate{
+		{Code: "USD", Date: d(30), Value: amount("80.1")},
+		{Code: "EUR", Date: d(30), Value: amount("90.5")},
+		{Code: "USD", Date: d(31), Value: amount("80.2")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// The same day again: the Bank of Russia corrected it.
+	if err := r.Save(ctx, []rates.Rate{{Code: "USD", Date: d(31), Value: amount("80.3")}}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := r.Latest(ctx, []string{"USD", "EUR"})
+	if err != nil || len(got) != 2 {
+		t.Fatalf("latest = %+v, %v", got, err)
+	}
+	if got[0].Code != "USD" || !got[0].Date.Equal(d(31)) || !got[0].Value.Equal(amount("80.3")) || !got[1].Date.Equal(d(30)) {
+		t.Errorf("latest = %+v", got)
+	}
+}
+
+func TestRemindersMoveFromThePlanToTheUser(t *testing.T) {
+	_, users := setup(t)
+	ctx := context.Background()
+	db := stdlib.OpenDBFromPool(testPool)
+	defer func() { _ = db.Close() }()
+	dir, _ := fs.Sub(migrations, "migrations")
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.DownTo(ctx, 9); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if _, err := provider.Up(ctx); err != nil {
+			t.Error(err)
+		}
+	}()
+	if _, err := testPool.Exec(ctx, `INSERT INTO budget_plans (user_id, paydays, reminder_hour, reminders)
+		VALUES (1, '{5}', 7, false)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.Up(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if u, _ := users.Get(ctx, 1); u.ReminderHour != 7 || u.Reminders || !u.ShowRates || !u.GoalUpdates {
+		t.Errorf("Anna = %+v", u.Notifications)
+	}
+	if u, _ := users.Get(ctx, 2); u.ReminderHour != user.DefaultReminderHour || !u.Reminders {
+		t.Errorf("Boris = %+v", u.Notifications)
 	}
 }
 

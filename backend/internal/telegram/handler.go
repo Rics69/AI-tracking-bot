@@ -17,6 +17,7 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/agent"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/flow"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/stats"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
@@ -61,6 +62,7 @@ type Family interface {
 	Members(ctx context.Context, familyID int64) ([]user.User, error)
 	CreateInvite(ctx context.Context, head user.User) (family.CreatedInvite, error)
 	SetWeeklyReport(ctx context.Context, by user.User, telegramID int64, on bool) (user.User, error)
+	SetNotifications(ctx context.Context, telegramID int64, n user.Notifications) (user.User, error)
 	SetTimezone(ctx context.Context, telegramID int64, tz string) (user.User, error)
 	DeleteAccount(ctx context.Context, telegramID int64) error
 	SetBlocked(ctx context.Context, telegramID int64, on bool) (user.User, error)
@@ -91,6 +93,8 @@ type Config struct {
 	Stats        stats.Source // the owner's /stats; nil: the command is off
 	Quick        Quick        // records without the LLM; nil: everything goes to the agent
 	Events       *events.Tracker
+	Flows        flow.Store // dialogs on buttons; nil, or no Budget: they are off
+	Budget       Budget
 
 	PackageTokens int64     // the token package, for /stats; 0: none
 	PackageSince  time.Time // the date it started
@@ -180,6 +184,9 @@ func (h *Handler) handleMessage(ctx context.Context, s Sender, msg *models.Messa
 	case isStart:
 		h.start(ctx, s, chatID, u, param)
 		return
+	case isCommand(text, "/dream"):
+		h.startDream(ctx, s, chatID, u)
+		return
 	case isCommand(text, "/help"):
 		h.agent.Reset(ctx, u.TelegramID)
 		h.send(ctx, s, chatID, h.t.Help)
@@ -212,6 +219,14 @@ func (h *Handler) handleMessage(ctx context.Context, s Sender, msg *models.Messa
 	case len([]rune(text)) > maxInputRunes:
 		h.send(ctx, s, chatID, h.t.TooLong)
 		return
+	}
+
+	handled, after := h.flowText(ctx, s, chatID, u, text)
+	if handled {
+		return
+	}
+	if after != nil {
+		defer after()
 	}
 
 	loc := u.Location(h.cfg.Location)

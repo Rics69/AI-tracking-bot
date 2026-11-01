@@ -27,6 +27,10 @@ func writeError(log *slog.Logger, w http.ResponseWriter, r *http.Request, err er
 		field := "timezone"
 		status = http.StatusBadRequest
 		detail = ErrorDetail{Code: ErrCodeValidation, Message: err.Error(), Field: &field}
+	case errors.Is(err, family.ErrBadHour):
+		field := "reminder_hour"
+		status = http.StatusBadRequest
+		detail = ErrorDetail{Code: ErrCodeValidation, Message: err.Error(), Field: &field}
 	case errors.Is(err, ErrUnauthorized):
 		status = http.StatusUnauthorized
 		detail = ErrorDetail{Code: ErrCodeUnauthorized, Message: err.Error()}

@@ -13,6 +13,7 @@ import (
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/rates"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/memory"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
@@ -29,6 +30,12 @@ var reminderTexts = texts.Bot{
 	},
 	ReminderNoIncome: "no income",
 	ReminderPayment:  "pay {title} {amount}",
+	ReminderGoal:     "goal {title} {percent} {saved} {target}",
+	ReminderRates:    "rates {rates} on {date}",
+	Comeback:         "come back",
+	ComebackGoal:     "come back to {title} {percent}",
+	GoalProgress:     "progress {title} {percent} {saved} {target}",
+	GoalReached:      "reached {title} {target}",
 }
 
 func setupDaily(t *testing.T) (*Daily, *[]sent, *bool) {
@@ -46,8 +53,10 @@ func setupDaily(t *testing.T) (*Daily, *[]sent, *bool) {
 			t.Fatal(err)
 		}
 	}
-	plan := func(user int64, hour int, on bool) {
-		if _, err := svc.SetPlan(ctx, budget.Plan{UserID: user, Paydays: []int{5}, ReminderHour: hour, Reminders: on}); err != nil {
+	settings := map[int64]user.Notifications{}
+	plan := func(id int64, hour int, on bool) {
+		settings[id] = user.Notifications{ReminderHour: hour, Reminders: on}
+		if _, err := svc.SetPlan(ctx, budget.Plan{UserID: id, Paydays: []int{5}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -78,7 +87,11 @@ func setupDaily(t *testing.T) (*Daily, *[]sent, *bool) {
 	consented := now.AddDate(0, -1, 0)
 	members := fakeMembers{}
 	for id := int64(1); id <= 8; id++ {
-		m := user.User{TelegramID: id, ConsentedAt: &consented}
+		m := user.User{TelegramID: id, ConsentedAt: &consented,
+			Notifications: user.Notifications{ReminderHour: 9, Reminders: true}}
+		if n, ok := settings[id]; ok {
+			m.Notifications = n
+		}
 		if id == 5 {
 			m.ConsentedAt = nil
 		}
@@ -93,7 +106,7 @@ func setupDaily(t *testing.T) (*Daily, *[]sent, *bool) {
 		out = append(out, sent{chat, strings.ReplaceAll(text, " ", " ")})
 		return nil
 	}
-	d := NewDaily(svc, members, &fakeRuns{claimed: map[string]bool{}}, send, reminderTexts, moscow,
+	d := NewDaily(svc, members, &fakeRuns{claimed: map[string]bool{}}, nil, send, reminderTexts, moscow,
 		slog.New(slog.NewTextHandler(io.Discard, nil)))
 	d.now = func() time.Time { return now }
 	d.pick = func(int) int { return 0 }
@@ -105,7 +118,7 @@ func TestDailyReminders(t *testing.T) {
 	d.Tick(context.Background())
 
 	want := map[int64]string{
-		1: "neutral 1 270 ₽, 20 дней, 5 ноября, 25 400 ₽\n\npay Интернет 600 ₽",
+		1: "neutral 1 270 ₽, 20 дней, 5 ноября, 25 400 ₽\npay Интернет 600 ₽",
 		2: "pay Аренда 45 000 ₽",
 		6: "no income",
 		8: "hungry 750 ₽",
@@ -146,6 +159,161 @@ func TestDailyReminderIsSentOnceAndRetriedOnFailure(t *testing.T) {
 	d.Tick(ctx)
 	if len(*out) < 8 {
 		t.Errorf("next morning sent %d in total, want the plans reminded again", len(*out))
+	}
+}
+
+// morning builds a Daily around one user with a goal.
+func morning(t *testing.T, m user.User) (*Daily, *memory.Budget, *memory.Rates, *[]sent) {
+	t.Helper()
+	ops := memory.NewOperationRepository()
+	store := memory.NewBudget(ops)
+	svc := budget.NewService(store, ledger.NewService(ops, moscow))
+	now := time.Date(2026, 10, 16, 9, 30, 0, 0, moscow)
+	consented := now.AddDate(-1, 0, 0)
+	m.TelegramID, m.ConsentedAt = 1, &consented
+	if m.Notifications == (user.Notifications{}) {
+		m.Notifications = user.Notifications{ReminderHour: 9, Reminders: true, ShowRates: true}
+	}
+	r := memory.NewRates()
+	var out []sent
+	d := NewDaily(svc, fakeMembers{m}, &fakeRuns{claimed: map[string]bool{}}, r,
+		func(_ context.Context, chat int64, text string) error {
+			out = append(out, sent{chat, strings.ReplaceAll(text, "\u00a0", " ")})
+			return nil
+		}, reminderTexts, moscow, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	d.now = func() time.Time { return now }
+	if _, err := svc.CreateGoal(context.Background(), budget.Goal{UserID: 1, Title: "Ноутбук", Target: decimal.NewFromInt(120000)},
+		day(10, 16)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Deposit(context.Background(), 1, 1, decimal.NewFromInt(48000), nil, day(10, 16)); err != nil {
+		t.Fatal(err)
+	}
+	return d, store, r, &out
+}
+
+func TestMorningWithAGoalAndRates(t *testing.T) {
+	ctx := context.Background()
+	var r *memory.Rates
+	d, _, _, out := morning(t, user.User{})
+	d.Tick(ctx)
+	if len(*out) != 1 || (*out)[0].text != "goal Ноутбук 40 48 000 ₽ 120 000 ₽" {
+		t.Fatalf("no plan and no rates yet: %+v", *out)
+	}
+
+	d, _, r, out = morning(t, user.User{})
+	_ = r.Save(ctx, []rates.Rate{
+		{Code: "EUR", Date: day(10, 15), Value: decimal.RequireFromString("93.1")},
+		{Code: "USD", Date: day(10, 16), Value: decimal.RequireFromString("80.5444")},
+	})
+	d.Tick(ctx)
+	if len(*out) != 1 || (*out)[0].text != "goal Ноутбук 40 48 000 ₽ 120 000 ₽\nrates $ 80,54 ₽ · € 93,10 ₽ on 16 октября" {
+		t.Errorf("message = %+v", *out)
+	}
+
+	d, _, r, out = morning(t, user.User{Notifications: user.Notifications{ReminderHour: 9, Reminders: true}})
+	_ = r.Save(ctx, []rates.Rate{{Code: "USD", Date: day(10, 16), Value: decimal.NewFromInt(80)}})
+	d.Tick(ctx)
+	if len(*out) != 1 || strings.Contains((*out)[0].text, "rates") {
+		t.Errorf("rates turned off: %+v", *out)
+	}
+}
+
+func TestMorningFadesForThoseWhoLeft(t *testing.T) {
+	ctx := context.Background()
+	seen := func(daysAgo int) user.User {
+		at := time.Date(2026, 10, 16, 12, 0, 0, 0, moscow).AddDate(0, 0, -daysAgo)
+		return user.User{LastSeenAt: &at}
+	}
+	for daysAgo, want := range map[int]int{0: 1, 6: 1, 7: 1, 8: 0, 9: 0, 10: 1, 13: 1, 14: 0, 29: 0} {
+		d, _, _, out := morning(t, seen(daysAgo))
+		d.Tick(ctx)
+		if len(*out) != want {
+			t.Errorf("%d days away: sent %d, want %d", daysAgo, len(*out), want)
+		}
+	}
+
+	d, _, _, out := morning(t, seen(30))
+	d.Tick(ctx)
+	if len(*out) != 1 || (*out)[0].text != "come back to Ноутбук 40" {
+		t.Fatalf("after 30 days = %+v", *out)
+	}
+	now := d.now()
+	d.now = func() time.Time { return now.AddDate(0, 0, 3) }
+	d.Tick(ctx)
+	if len(*out) != 1 {
+		t.Errorf("the last message went out twice: %+v", *out)
+	}
+}
+
+func TestGoalProgress(t *testing.T) {
+	ctx := context.Background()
+	ops := memory.NewOperationRepository()
+	svc := budget.NewService(memory.NewBudget(ops), ledger.NewService(ops, moscow))
+	today := day(10, 16)
+	n := decimal.NewFromInt
+	consented := today
+	members := fakeMembers{
+		{TelegramID: 1, ConsentedAt: &consented, Notifications: user.Notifications{GoalUpdates: true}},
+		{TelegramID: 2, ConsentedAt: &consented}, // turned it off
+	}
+	for id := int64(1); id <= 2; id++ {
+		if _, err := svc.CreateGoal(ctx, budget.Goal{UserID: id, Title: "Цель", Target: n(1000)}, today); err != nil {
+			t.Fatal(err)
+		}
+	}
+	deposit := func(goal int64, user int64, sum int64) {
+		t.Helper()
+		if _, err := svc.Deposit(ctx, user, goal, n(sum), nil, today); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var out []sent
+	fail := false
+	p := NewGoalProgress(svc, members, &fakeRuns{claimed: map[string]bool{}},
+		func(_ context.Context, chat int64, text string) error {
+			if fail {
+				return errors.New("telegram is down")
+			}
+			out = append(out, sent{chat, strings.ReplaceAll(text, "\u00a0", " ")})
+			return nil
+		}, reminderTexts, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	p.Tick(ctx)
+	if len(out) != 0 {
+		t.Fatalf("nothing saved yet: %+v", out)
+	}
+	deposit(1, 1, 300)
+	deposit(2, 2, 900)
+	fail = true
+	p.Tick(ctx) // not delivered: retried
+	fail = false
+	p.Tick(ctx)
+	p.Tick(ctx)
+	if len(out) != 1 || out[0].chat != 1 || out[0].text != "progress Цель 30 300 ₽ 1 000 ₽" {
+		t.Fatalf("at 30%% = %+v", out)
+	}
+
+	// Taken back and saved again: not a new milestone.
+	deposit(1, 1, -200)
+	p.Tick(ctx)
+	deposit(1, 1, 200)
+	p.Tick(ctx)
+	if len(out) != 1 {
+		t.Errorf("repeated a milestone: %+v", out)
+	}
+
+	// A jump over two levels is one message about the highest.
+	deposit(1, 1, 500)
+	p.Tick(ctx)
+	if len(out) != 2 || out[1].text != "progress Цель 80 800 ₽ 1 000 ₽" {
+		t.Fatalf("at 80%% = %+v", out)
+	}
+	p.Tick(ctx)
+	deposit(1, 1, 200)
+	p.Tick(ctx)
+	if len(out) != 3 || out[2].text != "reached Цель 1 000 ₽" {
+		t.Errorf("at 100%% = %+v", out)
 	}
 }
 

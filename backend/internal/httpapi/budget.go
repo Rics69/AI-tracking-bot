@@ -61,14 +61,6 @@ func (s *Server) SetPlan(ctx context.Context, req SetPlanRequestObject) (SetPlan
 		Paydays:          b.Paydays,
 		ExpectedIncome:   b.ExpectedIncome,
 		GoalContribution: b.GoalContribution,
-		ReminderHour:     budget.DefaultReminderHour,
-		Reminders:        true,
-	}
-	if b.ReminderHour != nil {
-		p.ReminderHour = *b.ReminderHour
-	}
-	if b.Reminders != nil {
-		p.Reminders = *b.Reminders
 	}
 	saved, err := s.budget.SetPlan(ctx, p)
 	if err != nil {
@@ -241,8 +233,6 @@ func toAPIPlan(p budget.Plan) Plan {
 		Paydays:          p.Paydays,
 		ExpectedIncome:   p.ExpectedIncome,
 		GoalContribution: p.GoalContribution,
-		ReminderHour:     p.ReminderHour,
-		Reminders:        p.Reminders,
 		UpdatedAt:        p.UpdatedAt,
 	}
 }

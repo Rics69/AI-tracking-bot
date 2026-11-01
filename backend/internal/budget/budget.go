@@ -23,8 +23,6 @@ const (
 	MaxTitleLength = 100
 	MaxGoals       = 20
 	MaxPayments    = 50
-	// DefaultReminderHour is when the daily reminder goes out, in the user's timezone.
-	DefaultReminderHour = 9
 )
 
 var (
@@ -63,6 +61,25 @@ func (g Goal) Share() decimal.Decimal {
 	return g.Saved.Div(g.Target)
 }
 
+// MainGoal is the one to show in a line: the nearest deadline among those not
+// reached yet, and without deadlines the latest one. goals come oldest first.
+func MainGoal(goals []Goal) *Goal {
+	var main *Goal
+	for i := range goals {
+		g := &goals[i]
+		switch {
+		case g.AchievedOn != nil:
+		case main == nil:
+			main = g
+		case g.Deadline != nil && (main.Deadline == nil || g.Deadline.Before(*main.Deadline)):
+			main = g
+		case g.Deadline == nil && main.Deadline == nil:
+			main = g
+		}
+	}
+	return main
+}
+
 // Deposit puts money aside for a goal; a negative amount takes it back.
 type Deposit struct {
 	ID        int64
@@ -83,9 +100,17 @@ type Plan struct {
 	ExpectedIncome *decimal.Decimal
 	// GoalContribution is put aside for goals each period; nil: nothing planned.
 	GoalContribution *decimal.Decimal
-	ReminderHour     int  // 0–23, the user's timezone
-	Reminders        bool // send the daily reminder
 	UpdatedAt        time.Time
+}
+
+// MonthlyIncome is what one expects to earn in a month, nil when unknown:
+// ExpectedIncome is per pay period, and with two paydays that is half of it.
+func (p Plan) MonthlyIncome() *decimal.Decimal {
+	if p.ExpectedIncome == nil {
+		return nil
+	}
+	month := p.ExpectedIncome.Mul(decimal.NewFromInt(int64(len(p.Paydays))))
+	return &month
 }
 
 // RegularPayment is a monthly expense on a fixed day: rent, phone, a subscription.
@@ -119,9 +144,6 @@ func (p *Plan) normalize() error {
 	}
 	if err := optionalAmount("goal_contribution", p.GoalContribution); err != nil {
 		return err
-	}
-	if p.ReminderHour < 0 || p.ReminderHour > 23 {
-		return invalid("reminder_hour", "must be from 0 to 23")
 	}
 	return nil
 }

@@ -18,7 +18,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import type { Me, Member } from "@/api/client";
+import type { Me, Member, MeUpdate } from "@/api/client";
 import {
   useCreateInvite,
   useDeleteMe,
@@ -298,10 +298,12 @@ function MemberSheet({ member, onClose }: { member: Member | null; onClose: () =
 
 // Settings.
 
+const HOURS = Array.from({ length: 18 }, (_, i) => i + 6); // 6:00–23:00
+
 function SettingsSection({ me }: { me: Me }) {
   const update = useUpdateMe();
   const zones = timezoneOptions(me.effective_timezone);
-  const save = (body: { weekly_report?: boolean; timezone?: string }) =>
+  const save = (body: MeUpdate) =>
     update.mutate(body, {
       onSuccess: () => haptic.select(),
       onError: (err) => toast.error(err.message),
@@ -319,6 +321,64 @@ function SettingsSection({ me }: { me: Me }) {
           checked={me.weekly_report}
           disabled={update.isPending}
           onCheckedChange={(on) => save({ weekly_report: on })}
+        />
+      </label>
+      <label className="flex min-h-14 items-center justify-between gap-4 border-t px-4 py-2">
+        <span className="flex flex-col">
+          <span className="text-[15px]">Утреннее сообщение</span>
+          <span className="text-[13px] text-muted-foreground">
+            Лимит на день, цель и платежи на завтра
+          </span>
+        </span>
+        <Switch
+          checked={me.reminders}
+          disabled={update.isPending}
+          onCheckedChange={(on) => save({ reminders: on })}
+        />
+      </label>
+      {me.reminders && (
+        <>
+          <label className="flex min-h-14 items-center justify-between gap-4 border-t px-4 py-2">
+            <span className="text-[15px]">Во сколько</span>
+            <select
+              value={me.reminder_hour}
+              disabled={update.isPending}
+              onChange={(e) => save({ reminder_hour: Number(e.target.value) })}
+              className="h-10 rounded-lg bg-muted px-2 text-[15px] tabular-nums outline-none"
+            >
+              {HOURS.map((h) => (
+                <option key={h} value={h}>
+                  {String(h).padStart(2, "0")}:00
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex min-h-14 items-center justify-between gap-4 border-t px-4 py-2">
+            <span className="flex flex-col">
+              <span className="text-[15px]">Курсы валют</span>
+              <span className="text-[13px] text-muted-foreground">
+                Доллар и евро по курсу ЦБ
+              </span>
+            </span>
+            <Switch
+              checked={me.show_rates}
+              disabled={update.isPending}
+              onCheckedChange={(on) => save({ show_rates: on })}
+            />
+          </label>
+        </>
+      )}
+      <label className="flex min-h-14 items-center justify-between gap-4 border-t px-4 py-2">
+        <span className="flex flex-col">
+          <span className="text-[15px]">Прогресс цели</span>
+          <span className="text-[13px] text-muted-foreground">
+            Бот пишет на 25, 50, 75 и 100%
+          </span>
+        </span>
+        <Switch
+          checked={me.goal_updates}
+          disabled={update.isPending}
+          onCheckedChange={(on) => save({ goal_updates: on })}
         />
       </label>
       <label className="flex min-h-14 items-center justify-between gap-4 border-t px-4 py-2">

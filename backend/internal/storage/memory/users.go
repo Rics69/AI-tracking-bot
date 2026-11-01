@@ -50,7 +50,8 @@ func (r *Users) Admit(_ context.Context, u user.User) (user.User, error) {
 	if !ok {
 		saved = user.User{
 			TelegramID: u.TelegramID, FamilyID: r.newFamily(), IsHead: true,
-			WeeklyReport: true, CreatedAt: now,
+			WeeklyReport:  true,
+			Notifications: user.Notifications{ReminderHour: user.DefaultReminderHour, Reminders: true, ShowRates: true, GoalUpdates: true}, CreatedAt: now,
 		}
 	}
 	if saved.FirstName != u.FirstName || saved.Username != u.Username {
@@ -108,6 +109,10 @@ func (r *Users) list(keep func(user.User) bool) []user.User {
 
 func (r *Users) SetWeeklyReport(_ context.Context, id int64, on bool) (user.User, error) {
 	return r.update(id, func(u *user.User) { u.WeeklyReport = on })
+}
+
+func (r *Users) SetNotifications(_ context.Context, id int64, n user.Notifications) (user.User, error) {
+	return r.update(id, func(u *user.User) { u.Notifications = n })
 }
 
 func (r *Users) SetTimezone(_ context.Context, id int64, tz string) (user.User, error) {
