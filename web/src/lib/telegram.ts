@@ -32,6 +32,7 @@ export type WebApp = {
   openTelegramLink(url: string): void;
   openLink(url: string): void;
   showConfirm?(message: string, cb: (ok: boolean) => void): void;
+  shareToStory?(mediaUrl: string, params?: { text?: string }): void;
   BackButton: BackButton;
   HapticFeedback: {
     impactOccurred(style: HapticImpact): void;
@@ -69,6 +70,18 @@ export function shareLink(url: string, text: string): boolean {
   share.searchParams.set("url", url);
   share.searchParams.set("text", text);
   app.openTelegramLink(share.toString());
+  return true;
+}
+
+/**
+ * Opens the story editor of Telegram with a picture. Telegram fetches the
+ * picture itself, so the address must work without a login. False where the
+ * client is too old for stories.
+ */
+export function shareStory(path: string, text: string): boolean {
+  const app = webApp();
+  if (!app?.shareToStory || !app.isVersionAtLeast("7.8")) return false;
+  app.shareToStory(new URL(path, window.location.origin).toString(), { text });
   return true;
 }
 

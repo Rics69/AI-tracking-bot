@@ -21,6 +21,16 @@ const (
 // Valid reports whether k is a known kind.
 func (k Kind) Valid() bool { return k == KindExpense || k == KindIncome }
 
+// Currencies of operations and accounts. Totals are always in rubles.
+const (
+	RUB = "RUB"
+	USD = "USD"
+	EUR = "EUR"
+)
+
+// KnownCurrency reports a currency the service keeps rates for.
+func KnownCurrency(c string) bool { return c == RUB || c == USD || c == EUR }
+
 // Category is a fixed category of an operation; it also decides the kind:
 // "salary" is always an income, "food" always an expense. Codes are stored
 // in the database; human-readable labels are only for presentation.
@@ -101,8 +111,22 @@ type Operation struct {
 	// RegularPaymentID links an expense to the regular payment it pays (rent,
 	// phone), so the daily limit does not count the money twice; nil: none.
 	RegularPaymentID *int64
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	// Amount is always in rubles: every sum in the service adds it up. An
+	// operation in another currency keeps what was paid in Original, converted
+	// at the rate of its date.
+	Currency  string           // RUB, USD or EUR
+	Original  *decimal.Decimal // nil for rubles
+	AccountID *int64           // nil: the default account
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// Paid is the amount in the currency of the operation.
+func (o Operation) Paid() decimal.Decimal {
+	if o.Original != nil {
+		return *o.Original
+	}
+	return o.Amount
 }
 
 // Kind is the kind of the operation, decided by its category.
@@ -111,11 +135,14 @@ func (o Operation) Kind() Kind { return o.Category.Kind() }
 // CreateInput holds the fields of a new operation; the category decides
 // whether it is an expense or an income.
 type CreateInput struct {
-	UserID   int64
-	Amount   decimal.Decimal
-	Category Category
-	Date     *time.Time // nil means Today
-	Comment  string
+	UserID int64
+	// Amount is in Currency; empty Currency means the account's, or rubles.
+	Amount    decimal.Decimal
+	Currency  string
+	AccountID *int64
+	Category  Category
+	Date      *time.Time // nil means Today
+	Comment   string
 	// RegularPaymentID pays one of the owner's regular payments; expenses only.
 	RegularPaymentID *int64
 	// Today is the current date of whoever records the operation, in their
@@ -127,10 +154,13 @@ type CreateInput struct {
 // An empty Comment clears the comment.
 type Patch struct {
 	UserID   *int64
-	Amount   *decimal.Decimal
-	Category *Category
-	Date     *time.Time
-	Comment  *string
+	Amount   *decimal.Decimal // in the currency of the operation
+	Currency *string
+	// AccountID moves the operation to an account.
+	AccountID *int64
+	Category  *Category
+	Date      *time.Time
+	Comment   *string
 	// Today is the current date of whoever edits, as in CreateInput.
 	Today time.Time
 }

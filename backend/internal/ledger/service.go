@@ -2,6 +2,7 @@ package ledger
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -35,11 +36,32 @@ type Repository interface {
 	Aggregate(ctx context.Context, s Scope, f Filter, b Bucket) ([]BucketTotal, error)
 }
 
+// Rates converts foreign money at the rate of a date.
+type Rates interface {
+	On(ctx context.Context, code string, date time.Time) (decimal.Decimal, error)
+}
+
+// Accounts tells the currency of a user's account.
+type Accounts interface {
+	Currency(ctx context.Context, userID, id int64) (string, error) // ErrNoAccount
+}
+
+var (
+	// ErrNoAccount: no such account among the user's own.
+	ErrNoAccount = errors.New("no such account")
+	// ErrNoRate: nothing is known about a currency yet.
+	ErrNoRate = errors.New("no exchange rate yet")
+)
+
 // Service implements the ledger use cases on top of a Repository.
 type Service struct {
 	repo Repository
-	loc  *time.Location
-	now  func() time.Time
+	// Rates and Accounts enable foreign currencies and accounts; without them
+	// every operation is in rubles on the default account.
+	Rates    Rates
+	Accounts Accounts
+	loc      *time.Location
+	now      func() time.Time
 }
 
 // NewService creates a service. loc is the family timezone used to decide
@@ -74,14 +96,68 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Operation, error)
 		Comment:          in.Comment,
 		Date:             s.today(in.Today),
 		RegularPaymentID: in.RegularPaymentID,
+		Currency:         in.Currency,
+		AccountID:        in.AccountID,
 	}
 	if in.Date != nil {
 		e.Date = dateOf(*in.Date)
+	}
+	if err := s.price(ctx, &e, in.Amount); err != nil {
+		return Operation{}, err
 	}
 	if err := s.normalize(&e, s.today(in.Today)); err != nil {
 		return Operation{}, err
 	}
 	return s.repo.Create(ctx, e)
+}
+
+// price settles the currency and the account of an operation and turns what
+// was paid into rubles. An account in a foreign currency takes only its own
+// currency; a ruble account takes anything, at its ruble value.
+func (s *Service) price(ctx context.Context, e *Operation, paid decimal.Decimal) error {
+	if e.AccountID != nil {
+		if s.Accounts == nil {
+			return invalid("account_id", "accounts are off")
+		}
+		currency, err := s.Accounts.Currency(ctx, e.UserID, *e.AccountID)
+		if errors.Is(err, ErrNoAccount) {
+			return invalid("account_id", "no such account")
+		}
+		if err != nil {
+			return err
+		}
+		if e.Currency == "" {
+			e.Currency = currency
+		}
+		if currency != RUB && e.Currency != currency {
+			return invalid("currency", "this account is in %s", currency)
+		}
+	}
+	if e.Currency == "" {
+		e.Currency = RUB
+	}
+	if !KnownCurrency(e.Currency) {
+		return invalid("currency", "unknown currency %q", e.Currency)
+	}
+	if e.Currency == RUB {
+		e.Amount, e.Original = paid, nil
+		return nil
+	}
+	if s.Rates == nil {
+		return invalid("currency", "only rubles here")
+	}
+	if !paid.IsPositive() || !paid.Equal(paid.Round(2)) || paid.GreaterThanOrEqual(maxAmount) {
+		return invalid("amount", "must be positive, with at most 2 decimal places")
+	}
+	rate, err := s.Rates.On(ctx, e.Currency, e.Date)
+	if errors.Is(err, ErrNoRate) {
+		return invalid("currency", "no exchange rate yet")
+	}
+	if err != nil {
+		return err
+	}
+	e.Amount, e.Original = paid.Mul(rate).Round(2), &paid
+	return nil
 }
 
 // Get returns one operation visible in the scope.
@@ -102,9 +178,18 @@ func (s *Service) Update(ctx context.Context, sc Scope, id int64, p Patch) (Oper
 	if p.UserID != nil && *p.UserID != e.UserID {
 		e.UserID = *p.UserID
 		e.RegularPaymentID = nil // the new owner has regular payments of their own
+		e.AccountID = nil        // and accounts of their own
 	}
+	paid := e.Paid()
+	repriced := p.Amount != nil || p.Currency != nil || p.AccountID != nil || p.Date != nil && e.Original != nil
 	if p.Amount != nil {
-		e.Amount = *p.Amount
+		paid = *p.Amount
+	}
+	if p.Currency != nil {
+		e.Currency = *p.Currency
+	}
+	if p.AccountID != nil {
+		e.AccountID = p.AccountID
 	}
 	if p.Category != nil {
 		e.Category = *p.Category
@@ -117,6 +202,11 @@ func (s *Service) Update(ctx context.Context, sc Scope, id int64, p Patch) (Oper
 	}
 	if p.Comment != nil {
 		e.Comment = *p.Comment
+	}
+	if repriced {
+		if err := s.price(ctx, &e, paid); err != nil {
+			return Operation{}, err
+		}
 	}
 	if err := s.normalize(&e, s.today(p.Today)); err != nil {
 		return Operation{}, err

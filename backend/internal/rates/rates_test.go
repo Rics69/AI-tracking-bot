@@ -29,6 +29,14 @@ func (f *fakeStore) Save(_ context.Context, r []Rate) error {
 
 func (f *fakeStore) Latest(context.Context, []string) ([]Rate, error) { return f.saved, nil }
 
+func (f *fakeStore) Dates(context.Context, string, time.Time) ([]time.Time, error) {
+	var out []time.Time
+	for _, r := range f.saved {
+		out = append(out, r.Date)
+	}
+	return out, nil
+}
+
 func TestUpdate(t *testing.T) {
 	body, err := charmap.Windows1251.NewEncoder().String(sample)
 	if err != nil {

@@ -171,6 +171,8 @@ func (h *Handler) handleCallback(ctx context.Context, s Sender, cq *models.Callb
 		h.leaveChallenge(ctx, s, chatID, messageID, u, arg)
 	case game.ActLevelUp:
 		h.confirmLevel(ctx, s, chatID, messageID, u, arg)
+	case game.ActTaskDone:
+		h.taskDone(ctx, s, chatID, messageID, u, arg)
 	case game.ActGoalCard:
 		h.goalCard(ctx, s, chatID, u, arg)
 	case cbFix, cbFixDelete:

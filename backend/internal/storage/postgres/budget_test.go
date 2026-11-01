@@ -11,11 +11,13 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/accounts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/flow"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/game"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/rates"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/tasks"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
 
@@ -372,6 +374,132 @@ func TestActiveSince(t *testing.T) {
 	active, err := NewGameRepository(testPool).ActiveSince(ctx, time.Now().Add(-time.Hour))
 	if err != nil || len(active) != 1 || active[1].IsZero() {
 		t.Errorf("active = %+v, %v", active, err)
+	}
+}
+
+func TestAccountsAndCurrencies(t *testing.T) {
+	ops, _ := setup(t)
+	ctx := context.Background()
+	rateStore := NewRateRepository(testPool)
+	if err := rateStore.Save(ctx, []rates.Rate{{Code: "USD", Date: day(1), Value: amount("100")}}); err != nil {
+		t.Fatal(err)
+	}
+	money := accounts.NewService(NewAccountRepository(testPool), rateStore)
+	list, total, err := money.Balances(ctx, 1)
+	if err != nil || len(list) != 1 || !list[0].IsDefault || !total.IsZero() {
+		t.Fatalf("balances = %+v, %v, %v", list, total, err)
+	}
+	card := list[0].ID
+	usd, err := money.Create(ctx, accounts.Account{UserID: 1, Name: "Доллары", Kind: accounts.KindForeign, Currency: "USD"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mustCreate(t, ops, 1, "350", ledger.CategoryFood, 20, "кофе") // on the default account
+	paid := amount("5")
+	foreign, err := ops.Create(ctx, ledger.Operation{UserID: 1, Amount: amount("500"), Original: &paid, Currency: "USD",
+		Category: ledger.CategoryFood, Date: day(20), AccountID: &usd.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if foreign.Original == nil || !foreign.Original.Equal(paid) || foreign.Currency != "USD" || *foreign.AccountID != usd.ID {
+		t.Errorf("foreign = %+v", foreign)
+	}
+	if _, err := ops.Create(ctx, ledger.Operation{UserID: 2, Amount: amount("1"), Currency: "RUB",
+		Category: ledger.CategoryFood, Date: day(20), AccountID: &usd.ID}); err == nil {
+		t.Error("an operation on someone else's account")
+	}
+	if _, err := money.Transfer(ctx, accounts.TransferInput{UserID: 1, FromID: card, ToID: usd.ID,
+		AmountFrom: amount("8000"), AmountTo: amount("100"), Date: day(20), Today: day(20)}); err != nil {
+		t.Fatal(err)
+	}
+	list, total, err = money.Balances(ctx, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !list[0].Amount.Equal(amount("-8350")) || !list[1].Amount.Equal(amount("95")) || !list[1].Rubles.Equal(amount("9500")) ||
+		!total.Equal(amount("1150")) {
+		t.Errorf("balances = %+v, total %s", list, total)
+	}
+	// The default account is one per user, however often it is asked for.
+	repo := NewAccountRepository(testPool)
+	if err := repo.EnsureDefault(ctx, 1, "Ещё"); err != nil {
+		t.Fatal(err)
+	}
+	if all, _ := repo.List(ctx, 1); len(all) != 2 || all[0].Name != "Основной" {
+		t.Errorf("accounts = %+v", all)
+	}
+	if err := repo.DeleteTransfer(ctx, 2, 1); !errors.Is(err, accounts.ErrNotFound) {
+		t.Errorf("someone else's transfer: %v", err)
+	}
+}
+
+func TestDeletingAUserTakesAccountsAlong(t *testing.T) {
+	ops, users := setup(t)
+	ctx := context.Background()
+	money := accounts.NewService(NewAccountRepository(testPool), NewRateRepository(testPool))
+	a, err := money.Create(ctx, accounts.Account{UserID: 1, Name: "Наличные"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ops.Create(ctx, ledger.Operation{UserID: 1, Amount: amount("1"), Currency: "RUB",
+		Category: ledger.CategoryFood, Date: day(20), AccountID: &a.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := users.Delete(ctx, 1); err != nil {
+		t.Fatalf("delete with accounts: %v", err)
+	}
+}
+
+func TestTasks(t *testing.T) {
+	setup(t)
+	ctx := context.Background()
+	r := NewTaskRepository(testPool)
+	task, err := r.Create(ctx, tasks.Task{UserID: 1, Title: "Интернет", DueOn: day(20), DueTime: "09:30", Repeat: tasks.RepeatNone})
+	if err != nil || task.DueTime != "09:30" {
+		t.Fatalf("task = %+v, %v", task, err)
+	}
+	if _, err := r.Create(ctx, tasks.Task{UserID: 2, Title: "Без времени", DueOn: day(20), Repeat: tasks.RepeatNone}); err != nil {
+		t.Fatal(err)
+	}
+	if open, _ := r.Open(ctx); len(open) != 2 {
+		t.Errorf("open = %+v", open)
+	}
+	at := time.Now()
+	task.DoneAt = &at
+	if _, err := r.Update(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	if open, _ := r.Open(ctx); len(open) != 1 {
+		t.Errorf("after done = %+v", open)
+	}
+	if _, err := r.Get(ctx, 2, task.ID); !errors.Is(err, tasks.ErrNotFound) {
+		t.Errorf("someone else's task: %v", err)
+	}
+	if err := r.Delete(ctx, 1, task.ID); err != nil {
+		t.Errorf("delete = %v", err)
+	}
+}
+
+func TestRateOfADate(t *testing.T) {
+	setup(t)
+	ctx := context.Background()
+	r := NewRateRepository(testPool)
+	if _, err := r.On(ctx, "USD", day(10)); !errors.Is(err, rates.ErrNoRate) {
+		t.Fatalf("no rates yet: %v", err)
+	}
+	_ = r.Save(ctx, []rates.Rate{
+		{Code: "USD", Date: day(10), Value: amount("80")},
+		{Code: "USD", Date: day(13), Value: amount("81")},
+	})
+	for d, want := range map[int]string{5: "80", 10: "80", 12: "80", 13: "81", 20: "81"} {
+		got, err := r.On(ctx, "USD", day(d))
+		if err != nil || !got.Equal(amount(want)) {
+			t.Errorf("rate on the %d = %s, %v, want %s", d, got, err, want)
+		}
+	}
+	if dates, _ := r.Dates(ctx, "USD", day(11)); len(dates) != 1 {
+		t.Errorf("dates = %v", dates)
 	}
 }
 

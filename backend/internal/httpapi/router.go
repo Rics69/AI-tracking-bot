@@ -7,7 +7,11 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/accounts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/game"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/tasks"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
 )
 
 const basePath = "/api/v1"
@@ -21,6 +25,14 @@ type Deps struct {
 	Auth *Auth
 	// Events records what people do; nil records nothing.
 	Events *events.Tracker
+	// Accounts, Tasks, Game and Rates are the screens added with them.
+	Accounts *accounts.Service
+	Tasks    *tasks.Service
+	Game     *game.Service
+	Rates    RateSource
+	// Texts and BotName give cards their wording and the address of the bot.
+	Texts   texts.Bot
+	BotName func(ctx context.Context) string
 	// Location is the timezone of users who have not chosen one.
 	Location *time.Location
 	// Health reports whether the service can serve requests (e.g. the database is reachable).
@@ -33,7 +45,8 @@ type Deps struct {
 func NewHandler(d Deps) http.Handler {
 	mux := http.NewServeMux()
 
-	strict := NewStrictHandlerWithOptions(NewServer(d.Ledger, d.Family, d.Budget, d.Events, d.Location), nil, StrictHTTPServerOptions{
+	server := NewServer(d)
+	strict := NewStrictHandlerWithOptions(server, nil, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) { writeBadRequest(w, err) },
 		ResponseErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 			writeError(d.Log, w, r, err)
@@ -56,6 +69,7 @@ func NewHandler(d Deps) http.Handler {
 		writeJSON(w, http.StatusOK, spec)
 	})
 	mux.HandleFunc("GET /docs", serveDocs)
+	mux.HandleFunc("GET "+cardPath+"{token}", server.serveCard)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		if err := d.Health(r.Context()); err != nil {
 			d.Log.WarnContext(r.Context(), "health check failed", "err", err)

@@ -15,6 +15,20 @@ export function formatMoney(amount: number): string {
   return (Number.isInteger(amount) ? rubles : rublesKopecks).format(amount);
 }
 
+const currencySigns = { RUB: "₽", USD: "$", EUR: "€" } as const;
+
+/** The sign of a currency. */
+export function currencySign(code: keyof typeof currencySigns): string {
+  return currencySigns[code];
+}
+
+/** 5 and USD → "5 $", 12.5 and EUR → "12,50 €". */
+export function formatForeign(amount: number, code: keyof typeof currencySigns): string {
+  const digits = Number.isInteger(amount) ? 0 : 2;
+  const number = amount.toLocaleString("ru-RU", { minimumFractionDigits: digits, maximumFractionDigits: 2 });
+  return `${number}\u00a0${currencySigns[code]}`;
+}
+
 const percentFormat = new Intl.NumberFormat("ru-RU", {
   style: "percent",
   maximumFractionDigits: 0,

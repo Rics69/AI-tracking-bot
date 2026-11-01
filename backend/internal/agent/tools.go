@@ -11,6 +11,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/accounts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
@@ -72,6 +73,8 @@ func toolDefs(today time.Time) []llm.Tool {
     "category": ` + expenseCategorySchema + `,
     "date": {"type": "string", "description": "Дата траты YYYY-MM-DD. Если пользователь не назвал день — сегодняшняя дата. «Вчера», «в понедельник», «3 числа» — возьми из календаря в инструкциях"},
     "comment": {"type": "string", "description": "На что потрачено, коротко, как сказал пользователь: «кофе», «такси до работы»"},
+    "currency": {"type": "string", "enum": ["USD", "EUR"], "description": "Валюта, только если сумма названа не в рублях"},
+    "account": {"type": "string", "description": "Название счёта, только если пользователь его назвал"},
     "regular_payment_id": {"type": "integer", "description": "id регулярного платежа из списка в инструкциях, если эта трата его оплачивает («заплатил аренду»); иначе не указывай"}
   },
   "required": ["amount", "category", "comment", "date"]
@@ -82,6 +85,7 @@ func toolDefs(today time.Time) []llm.Tool {
 				{Request: "бензин 3000 в понедельник", Params: map[string]any{"amount": 3000, "category": "transport", "comment": "бензин", "date": d(lastMonday)}},
 				{Request: "продукты 2.5к в субботу", Params: map[string]any{"amount": 2500, "category": "food", "comment": "продукты", "date": d(lastSaturday)}},
 				{Request: "обед 450 3 числа", Params: map[string]any{"amount": 450, "category": "food", "comment": "обед", "date": d(time.Date(today.Year(), today.Month(), 3, 0, 0, 0, 0, time.UTC))}},
+				{Request: "кофе 5 долларов", Params: map[string]any{"amount": 5, "currency": "USD", "category": "food", "comment": "кофе", "date": d(today)}},
 				{Request: "перевёл маме 2000", Params: map[string]any{"amount": 2000, "category": "other", "comment": "перевёл маме", "date": d(today)}},
 				{Request: "заплатил аренду 45000 (регулярный платёж «Аренда», id 3)", Params: map[string]any{"amount": 45000, "category": "housing", "comment": "аренда", "date": d(today), "regular_payment_id": 3}},
 			},
@@ -95,7 +99,9 @@ func toolDefs(today time.Time) []llm.Tool {
     "amount": {"type": "number", "description": "Сумма в рублях, больше нуля. «80к» = 80000"},
     "category": ` + incomeCategorySchema + `,
     "date": {"type": "string", "description": "Дата получения YYYY-MM-DD. Если пользователь не назвал день — сегодняшняя дата"},
-    "comment": {"type": "string", "description": "Откуда деньги, коротко, как сказал пользователь: «зарплата», «заказ на логотип»"}
+    "comment": {"type": "string", "description": "Откуда деньги, коротко, как сказал пользователь: «зарплата», «заказ на логотип»"},
+    "currency": {"type": "string", "enum": ["USD", "EUR"], "description": "Валюта, только если сумма названа не в рублях"},
+    "account": {"type": "string", "description": "Название счёта, только если пользователь его назвал"}
   },
   "required": ["amount", "category", "comment", "date"]
 }`),
@@ -236,6 +242,12 @@ func (a *Agent) runTool(ctx context.Context, t turn, call *llm.ToolCall) (string
 		result, err = a.update(ctx, t, call.Arguments)
 	case toolDelete:
 		result, err = a.delete(ctx, t, call.Arguments)
+	case toolAddTransfer:
+		result, err = a.addTransfer(ctx, t, call.Arguments)
+	case toolAddTask:
+		result, err = a.addTask(ctx, t, call.Arguments)
+	case toolListTasks:
+		result, err = a.listTasks(ctx, t, call.Arguments)
 	case toolGetBudget, toolSetPayday, toolAddRegular, toolSetGoal, toolDepositToGoal:
 		result, err = a.runBudgetTool(ctx, t, call)
 	default:
@@ -261,6 +273,8 @@ func (a *Agent) runTool(ctx context.Context, t turn, call *llm.ToolCall) (string
 		result = map[string]string{"error": "operation not found; call find_operations to get a valid id"}
 	case errors.Is(err, budget.ErrNotFound):
 		result = map[string]string{"error": "no such goal or regular payment; take the id from the lists in the instructions"}
+	case errors.Is(err, accounts.ErrNotFound):
+		result = map[string]string{"error": "no such account; take the name from the list in the instructions"}
 	default:
 		return "", err
 	}
@@ -277,6 +291,8 @@ type addArgs struct {
 	Date             string      `json:"date"`
 	Comment          string      `json:"comment"`
 	RegularPaymentID json.Number `json:"regular_payment_id"`
+	Currency         string      `json:"currency"`
+	Account          string      `json:"account"`
 }
 
 // add records an expense or an income: the tool decides the kind, and a
@@ -310,15 +326,24 @@ func (a *Agent) add(ctx context.Context, t turn, kind ledger.Kind, raw json.RawM
 	if err != nil {
 		return nil, err
 	}
-	e, err := a.ledger.Create(ctx, ledger.CreateInput{
+	account, err := a.resolveAccount(ctx, t, args.Account)
+	if err != nil {
+		return nil, err
+	}
+	in := ledger.CreateInput{
 		UserID:           t.userID,
 		Amount:           *amount,
+		Currency:         strings.ToUpper(args.Currency),
 		Category:         *category,
 		Date:             date,
 		Comment:          args.Comment,
 		RegularPaymentID: paymentID,
 		Today:            t.today,
-	})
+	}
+	if account != nil {
+		in.AccountID = &account.ID
+	}
+	e, err := a.ledger.Create(ctx, in)
 	if err != nil {
 		return nil, err
 	}
@@ -505,6 +530,8 @@ type item struct {
 	// so the model does not format dates itself.
 	DateText string `json:"date_text"`
 	Comment  string `json:"comment,omitempty"`
+	// Paid is what an operation in another currency cost: "5.00 USD".
+	Paid string `json:"paid,omitempty"`
 }
 
 func (t turn) item(e ledger.Operation) item {
@@ -520,6 +547,7 @@ func (t turn) item(e ledger.Operation) item {
 		Date:     e.Date.Format(time.DateOnly),
 		DateText: HumanDate(e.Date, t.today),
 		Comment:  e.Comment,
+		Paid:     paidText(e),
 	}
 }
 

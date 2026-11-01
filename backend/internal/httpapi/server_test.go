@@ -13,12 +13,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shopspring/decimal"
+
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/accounts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/game"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/initdata"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/rates"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/memory"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/tasks"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
 )
 
 const botToken = "123456:test-token"
@@ -57,9 +64,25 @@ func newEnv(t *testing.T) *env {
 		events: memory.NewEvents()}
 	e.tracker = events.NewTracker(e.events, log)
 	e.budgetS = budget.NewService(memory.NewBudget(ops), e.ledgerS)
+	rateStore := memory.NewRates()
+	_ = rateStore.Save(context.Background(), []rates.Rate{
+		{Code: ledger.USD, Date: time.Now().AddDate(0, 0, -7), Value: decimal.NewFromInt(100)},
+	})
+	money := accounts.NewService(memory.NewAccounts(ops), rateStore)
+	e.ledgerS.Rates, e.ledgerS.Accounts = rateStore, money
+	catalog, err := game.LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := texts.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
 	e.auth = &Auth{BotToken: botToken, Users: fam, Log: log}
 	e.h = NewHandler(Deps{
 		Ledger: e.ledgerS, Family: fam, Budget: e.budgetS, Auth: e.auth, Events: e.tracker, Location: time.UTC,
+		Accounts: money, Tasks: tasks.NewService(memory.NewTasks()), Game: game.NewService(catalog, memory.NewGame(), e.ledgerS, e.budgetS),
+		Rates: rateStore, Texts: tx, BotName: fam.BotUsername,
 		Health: func(context.Context) error { return nil }, Log: log,
 	})
 	return e
@@ -425,6 +448,169 @@ func TestErrors(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	if rec.Code != 503 {
 		t.Errorf("unhealthy: %d", rec.Code)
+	}
+}
+
+func TestForeignCurrencyAndAccounts(t *testing.T) {
+	e := newEnv(t)
+	e.onboard(t, anna, boris)
+	list := e.ok(t, anna, 200, http.MethodGet, "/api/v1/accounts", "")
+	items := list["items"].([]any)
+	if len(items) != 1 || items[0].(map[string]any)["is_default"] != true {
+		t.Fatalf("a default account comes by itself: %v", list)
+	}
+	card := items[0].(map[string]any)["id"].(float64)
+
+	// Five dollars on the default account: 500 rubles at the rate.
+	op := e.ok(t, anna, 201, http.MethodPost, "/api/v1/operations", `{"amount":5,"currency":"USD","category":"food"}`)
+	if op["amount"] != float64(500) || op["original_amount"] != float64(5) || op["currency"] != "USD" {
+		t.Fatalf("operation = %v", op)
+	}
+	sum := e.ok(t, anna, 200, http.MethodGet, "/api/v1/summary", "")
+	if sum["expense"].(map[string]any)["sum"] != float64(500) {
+		t.Errorf("summary = %v", sum)
+	}
+
+	dollars := e.ok(t, anna, 201, http.MethodPost, "/api/v1/accounts", `{"name":"Доллары","kind":"foreign","currency":"USD"}`)
+	usd := dollars["id"].(float64)
+
+	// Buying 100 dollars at one's own rate is a transfer: no spending at all.
+	path := fmt.Sprintf(`{"from_account_id":%v,"to_account_id":%v,"amount_from":8000,"amount_to":100}`, card, usd)
+	if status, body := e.do(t, anna, http.MethodPost, "/api/v1/transfers", fmt.Sprintf(`{"from_account_id":%v,"to_account_id":%v,"amount_from":8000}`, card, usd)); status != 400 {
+		t.Errorf("no amount_to between currencies: %d %v", status, body)
+	}
+	e.ok(t, anna, 201, http.MethodPost, "/api/v1/transfers", path)
+	if got := e.ok(t, anna, 200, http.MethodGet, "/api/v1/summary", ""); got["expense"].(map[string]any)["sum"] != float64(500) {
+		t.Errorf("a transfer got into the summary: %v", got)
+	}
+	list = e.ok(t, anna, 200, http.MethodGet, "/api/v1/accounts", "")
+	got := list["items"].([]any)
+	if got[0].(map[string]any)["balance"] != float64(-8500) || got[1].(map[string]any)["balance"] != float64(100) ||
+		got[1].(map[string]any)["balance_rub"] != float64(10000) || list["total_rub"] != float64(1500) {
+		t.Errorf("balances = %v", list)
+	}
+
+	// An account in dollars takes dollars.
+	e.ok(t, anna, 201, http.MethodPost, "/api/v1/operations", fmt.Sprintf(`{"amount":10,"category":"food","account_id":%v}`, usd))
+	if status, _ := e.do(t, anna, http.MethodPost, "/api/v1/operations", fmt.Sprintf(`{"amount":10,"currency":"RUB","category":"food","account_id":%v}`, usd)); status != 400 {
+		t.Errorf("rubles on a dollar account: %d", status)
+	}
+	if status, _ := e.do(t, boris, http.MethodPost, "/api/v1/operations", fmt.Sprintf(`{"amount":10,"category":"food","account_id":%v}`, usd)); status != 400 {
+		t.Errorf("someone else's account: %d", status)
+	}
+	if status, _ := e.do(t, anna, http.MethodPost, "/api/v1/operations", `{"amount":10,"currency":"EUR","category":"food"}`); status != 400 {
+		t.Errorf("a currency with no rate: %d", status)
+	}
+	list = e.ok(t, anna, 200, http.MethodGet, "/api/v1/accounts", "")
+	if b := list["items"].([]any)[1].(map[string]any)["balance"]; b != float64(90) {
+		t.Errorf("dollar balance = %v", b)
+	}
+
+	// Editing the amount of a foreign operation converts it again.
+	id := op["id"].(float64)
+	edited := e.ok(t, anna, 200, http.MethodPatch, fmt.Sprintf("/api/v1/operations/%v", id), `{"amount":7}`)
+	if edited["amount"] != float64(700) || edited["original_amount"] != float64(7) {
+		t.Errorf("edited = %v", edited)
+	}
+
+	// Correcting a balance is not spending.
+	before := e.ok(t, anna, 200, http.MethodGet, "/api/v1/summary", "")
+	fixed := e.ok(t, anna, 200, http.MethodPatch, fmt.Sprintf("/api/v1/accounts/%v", card), `{"balance":1000}`)
+	if fixed["balance"] != float64(1000) {
+		t.Errorf("corrected = %v", fixed)
+	}
+	after := e.ok(t, anna, 200, http.MethodGet, "/api/v1/summary", "")
+	if before["expense"].(map[string]any)["sum"] != after["expense"].(map[string]any)["sum"] {
+		t.Error("a corrected balance changed the spending")
+	}
+	if status, _ := e.do(t, anna, http.MethodPatch, fmt.Sprintf("/api/v1/accounts/%v", card), `{"archived":true}`); status != 400 {
+		t.Errorf("archiving the default account: %d", status)
+	}
+	if status, _ := e.do(t, boris, http.MethodPatch, fmt.Sprintf("/api/v1/accounts/%v", card), `{"name":"Моё"}`); status != 404 {
+		t.Errorf("someone else's account: %d", status)
+	}
+}
+
+func TestRatesEndpoint(t *testing.T) {
+	e := newEnv(t)
+	e.onboard(t, anna)
+	got := e.ok(t, anna, 200, http.MethodGet, "/api/v1/rates", "")
+	items := got["items"].([]any)
+	if len(items) != 1 || items[0].(map[string]any)["code"] != "USD" || items[0].(map[string]any)["date"] == nil {
+		t.Errorf("rates = %v", got)
+	}
+}
+
+func TestTasksEndpoints(t *testing.T) {
+	e := newEnv(t)
+	e.onboard(t, anna, boris)
+	now := time.Now().UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	d := func(n int) string { return today.AddDate(0, 0, n).Format(time.DateOnly) }
+
+	once := e.ok(t, anna, 201, http.MethodPost, "/api/v1/tasks", fmt.Sprintf(`{"title":"Оплатить интернет","date":%q,"time":"09:30"}`, d(1)))
+	e.ok(t, anna, 201, http.MethodPost, "/api/v1/tasks", fmt.Sprintf(`{"title":"Бюджет","date":%q,"repeat":"weekly"}`, d(0)))
+	if status, _ := e.do(t, anna, http.MethodPost, "/api/v1/tasks", fmt.Sprintf(`{"title":"Плохо","date":%q,"time":"25:00"}`, d(1))); status != 400 {
+		t.Errorf("a bad time: %d", status)
+	}
+	list := e.ok(t, anna, 200, http.MethodGet, "/api/v1/tasks?from="+d(0)+"&to="+d(14), "")
+	if items := list["items"].([]any); len(items) != 4 { // the weekly one on three dates
+		t.Fatalf("calendar = %v", list)
+	}
+	if got := e.ok(t, boris, 200, http.MethodGet, "/api/v1/tasks?from="+d(0)+"&to="+d(14), ""); len(got["items"].([]any)) != 0 {
+		t.Errorf("someone else's tasks: %v", got)
+	}
+	path := fmt.Sprintf("/api/v1/tasks/%v", once["id"])
+	if status, _ := e.do(t, boris, http.MethodPost, path+"/done", ""); status != 404 {
+		t.Errorf("someone else's task: %d", status)
+	}
+	if done := e.ok(t, anna, 200, http.MethodPost, path+"/done", ""); done["done"] != true {
+		t.Errorf("done = %v", done)
+	}
+	if status, _ := e.do(t, anna, http.MethodDelete, path, ""); status != 204 {
+		t.Errorf("delete: %d", status)
+	}
+}
+
+func TestGameEndpoints(t *testing.T) {
+	e := newEnv(t)
+	e.onboard(t, anna)
+	got := e.ok(t, anna, 200, http.MethodGet, "/api/v1/game", "")
+	if got["xp"] != float64(0) || got["level"] != float64(0) || len(got["quests"].([]any)) == 0 {
+		t.Fatalf("game = %v", got)
+	}
+	got = e.ok(t, anna, 200, http.MethodPost, "/api/v1/quests/subscriptions/done", "")
+	if got["xp"] != float64(20) || got["streak"] != float64(1) {
+		t.Errorf("after a quest = %v", got)
+	}
+	if status, _ := e.do(t, anna, http.MethodPost, "/api/v1/quests/log-three/done", ""); status != 404 {
+		t.Errorf("an automatic quest by hand: %d", status)
+	}
+}
+
+func TestCardLink(t *testing.T) {
+	e := newEnv(t)
+	e.onboard(t, anna)
+	link := e.ok(t, anna, 200, http.MethodPost, "/api/v1/cards", `{"kind":"level"}`)
+	url := link["url"].(string)
+
+	// Telegram fetches it with no login.
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+	rec := httptest.NewRecorder()
+	e.h.ServeHTTP(rec, req)
+	if rec.Code != 200 || rec.Header().Get("Content-Type") != "image/png" || rec.Body.Len() == 0 {
+		t.Fatalf("card = %d %s", rec.Code, rec.Header().Get("Content-Type"))
+	}
+
+	// A forged link shows nothing.
+	req = httptest.NewRequest(http.MethodGet, url[:len(url)-2]+"xx", nil)
+	rec = httptest.NewRecorder()
+	e.h.ServeHTTP(rec, req)
+	if rec.Code != 404 {
+		t.Errorf("forged = %d", rec.Code)
+	}
+	if status, _ := e.do(t, anna, http.MethodPost, "/api/v1/cards", `{"kind":"goal","goal_id":404}`); status != 404 {
+		t.Errorf("no such goal: %d", status)
 	}
 }
 

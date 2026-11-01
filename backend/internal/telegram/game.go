@@ -18,6 +18,7 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/game"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/report"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/startparam"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/tasks"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
@@ -173,6 +174,26 @@ func (h *Handler) noSpend(ctx context.Context, s Sender, chatID int64, messageID
 	if mark != nil {
 		caption := texts.Fill(h.t.StreakMark, "days", report.Days(mark.Days), "xp", strconv.Itoa(mark.XP))
 		_ = h.SendCard(ctx, s, chatID, report.StreakCard(h.t, mark.Days), caption, nil)
+	}
+}
+
+// taskDone answers the button of a reminder.
+func (h *Handler) taskDone(ctx context.Context, s Sender, chatID int64, messageID int, u user.User, arg string) {
+	id, err := strconv.ParseInt(arg, 10, 64)
+	if err != nil || h.cfg.Tasks == nil {
+		return
+	}
+	t, err := h.cfg.Tasks.Done(ctx, u.TelegramID, id, h.userDay(u), h.now())
+	switch {
+	case errors.Is(err, tasks.ErrNotFound):
+		h.reply(ctx, s, chatID, messageID, view{text: h.t.FlowStale})
+	case err != nil:
+		h.replyOrFail(ctx, s, chatID, messageID, view{}, err)
+	case t.GoalID != nil:
+		h.reply(ctx, s, chatID, messageID, view{text: h.t.TaskDoneGoal})
+	default:
+		h.cfg.Events.Track(ctx, u.TelegramID, events.TaskDone, nil)
+		h.reply(ctx, s, chatID, messageID, view{text: h.t.TaskDone})
 	}
 }
 

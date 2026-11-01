@@ -3,8 +3,10 @@
 import { useQueryClient } from "@tanstack/react-query";
 import {
   type LucideIcon,
+  CalendarCheckIcon,
   ChevronRightIcon,
   CrownIcon,
+  LandmarkIcon,
   LogOutIcon,
   SendIcon,
   SettingsIcon,
@@ -30,6 +32,7 @@ import {
   useTransferHead,
   useUpdateMe,
 } from "@/api/queries";
+import { QuestsCard } from "@/components/game/quests-card";
 import { Card, IconCircle, PageHeader, Pill, PillButton } from "@/components/kit";
 import { confirm } from "@/components/operations/operation-sheet";
 import { Sheet } from "@/components/ui/sheet";
@@ -59,11 +62,29 @@ export function ProfileScreen() {
         </div>
       </Card>
       <PlanLink />
+      <ScreenLink href="/accounts" icon={LandmarkIcon} title="Счета" text="Остатки, переводы, валюта" />
+      <ScreenLink href="/calendar" icon={CalendarCheckIcon} title="Календарь" text="Задачи, платежи и дни зарплаты" />
+      <QuestsCard />
       <FamilySection me={u} />
       <SettingsSection me={u} />
       <PrivacySection />
       <DeleteAccount me={u} />
     </>
+  );
+}
+
+function ScreenLink({ href, icon, title, text }: { href: string; icon: LucideIcon; title: string; text: string }) {
+  return (
+    <Link href={href} className="block">
+      <Card className="flex items-center gap-3 p-4 transition-transform active:scale-[0.99]">
+        <IconCircle icon={icon} />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="text-[17px] font-medium">{title}</span>
+          <span className="text-[13px] text-muted-foreground">{text}</span>
+        </span>
+        <ChevronRightIcon className="size-5 text-muted-foreground" strokeWidth={1.75} />
+      </Card>
+    </Link>
   );
 }
 

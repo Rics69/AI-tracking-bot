@@ -34,6 +34,9 @@ const (
 	CardGenerated    = "card_generated"
 	ReferralJoined   = "referral_joined"
 	ReviewGiven      = "review_given"
+	TaskCreated      = "task_created"
+	TaskDone         = "task_done"
+	TransferAdded    = "transfer_added"
 )
 
 // Ways an operation gets recorded, the "via" property.

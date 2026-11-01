@@ -50,6 +50,224 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Счета с остатками */
+        get: operations["listAccounts"];
+        put?: never;
+        /** Открыть счёт */
+        post: operations["createAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/accounts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Изменить счёт или поправить остаток */
+        patch: operations["updateAccount"];
+        trace?: never;
+    };
+    "/transfers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Переводы между своими счетами */
+        get: operations["listTransfers"];
+        put?: never;
+        /**
+         * Записать перевод
+         * @description Перевод не трата и не доход, в сводки и лимит не попадает. Покупка валюты — тоже перевод.
+         */
+        post: operations["createTransfer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/transfers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Отменить перевод */
+        delete: operations["deleteTransfer"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Последние курсы ЦБ
+         * @description Пустой список, пока курсов нет. Источник недоступен — приходит последний известный курс с его датой.
+         */
+        get: operations["listRates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Задачи за период */
+        get: operations["listTasks"];
+        put?: never;
+        /** Запланировать задачу */
+        post: operations["createTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tasks/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Удалить задачу */
+        delete: operations["deleteTask"];
+        options?: never;
+        head?: never;
+        /** Изменить задачу */
+        patch: operations["updateTask"];
+        trace?: never;
+    };
+    "/tasks/{id}/done": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Отметить сделанной
+         * @description Повторяющаяся задача переходит на следующую дату.
+         */
+        post: operations["doneTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/game": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Опыт, уровень, серия и квесты на сегодня */
+        get: operations["getGame"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/quests/{slug}/done": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Отметить ручной квест сделанным
+         * @description Автоматические квесты код засчитывает сам.
+         */
+        post: operations["doneQuest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ссылка на карточку для истории
+         * @description Telegram забирает картинку истории сам, поэтому заголовок `Authorization` до
+         *     неё не дойдёт. Метод возвращает короткоживущую подписанную ссылку; сама картинка
+         *     отдаётся по ней без входа и не содержит денег.
+         */
+        post: operations["createCard"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/operations": {
         parameters: {
             query?: never;
@@ -476,6 +694,153 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @enum {string} */
+        Currency: "RUB" | "USD" | "EUR";
+        Account: {
+            /** Format: int64 */
+            id: number;
+            /** @example Наличные */
+            name: string;
+            kind: components["schemas"]["AccountKind"];
+            currency: components["schemas"]["Currency"];
+            /** @description Сюда попадают операции без счёта */
+            is_default: boolean;
+            balance: components["schemas"]["Money"];
+            /** @description Остаток в рублях по последнему курсу */
+            balance_rub: components["schemas"]["Money"];
+        };
+        /** @enum {string} */
+        AccountKind: "card" | "cash" | "savings" | "foreign" | "other";
+        AccountList: {
+            items: components["schemas"]["Account"][];
+            total_rub: components["schemas"]["Money"];
+        };
+        AccountCreate: {
+            name: string;
+            kind?: components["schemas"]["AccountKind"];
+            currency?: components["schemas"]["Currency"];
+            /** @description Сколько на счёте сейчас */
+            balance?: components["schemas"]["Money"];
+        };
+        /** @description Передаются только изменяемые поля. */
+        AccountUpdate: {
+            name?: string;
+            kind?: components["schemas"]["AccountKind"];
+            /** @description Сколько на счёте сейчас. Правка не считается тратой или доходом */
+            balance?: components["schemas"]["Money"];
+            archived?: boolean;
+        };
+        Transfer: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            from_account_id: number;
+            /** Format: int64 */
+            to_account_id: number;
+            amount_from: components["schemas"]["Money"];
+            amount_to: components["schemas"]["Money"];
+            /** Format: date */
+            date: string;
+            comment?: string;
+        };
+        TransferCreate: {
+            /** Format: int64 */
+            from_account_id: number;
+            /** Format: int64 */
+            to_account_id: number;
+            amount_from: components["schemas"]["Money"];
+            /** @description Нужна, если у счетов разная валюта */
+            amount_to?: components["schemas"]["Money"];
+            /** Format: date */
+            date?: string;
+            comment?: string;
+        };
+        TransferList: {
+            items: components["schemas"]["Transfer"][];
+        };
+        Rate: {
+            code: components["schemas"]["Currency"];
+            value: components["schemas"]["Money"];
+            /**
+             * Format: date
+             * @description День курса ЦБ
+             */
+            date: string;
+        };
+        RateList: {
+            items: components["schemas"]["Rate"][];
+        };
+        /** @enum {string} */
+        TaskRepeat: "none" | "daily" | "weekdays" | "weekly" | "monthly";
+        Task: {
+            /** Format: int64 */
+            id: number;
+            title: string;
+            /**
+             * Format: date
+             * @description День в календаре; у повторяющейся задачи таких записей несколько
+             */
+            date: string;
+            /** @example 09:30 */
+            time?: string;
+            repeat: components["schemas"]["TaskRepeat"];
+            /** Format: int64 */
+            goal_id?: number;
+            done: boolean;
+        };
+        TaskList: {
+            items: components["schemas"]["Task"][];
+        };
+        TaskCreate: {
+            title: string;
+            /** Format: date */
+            date: string;
+            /** @description ЧЧ:ММ; нет — без напоминания */
+            time?: string;
+            repeat?: components["schemas"]["TaskRepeat"];
+            /** Format: int64 */
+            goal_id?: number;
+        };
+        /** @description Передаются только изменяемые поля. Пустой `time` убирает напоминание. */
+        TaskUpdate: {
+            title?: string;
+            /** Format: date */
+            date?: string;
+            time?: string;
+            repeat?: components["schemas"]["TaskRepeat"];
+        };
+        Quest: {
+            slug: string;
+            title: string;
+            text: string;
+            xp: number;
+            /** @description Засчитывается кнопкой; иначе код проверяет сам */
+            manual: boolean;
+            done: boolean;
+        };
+        GameProfile: {
+            xp: number;
+            level: number;
+            /** @description Дней подряд на сегодня */
+            streak: number;
+            best_streak: number;
+            quests: components["schemas"]["Quest"][];
+        };
+        CardRequest: {
+            /** @enum {string} */
+            kind: "goal" | "level" | "streak";
+            /**
+             * Format: int64
+             * @description Для `goal`
+             */
+            goal_id?: number;
+        };
+        CardLink: {
+            /** @description Адрес картинки: действует час, без денег на карточке */
+            url: string;
+            /** @description Подпись к истории */
+            text: string;
+        };
         ClientEvent: {
             /** @enum {string} */
             name: "miniapp_open" | "morning_clicked";
@@ -581,13 +946,25 @@ export interface components {
              * @description Регулярный платёж, который оплачен этой тратой
              */
             regular_payment_id?: number;
+            currency: components["schemas"]["Currency"];
+            /** @description Сколько заплачено в валюте `currency`; `amount` всегда в рублях. Нет — операция в рублях */
+            original_amount?: components["schemas"]["Money"];
+            /**
+             * Format: int64
+             * @description Счёт; нет — счёт по умолчанию
+             */
+            account_id?: number;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
             updated_at: string;
         };
         OperationCreate: {
+            /** @description В валюте `currency` */
             amount: components["schemas"]["Money"];
+            currency?: components["schemas"]["Currency"];
+            /** Format: int64 */
+            account_id?: number;
             category: components["schemas"]["Category"];
             /**
              * Format: date
@@ -598,7 +975,11 @@ export interface components {
         };
         /** @description Передаются только изменяемые поля. Пустой `comment` удаляет комментарий. */
         OperationUpdate: {
+            /** @description В валюте операции */
             amount?: components["schemas"]["Money"];
+            currency?: components["schemas"]["Currency"];
+            /** Format: int64 */
+            account_id?: number;
             category?: components["schemas"]["Category"];
             /** Format: date */
             date?: string;
@@ -1058,6 +1439,386 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    listAccounts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Счета и итог в рублях */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountCreate"];
+            };
+        };
+        responses: {
+            /** @description Счёт */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    updateAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountUpdate"];
+            };
+        };
+        responses: {
+            /** @description Счёт */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listTransfers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Новые сверху */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransferList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createTransfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferCreate"];
+            };
+        };
+        responses: {
+            /** @description Перевод */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Transfer"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteTransfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Удалён */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listRates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Курсы */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    listTasks: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description По дням; повторяющаяся задача приходит на каждый свой день */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskCreate"];
+            };
+        };
+        responses: {
+            /** @description Задача */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Task"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    deleteTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Удалена */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskUpdate"];
+            };
+        };
+        responses: {
+            /** @description Задача */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Task"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    doneTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Задача */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Task"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getGame: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Состояние игрока */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GameProfile"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    doneQuest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Состояние игрока */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GameProfile"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createCard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CardRequest"];
+            };
+        };
+        responses: {
+            /** @description Ссылка */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CardLink"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     listOperations: {

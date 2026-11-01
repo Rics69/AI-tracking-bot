@@ -4,7 +4,7 @@ import type { Operation } from "@/api/client";
 import { Card, IconCircle } from "@/components/kit";
 import { Skeleton } from "@/components/ui/skeleton";
 import { capitalize, categoryIcons, useCategoryInfo } from "@/lib/categories";
-import { formatDayHeader, formatSigned } from "@/lib/format";
+import { formatDayHeader, formatForeign, formatSigned } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import { useOperationSheet } from "./sheet-context";
@@ -83,7 +83,14 @@ function OperationRow({ op, myId, memberName }: { op: Operation; myId?: number; 
           op.kind === "income" ? "text-success" : "text-foreground",
         )}
       >
-        {formatSigned(op.amount, op.kind)}
+        <span className="flex flex-col items-end">
+          {formatSigned(op.amount, op.kind)}
+          {op.original_amount !== undefined && (
+            <span className="text-[12px] font-normal text-muted-foreground">
+              {formatForeign(op.original_amount, op.currency)}
+            </span>
+          )}
+        </span>
       </span>
     </>
   );

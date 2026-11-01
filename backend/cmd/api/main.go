@@ -12,14 +12,18 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/accounts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/config"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/game"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/httpapi"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/logger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/postgres"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/tasks"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
 )
 
 func main() {
@@ -59,12 +63,32 @@ func run() error {
 		log.Warn("AUTH_DEV_USER_ID is ignored: it works only with APP_ENV=dev")
 	}
 	operations := ledger.NewService(postgres.NewOperationRepository(pool), cfg.Location)
+	rateStore := postgres.NewRateRepository(pool)
+	money := accounts.NewService(postgres.NewAccountRepository(pool), rateStore)
+	operations.Rates, operations.Accounts = rateStore, money
+	budgets := budget.NewService(postgres.NewBudgetRepository(pool), operations)
+	catalog, err := game.LoadCatalog()
+	if err != nil {
+		return err
+	}
+	botTexts, err := texts.Load()
+	if err != nil {
+		return err
+	}
 	tracker := events.NewTracker(postgres.NewEventRepository(pool), log.With("component", "events"))
 	defer tracker.Wait()
 	handler := httpapi.NewHandler(httpapi.Deps{
 		Ledger: operations,
 		Family: families,
-		Budget: budget.NewService(postgres.NewBudgetRepository(pool), operations),
+		Budget: budgets,
+
+		Accounts: money,
+		Tasks:    tasks.NewService(postgres.NewTaskRepository(pool)),
+		Game:     game.NewService(catalog, postgres.NewGameRepository(pool), operations, budgets),
+		Rates:    rateStore,
+		Texts:    botTexts,
+		BotName:  families.BotUsername,
+
 		Auth: &httpapi.Auth{
 			BotToken:  cfg.TelegramToken,
 			Users:     families,

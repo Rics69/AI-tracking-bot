@@ -3,13 +3,13 @@
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
-import { ApiError, type Category, type Kind } from "@/api/client";
-import { useCreateOperation, useDeleteOperation, useUpdateOperation } from "@/api/queries";
+import { ApiError, type Category, type Currency, type Kind } from "@/api/client";
+import { useAccounts, useCreateOperation, useDeleteOperation, useUpdateOperation } from "@/api/queries";
 import { PillButton } from "@/components/kit";
 import { Input } from "@/components/ui/input";
 import { Sheet } from "@/components/ui/sheet";
 import { capitalize, categoryIcons, useCategoryInfo } from "@/lib/categories";
-import { formatMoney, toISODate } from "@/lib/format";
+import { currencySign, formatForeign, toISODate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { haptic, webApp } from "@/lib/telegram";
 
@@ -48,6 +48,8 @@ type Fields = {
   category: Category | "";
   date: string;
   comment: string;
+  currency: Currency;
+  accountId: number | null; // null: the default account
 };
 type Errors = Partial<Record<"amount" | "category" | "date" | "comment", string>>;
 
@@ -72,10 +74,12 @@ function OperationForm({
     op
       ? {
           kind: op.kind,
-          amount: String(op.amount).replace(".", ","),
+          amount: String(op.original_amount ?? op.amount).replace(".", ","),
           category: op.category,
           date: op.date,
           comment: op.comment ?? "",
+          currency: op.currency,
+          accountId: op.account_id ?? null,
         }
       : {
           kind: target.mode === "new" ? target.kind : "expense",
@@ -83,8 +87,14 @@ function OperationForm({
           category: "",
           date: today,
           comment: "",
+          currency: "RUB",
+          accountId: null,
         },
   );
+  const accounts = useAccounts().data?.items;
+  const chosen = accounts?.find((a) => a.id === f.accountId);
+  // An account in a foreign currency takes only its own currency.
+  const fixedCurrency = chosen && chosen.currency !== "RUB" ? chosen.currency : undefined;
   const [errors, setErrors] = useState<Errors>({});
   const categories = useCategoryInfo();
   const create = useCreateOperation();
@@ -123,6 +133,8 @@ function OperationForm({
 
     const body = {
       amount,
+      currency: f.currency,
+      ...(f.accountId !== null && { account_id: f.accountId }),
       category: f.category as Category,
       date: f.date,
       comment: f.comment.trim(),
@@ -132,7 +144,7 @@ function OperationForm({
       else await create.mutateAsync(body);
       haptic.success();
       const what = body.comment || capitalize(categories.label(body.category));
-      toast.success(`${op ? "Изменено" : "Записано"}: ${what} — ${formatMoney(amount)}`);
+      toast.success(`${op ? "Изменено" : "Записано"}: ${what} — ${formatForeign(amount, f.currency)}`);
       onSaved();
       onClose();
     } catch (err) {
@@ -184,7 +196,7 @@ function OperationForm({
 
       <div className="flex flex-col items-center gap-1">
         <label htmlFor="op-amount" className="sr-only">
-          Сумма в рублях
+          Сумма
         </label>
         <div className="flex items-baseline justify-center gap-2">
           <input
@@ -198,10 +210,50 @@ function OperationForm({
             aria-invalid={!!errors.amount}
             className="w-full max-w-60 bg-transparent text-center text-5xl font-semibold tracking-tight tabular-nums outline-none placeholder:text-muted-foreground/40"
           />
-          <span className="text-3xl font-medium text-muted-foreground">₽</span>
+          <span className="text-3xl font-medium text-muted-foreground">{currencySign(f.currency)}</span>
         </div>
         <FieldError text={errors.amount} />
+        {!fixedCurrency && (
+          <div className="mt-2 flex gap-2" role="radiogroup" aria-label="Валюта">
+            {currencies.map((c) => (
+              <Chip key={c} active={f.currency === c} onClick={() => set("currency", c)}>
+                {currencySign(c)}
+              </Chip>
+            ))}
+          </div>
+        )}
       </div>
+
+      {accounts && accounts.length > 1 && (
+        <div className="flex flex-col gap-2">
+          <label htmlFor="op-account" className="text-sm font-medium text-muted-foreground">
+            Счёт
+          </label>
+          <select
+            id="op-account"
+            value={f.accountId ?? ""}
+            onChange={(e) => {
+              const id = e.target.value ? Number(e.target.value) : null;
+              const account = accounts.find((a) => a.id === id);
+              setF((prev) => ({
+                ...prev,
+                accountId: id,
+                currency: account && account.currency !== "RUB" ? account.currency : prev.currency,
+              }));
+            }}
+            className="h-11 rounded-full bg-muted px-4 text-[15px] outline-none"
+          >
+            <option value="">{accounts.find((a) => a.is_default)?.name ?? "Основной"}</option>
+            {accounts
+              .filter((a) => !a.is_default)
+              .map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+          </select>
+        </div>
+      )}
 
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-2 text-sm font-medium text-muted-foreground">Категория</legend>
@@ -291,6 +343,7 @@ function OperationForm({
 }
 
 const fieldNames = { amount: 1, category: 1, date: 1, comment: 1 };
+const currencies: Currency[] = ["RUB", "USD", "EUR"];
 
 function Chip({
   active,

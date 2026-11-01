@@ -9,12 +9,17 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/shopspring/decimal"
+
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/accounts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/agent"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/llm"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/quick"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/rates"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/memory"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/tasks"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
 )
 
@@ -76,6 +81,15 @@ func (rn runner) run(ctx context.Context, c Case) Result {
 	svc := ledger.NewService(repo, rn.loc)
 	store := memory.NewBudget(repo)
 	budgets := budget.NewService(store, svc)
+	rateStore := memory.NewRates()
+	_ = rateStore.Save(ctx, []rates.Rate{
+		{Code: ledger.USD, Date: svc.Today().AddDate(0, 0, -30), Value: evalUSD},
+		{Code: ledger.EUR, Date: svc.Today().AddDate(0, 0, -30), Value: evalEUR},
+	})
+	moneyStore := memory.NewAccounts(repo)
+	money := accounts.NewService(moneyStore, rateStore)
+	svc.Rates, svc.Accounts = rateStore, money
+	taskStore := memory.NewTasks()
 	today := svc.Today()
 
 	// Limit settings first: seeded expenses may pay a regular payment.
@@ -115,6 +129,13 @@ func (rn runner) run(ctx context.Context, c Case) Result {
 	rec := &recorder{Client: rn.client}
 	cfg := rn.cfg
 	cfg.Budget = budgets
+	cfg.Accounts, cfg.Tasks = money, tasks.NewService(taskStore)
+	for _, name := range c.Accounts {
+		if _, err := money.Create(ctx, accounts.Account{UserID: userID, Name: name}); err != nil {
+			res.Failures = append(res.Failures, "bad seed: "+err.Error())
+			return res
+		}
+	}
 	a := agent.New(rec, svc, svc, agent.NewHistory(10, time.Hour), cfg, rn.log)
 	// Quick turns go the way of the bot: recorded without the LLM, then remembered.
 	records, err := quick.New(svc, budgets)
@@ -148,8 +169,28 @@ func (rn runner) run(ctx context.Context, c Case) Result {
 	}
 	res.Failures = append(res.Failures, check(c, today, before, repo.All(), titles, res)...)
 	res.Failures = append(res.Failures, checkBudget(ctx, c, today, budgets, store, res)...)
+	if want := c.Expect.Transfers; want != nil && len(moneyStore.AllTransfers()) != *want {
+		res.Failures = append(res.Failures, fmt.Sprintf("transfers: want %d, got %d", *want, len(moneyStore.AllTransfers())))
+	}
+	if want := c.Expect.Tasks; want != nil {
+		list, _ := taskStore.Open(ctx)
+		if len(list) != len(want) {
+			res.Failures = append(res.Failures, fmt.Sprintf("tasks: want %q, got %+v", want, list))
+		}
+		for i := range min(len(list), len(want)) {
+			if !containsNorm(list[i].Title, want[i]) {
+				res.Failures = append(res.Failures, fmt.Sprintf("task %d: want %q, got %q", i, want[i], list[i].Title))
+			}
+		}
+	}
 	return res
 }
+
+// Rates of the eval, so a foreign amount in a case is a known number of rubles.
+var (
+	evalUSD = decimal.NewFromInt(100)
+	evalEUR = decimal.NewFromInt(110)
+)
 
 // check compares the outcome with the expectations of the case.
 func check(c Case, today time.Time, before, after []ledger.Operation, titles map[int64]string, res Result) []string {

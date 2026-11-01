@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { haptic } from "@/lib/telegram";
 
-// The building blocks of the app's look: white cards with a hairline border,
+// The building blocks of the app's look: dark cards with a hairline border,
 // icons in circles, pill badges, pill segmented controls.
 
 export function Card({ className, children }: { className?: string; children: ReactNode }) {
@@ -121,7 +121,7 @@ export function StatCard({
         <span className={cn("truncate text-[13px]", tone === "card" && "text-muted-foreground")}>{label}</span>
       </span>
       <span className="flex flex-col items-start gap-2">
-        <span className="max-w-full truncate text-[26px] leading-none font-medium tracking-tight tabular-nums">{value}</span>
+        <span className={cn("max-w-full truncate text-[26px] leading-none font-medium tracking-tight tabular-nums", tone === "hero" && "text-gold")}>{value}</span>
         {pill}
       </span>
     </Tag>
@@ -130,7 +130,7 @@ export function StatCard({
 
 type Option<T extends string> = { value: T; label: string };
 
-/** A pill segmented control: a tray with the active option raised in white. */
+/** A pill segmented control: a tray with the active option raised. */
 export function Segmented<T extends string>({
   label,
   options,

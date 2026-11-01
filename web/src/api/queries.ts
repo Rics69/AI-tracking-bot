@@ -11,7 +11,10 @@ import {
 import {
   api,
   unwrap,
+  type AccountCreate,
+  type AccountUpdate,
   type Bucket,
+  type CardRequest,
   type Category,
   type ClientEvent,
   type GoalCreate,
@@ -23,6 +26,8 @@ import {
   type PlanInput,
   type RegularPaymentCreate,
   type RegularPaymentUpdate,
+  type TaskCreate,
+  type TransferCreate,
 } from "./client";
 
 /** What the history and charts show. */
@@ -50,6 +55,13 @@ export const keys = {
   budget: ["money", "budget"] as const,
   goals: ["money", "goals"] as const,
   payments: ["money", "payments"] as const,
+  // Balances move with every operation, and a new operation may close a quest.
+  accounts: ["money", "accounts"] as const,
+  transfers: ["money", "transfers"] as const,
+  game: ["money", "game"] as const,
+  rates: ["rates"] as const,
+  tasks: (from: string, to: string) => ["tasks", from, to] as const,
+  allTasks: ["tasks"] as const,
 };
 
 function toParams(q: OperationQuery) {
@@ -318,4 +330,102 @@ export function useTransferHead() {
   return useFamilyMutation(async (telegramId: number) =>
     unwrap(await api.PUT("/family/head", { body: { telegram_id: telegramId } })),
   );
+}
+
+// Accounts.
+
+export function useAccounts() {
+  return useQuery({
+    queryKey: keys.accounts,
+    queryFn: async () => unwrap(await api.GET("/accounts")),
+  });
+}
+
+export function useCreateAccount() {
+  return useMoneyMutation(async (body: AccountCreate) => unwrap(await api.POST("/accounts", { body })));
+}
+
+export function useUpdateAccount() {
+  return useMoneyMutation(async ({ id, body }: { id: number; body: AccountUpdate }) =>
+    unwrap(await api.PATCH("/accounts/{id}", { params: { path: { id } }, body })),
+  );
+}
+
+export function useTransfers() {
+  return useQuery({
+    queryKey: keys.transfers,
+    queryFn: async () => unwrap(await api.GET("/transfers")),
+  });
+}
+
+export function useCreateTransfer() {
+  return useMoneyMutation(async (body: TransferCreate) => unwrap(await api.POST("/transfers", { body })));
+}
+
+export function useDeleteTransfer() {
+  return useMoneyMutation(async (id: number) =>
+    unwrap(await api.DELETE("/transfers/{id}", { params: { path: { id } } })),
+  );
+}
+
+export function useRates() {
+  return useQuery({
+    queryKey: keys.rates,
+    queryFn: async () => unwrap(await api.GET("/rates")),
+    staleTime: 10 * 60_000,
+    retry: false, // the widget is optional: without rates the screen stays as it is
+  });
+}
+
+// Calendar.
+
+function useTaskMutation<T, R>(fn: (arg: T) => Promise<R>) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.allTasks }),
+  });
+}
+
+export function useTasks(from: string, to: string) {
+  return useQuery({
+    queryKey: keys.tasks(from, to),
+    queryFn: async () => unwrap(await api.GET("/tasks", { params: { query: { from, to } } })),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useCreateTask() {
+  return useTaskMutation(async (body: TaskCreate) => unwrap(await api.POST("/tasks", { body })));
+}
+
+export function useDoneTask() {
+  return useTaskMutation(async (id: number) =>
+    unwrap(await api.POST("/tasks/{id}/done", { params: { path: { id } } })),
+  );
+}
+
+export function useDeleteTask() {
+  return useTaskMutation(async (id: number) =>
+    unwrap(await api.DELETE("/tasks/{id}", { params: { path: { id } } })),
+  );
+}
+
+// The game.
+
+export function useGame() {
+  return useQuery({
+    queryKey: keys.game,
+    queryFn: async () => unwrap(await api.GET("/game")),
+  });
+}
+
+export function useDoneQuest() {
+  return useMoneyMutation(async (slug: string) =>
+    unwrap(await api.POST("/quests/{slug}/done", { params: { path: { slug } } })),
+  );
+}
+
+export async function createCard(body: CardRequest) {
+  return unwrap(await api.POST("/cards", { body }));
 }

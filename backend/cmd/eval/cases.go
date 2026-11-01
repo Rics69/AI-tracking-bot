@@ -22,6 +22,8 @@ type Case struct {
 	Plan     *PlanSpec     `yaml:"plan"`
 	Goals    []GoalSpec    `yaml:"goals"`
 	Payments []PaymentSpec `yaml:"payments"`
+	// Accounts are the user's accounts besides the default one, in rubles.
+	Accounts []string `yaml:"accounts"`
 	// Quick are messages recorded by the fast path before Turns, the way the bot does.
 	Quick  []string `yaml:"quick"`
 	Turns  []string `yaml:"turns"` // user messages, sent one by one in one conversation
@@ -43,6 +45,10 @@ type Expect struct {
 	// "сумм|стоимост" in ReplyContains accepts either word.
 	ReplyContains    []string `yaml:"reply_contains"`
 	ReplyNotContains []string `yaml:"reply_not_contains"`
+	// Transfers is how many transfers there must be; Tasks are the titles of
+	// tasks (substrings) in order of creation. Nil is not checked.
+	Transfers *int     `yaml:"transfers"`
+	Tasks     []string `yaml:"tasks"`
 	// ReplyHasLimit: the last reply quotes today's limit, computed after the dialog.
 	ReplyHasLimit bool `yaml:"reply_has_limit"`
 	// Plan, Goals and Payments are the exact final limit settings; nil is not checked.

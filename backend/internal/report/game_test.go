@@ -16,6 +16,7 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/game"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/memory"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/tasks"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
@@ -237,6 +238,77 @@ func TestChallengeEveningAndFinish(t *testing.T) {
 	}
 	if !strings.Contains(e.out[len(e.out)-1].text, "пройден: 0 из 7") {
 		t.Errorf("caption = %+v", e.out)
+	}
+}
+
+func TestTaskReminderComesOnTime(t *testing.T) {
+	ctx := context.Background()
+	store := memory.NewTasks()
+	svc := tasks.NewService(store)
+	today := day(10, 16)
+	if _, err := svc.Create(ctx, tasks.Task{UserID: 1, Title: "Оплатить интернет", DueOn: today, DueTime: "09:30"}, today); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Create(ctx, tasks.Task{UserID: 2, Title: "Чужая", DueOn: today, DueTime: "09:30"}, today); err != nil {
+		t.Fatal(err)
+	}
+	consented := today
+	var out []sent
+	fail := false
+	var rows [][]game.Action
+	r := NewTaskReminders(svc, fakeMembers{{TelegramID: 1, ConsentedAt: &consented}}, &fakeRuns{claimed: map[string]bool{}},
+		func(_ context.Context, chat int64, text string, rr [][]game.Action) error {
+			if fail {
+				return errors.New("telegram is down")
+			}
+			out = append(out, sent{chat, text})
+			rows = rr
+			return nil
+		}, reminderTexts2(t), moscow, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	at := func(h, m int) { r.now = func() time.Time { return time.Date(2026, 10, 16, h, m, 0, 0, moscow) } }
+
+	at(9, 29)
+	r.Tick(ctx)
+	if len(out) != 0 {
+		t.Fatalf("early: %+v", out)
+	}
+	at(9, 30)
+	fail = true
+	r.Tick(ctx) // not delivered: the next minute tries again
+	fail = false
+	at(9, 31)
+	r.Tick(ctx)
+	r.Tick(ctx)
+	if len(out) != 1 || out[0].chat != 1 || !strings.Contains(out[0].text, "Оплатить интернет") {
+		t.Fatalf("sent = %+v", out)
+	}
+	if len(rows) != 1 || !strings.HasPrefix(rows[0][0].Data, game.ActTaskDone+":") {
+		t.Errorf("buttons = %+v", rows)
+	}
+}
+
+func reminderTexts2(t *testing.T) texts.Bot {
+	t.Helper()
+	tx, err := texts.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tx
+}
+
+func TestMorningWithTasks(t *testing.T) {
+	ctx := context.Background()
+	d, _, _, out := morning(t, user.User{})
+	d.t = reminderTexts2(t)
+	store := memory.NewTasks()
+	svc := tasks.NewService(store)
+	if _, err := svc.Create(ctx, tasks.Task{UserID: 1, Title: "оплатить интернет", DueOn: day(10, 16)}, day(10, 16)); err != nil {
+		t.Fatal(err)
+	}
+	d.Tasks = svc
+	d.Tick(ctx)
+	if len(*out) != 1 || !strings.Contains((*out)[0].text, "Задачи: оплатить интернет.") {
+		t.Errorf("morning = %+v", *out)
 	}
 }
 

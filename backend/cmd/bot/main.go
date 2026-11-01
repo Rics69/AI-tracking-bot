@@ -16,6 +16,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/accounts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/agent"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/card"
@@ -31,6 +32,7 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/rates"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/report"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/postgres"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/tasks"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/telegram"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/usage"
@@ -68,6 +70,10 @@ func run() error {
 		return err
 	}
 	expenses := ledger.NewService(postgres.NewOperationRepository(pool), cfg.Location)
+	rateStore := postgres.NewRateRepository(pool)
+	money := accounts.NewService(postgres.NewAccountRepository(pool), rateStore)
+	expenses.Rates, expenses.Accounts = rateStore, money
+	plans := tasks.NewService(postgres.NewTaskRepository(pool))
 	// History lives in PostgreSQL: a restart or redeploy does not cut dialogs short.
 	history := postgres.NewChatHistoryRepository(pool, cfg.HistoryTurns, cfg.HistoryTTL)
 	flows := postgres.NewFlowRepository(pool)
@@ -94,7 +100,7 @@ func run() error {
 		return err
 	}
 	assistant := agent.New(client, expenses, expenses, history,
-		agent.Config{Location: cfg.Location, MaxSteps: cfg.MaxSteps, Usage: meter, Budget: budgets, Events: tracker},
+		agent.Config{Location: cfg.Location, MaxSteps: cfg.MaxSteps, Usage: meter, Budget: budgets, Accounts: money, Tasks: plans, Events: tracker},
 		log.With("component", "agent"))
 	users := postgres.NewUserRepository(pool)
 	members := family.NewService(users, postgres.NewInviteRepository(pool), postgres.NewSettingsRepository(pool))
@@ -120,6 +126,7 @@ func run() error {
 		Flows:        flows,
 		Budget:       budgets,
 		Game:         play,
+		Tasks:        plans,
 
 		PackageTokens: cfg.LLMTokenPackage,
 		PackageSince:  packageSince,
@@ -197,9 +204,11 @@ func run() error {
 		cfg.Location, log.With("component", "report"))
 	weekly.Facts, weekly.Texts = play, botTexts
 	go weekly.Run(ctx)
-	rateStore := postgres.NewRateRepository(pool)
 	updater := rates.NewUpdater(rateStore, log.With("component", "rates"))
-	go every(ctx, time.Hour, func() { updater.Update(ctx) })
+	go func() {
+		updater.Backfill(ctx, expenses.Today())
+		every(ctx, time.Hour, func() { updater.Update(ctx) })
+	}()
 	sendRows := func(ctx context.Context, chatID int64, text string, rows [][]game.Action) error {
 		return undeliverable(handler.SendActions(ctx, b, chatID, text, fromGame, rows))
 	}
@@ -213,6 +222,7 @@ func run() error {
 		botTexts, log.With("component", "goals"))
 	milestones.SendCard = sendCard
 	go milestones.Run(ctx)
+	go report.NewTaskReminders(plans, users, runs, sendRows, botTexts, cfg.Location, log.With("component", "tasks")).Run(ctx)
 	go report.NewGame(play, users, runs, sendRows, sendCard, botTexts, cfg.Location, log.With("component", "game")).Run(ctx)
 	daily := report.NewDaily(budgets, users, runs, rateStore,
 		func(ctx context.Context, chatID int64, text string) error {
@@ -224,6 +234,7 @@ func run() error {
 		},
 		botTexts, cfg.Location, log.With("component", "reminder"))
 	daily.Extras = report.GameMorning{Game: play, Texts: botTexts}
+	daily.Tasks = plans
 	daily.SendRows = func(ctx context.Context, chatID int64, text string, rows [][]game.Action) error {
 		err := handler.SendActions(ctx, b, chatID, text, fromMorning, rows)
 		if err == nil {

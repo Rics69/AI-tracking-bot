@@ -359,6 +359,15 @@ func (s *Service) RevokeInvite(ctx context.Context, familyID, id int64) error {
 	return s.invites.Revoke(ctx, familyID, id)
 }
 
+// BotUsername is the bot's @username, empty until the bot has told it.
+func (s *Service) BotUsername(ctx context.Context) string {
+	name, _, err := s.settings.Get(ctx, SettingBotUsername)
+	if err != nil {
+		return ""
+	}
+	return name
+}
+
 // SetBotUsername remembers the bot's @username for invite links.
 func (s *Service) SetBotUsername(ctx context.Context, username string) error {
 	return s.settings.Set(ctx, SettingBotUsername, username)

@@ -50,7 +50,10 @@ type Config struct {
 	// Budget enables the daily limit, goals and regular payments; without it
 	// the agent only tracks expenses and incomes.
 	Budget Budget
-	Events *events.Tracker // optional
+	// Accounts and Tasks enable accounts, transfers and the calendar.
+	Accounts Accounts
+	Tasks    Tasks
+	Events   *events.Tracker // optional
 }
 
 // Agent is the expense assistant.
@@ -63,6 +66,8 @@ type Agent struct {
 	maxSteps int
 	usage    UsageRecorder
 	budget   Budget
+	accounts Accounts
+	tasks    Tasks
 	events   *events.Tracker
 	log      *slog.Logger
 }
@@ -74,7 +79,8 @@ func New(client llm.Client, ledger Ledger, clock Clock, history HistoryStore, cf
 	}
 	return &Agent{
 		llm: client, ledger: ledger, clock: clock, history: history,
-		loc: cfg.Location, maxSteps: cfg.MaxSteps, usage: cfg.Usage, budget: cfg.Budget, events: cfg.Events, log: log,
+		loc: cfg.Location, maxSteps: cfg.MaxSteps, usage: cfg.Usage, budget: cfg.Budget,
+		accounts: cfg.Accounts, tasks: cfg.Tasks, events: cfg.Events, log: log,
 	}
 }
 
@@ -114,7 +120,10 @@ func (a *Agent) Reply(ctx context.Context, caller Caller, text string) (string, 
 	if a.budget != nil {
 		tools = append(tools, budgetToolDefs(today)...)
 	}
-	mc := a.loadMoneyContext(ctx, caller.UserID)
+	if a.accounts != nil {
+		tools = append(tools, moneyToolDefs(today)...)
+	}
+	mc := a.loadMoneyContext(ctx, caller.UserID, today)
 	messages := []llm.Message{{Role: llm.RoleSystem, Content: systemPrompt(today, loc, caller.Name, mc)}}
 	// Without history the agent still works, only follow-ups lose context:
 	// a storage hiccup must not cost the user their reply.

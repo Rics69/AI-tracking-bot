@@ -131,9 +131,11 @@ type moneyContext struct {
 	plan     *budget.Plan
 	goals    []budget.Goal
 	payments []budget.RegularPayment
+	accounts []string // empty: accounts are off
+	upcoming string
 }
 
-func (a *Agent) loadMoneyContext(ctx context.Context, userID int64) *moneyContext {
+func (a *Agent) loadMoneyContext(ctx context.Context, userID int64, today time.Time) *moneyContext {
 	if a.budget == nil {
 		return nil
 	}
@@ -151,6 +153,12 @@ func (a *Agent) loadMoneyContext(ctx context.Context, userID int64) *moneyContex
 	}
 	if mc.payments, err = a.budget.Payments(ctx, userID); err != nil {
 		a.log.WarnContext(ctx, "load regular payments", "user_id", userID, "err", err)
+	}
+	if a.accounts != nil {
+		if mc.accounts, err = a.accounts.Names(ctx, userID); err != nil {
+			a.log.WarnContext(ctx, "load accounts", "user_id", userID, "err", err)
+		}
+		mc.upcoming = upcoming(today)
 	}
 	return &mc
 }
@@ -182,6 +190,12 @@ func (mc *moneyContext) String() string {
 		for _, g := range mc.goals {
 			fmt.Fprintf(&b, "  %d: %s — %s из %s ₽\n", g.ID, g.Title, g.Saved.StringFixedBank(2), g.Target.StringFixedBank(2))
 		}
+	}
+	if len(mc.accounts) > 0 {
+		fmt.Fprintf(&b, "- счета: %s\n", strings.Join(mc.accounts, ", "))
+	}
+	if mc.upcoming != "" {
+		fmt.Fprintf(&b, "- ближайшие дни: %s\n", mc.upcoming)
 	}
 	return b.String()
 }

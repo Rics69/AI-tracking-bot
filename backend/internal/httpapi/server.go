@@ -7,10 +7,15 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"github.com/shopspring/decimal"
 
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/accounts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/game"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/rates"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/savik"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/tasks"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
 
@@ -61,12 +66,31 @@ type Server struct {
 	budget BudgetService
 	events *events.Tracker
 	loc    *time.Location // timezone of users who have not chosen one
+
+	accounts   *accounts.Service
+	tasks      *tasks.Service
+	game       *game.Service
+	rates      RateSource
+	texts      texts.Bot
+	cardSecret string
+	botName    func(ctx context.Context) string
+}
+
+// RateSource tells the latest exchange rates.
+type RateSource interface {
+	Latest(ctx context.Context, codes []string) ([]rates.Rate, error)
 }
 
 var _ StrictServerInterface = (*Server)(nil)
 
-func NewServer(l LedgerService, f FamilyService, b BudgetService, e *events.Tracker, loc *time.Location) *Server {
-	return &Server{ledger: l, family: f, budget: b, events: e, loc: loc}
+// NewServer builds the API from its dependencies.
+func NewServer(d Deps) *Server {
+	s := &Server{ledger: d.Ledger, family: d.Family, budget: d.Budget, events: d.Events, loc: d.Location,
+		accounts: d.Accounts, tasks: d.Tasks, game: d.Game, rates: d.Rates, texts: d.Texts, botName: d.BotName}
+	if d.Auth != nil {
+		s.cardSecret = d.Auth.BotToken
+	}
+	return s
 }
 
 // readScope is what the user may see: the head sees the whole family.
@@ -236,6 +260,9 @@ func (s *Server) CreateOperation(ctx context.Context, req CreateOperationRequest
 		Date:     dateTime(b.Date),
 		Comment:  deref(b.Comment),
 		Today:    s.today(u),
+
+		Currency:  string(deref(b.Currency)),
+		AccountID: b.AccountId,
 	})
 	if err != nil {
 		return nil, err
@@ -266,7 +293,11 @@ func (s *Server) UpdateOperation(ctx context.Context, req UpdateOperationRequest
 		return nil, err
 	}
 	b := req.Body
-	p := ledger.Patch{Amount: b.Amount, Date: dateTime(b.Date), Comment: b.Comment, Today: s.today(u)}
+	p := ledger.Patch{Amount: b.Amount, Date: dateTime(b.Date), Comment: b.Comment, Today: s.today(u), AccountID: b.AccountId}
+	if b.Currency != nil {
+		c := string(*b.Currency)
+		p.Currency = &c
+	}
 	if b.Category != nil {
 		c := ledger.Category(*b.Category)
 		p.Category = &c
@@ -380,6 +411,9 @@ func toAPIOperation(o ledger.Operation) Operation {
 		Date:             openapi_types.Date{Time: o.Date},
 		Comment:          optional(o.Comment),
 		RegularPaymentId: o.RegularPaymentID,
+		Currency:         Currency(o.Currency),
+		OriginalAmount:   o.Original,
+		AccountId:        o.AccountID,
 		CreatedAt:        o.CreatedAt,
 		UpdatedAt:        o.UpdatedAt,
 	}

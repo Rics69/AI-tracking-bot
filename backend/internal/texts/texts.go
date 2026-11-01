@@ -100,6 +100,12 @@ type Bot struct {
 	StreakMark      string `yaml:"streak_mark"`
 	MorningQuest    string `yaml:"morning_quest"`
 
+	MorningTasks   string `yaml:"morning_tasks"`
+	TaskReminder   string `yaml:"task_reminder"`
+	TaskDoneButton string `yaml:"task_done_button"`
+	TaskDone       string `yaml:"task_done"`
+	TaskDoneGoal   string `yaml:"task_done_goal"`
+
 	LevelNames         []string `yaml:"level_names"`
 	LevelConditions    []string `yaml:"level_conditions"`
 	LevelQuestions     []string `yaml:"level_questions"`

@@ -211,6 +211,7 @@ const (
 	ActJoin     = "chj"     // :challenge slug
 	ActLeave    = "chl"     // :challenge slug
 	ActLevelUp  = "lvlup"   // :level the user vouches for
+	ActTaskDone = "taskd"   // :task ID
 )
 
 // Service is the rules of the game.

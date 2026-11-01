@@ -323,3 +323,18 @@ func TestDueOn(t *testing.T) {
 		}
 	}
 }
+
+func TestForeignExpenseCountsAtItsRubleValue(t *testing.T) {
+	today := time.Date(2026, 11, 18, 0, 0, 0, 0, time.UTC)
+	n := decimal.NewFromInt
+	paid := n(5)
+	plan := Plan{Paydays: []int{5}}
+	income := ledger.Operation{Amount: n(26000), Category: ledger.CategorySalary, Date: time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)}
+	rub := ledger.Operation{Amount: n(500), Category: ledger.CategoryFood, Date: today, Currency: ledger.RUB}
+	usd := ledger.Operation{Amount: n(500), Category: ledger.CategoryFood, Date: today, Currency: ledger.USD, Original: &paid}
+	a := Compute(Input{Today: today, Plan: plan, Operations: []ledger.Operation{income, rub}})
+	b := Compute(Input{Today: today, Plan: plan, Operations: []ledger.Operation{income, usd}})
+	if !a.Limit.Equal(b.Limit) || !a.SpentToday.Equal(b.SpentToday) || !b.SpentToday.Equal(n(500)) {
+		t.Errorf("rubles = %+v, dollars = %+v", a, b)
+	}
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { PlusIcon, TargetIcon, Trash2Icon } from "lucide-react";
+import { PlusIcon, TargetIcon, Trash2Icon, ShareIcon } from "lucide-react";
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { ApiError, type Goal } from "@/api/client";
 import { useDeleteGoal, useDeposit, useGoals } from "@/api/queries";
 import { Panel, Pill, PillButton } from "@/components/kit";
+import { shareCard } from "@/components/game/quests-card";
 import { confirm } from "@/components/operations/operation-sheet";
 import { Sheet } from "@/components/ui/sheet";
 import { amountInput, parseAmount } from "@/lib/amount";
@@ -72,6 +73,14 @@ export function GoalRow({ goal: g, onDeposit, deletable }: { goal: Goal; onDepos
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {reached ? <Pill tone="success">накоплено</Pill> : <Pill>ещё {formatMoney(g.left)}</Pill>}
+          <button
+            type="button"
+            aria-label={`В сторис: ${g.title}`}
+            className="flex size-9 items-center justify-center rounded-full bg-muted"
+            onClick={() => void shareCard({ kind: "goal", goal_id: g.id })}
+          >
+            <ShareIcon className="size-4" />
+          </button>
           {deletable && (
             <button
               type="button"

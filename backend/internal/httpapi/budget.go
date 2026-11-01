@@ -20,6 +20,7 @@ type BudgetService interface {
 	Budget(ctx context.Context, userID int64, today time.Time) (*budget.Budget, error)
 
 	Goals(ctx context.Context, userID int64) ([]budget.Goal, error)
+	Goal(ctx context.Context, userID, id int64) (budget.Goal, error)
 	CreateGoal(ctx context.Context, g budget.Goal, today time.Time) (budget.Goal, error)
 	UpdateGoal(ctx context.Context, userID, id int64, p budget.GoalPatch, today time.Time) (budget.Goal, error)
 	DeleteGoal(ctx context.Context, userID, id int64) error

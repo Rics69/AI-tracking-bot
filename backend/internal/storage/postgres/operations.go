@@ -14,13 +14,16 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 )
 
-const operationColumns = `id, user_id, amount, category, occurred_on, COALESCE(comment, ''), regular_payment_id, created_at, updated_at`
+const operationColumns = `id, user_id, amount, category, occurred_on, COALESCE(comment, ''), regular_payment_id, currency, original_amount, account_id, created_at, updated_at`
 
 // pgForeignKeyViolation is the SQLSTATE of a foreign key violation.
 const pgForeignKeyViolation = "23503"
 
 // regularPaymentFKey links an operation to a regular payment of its owner.
 const regularPaymentFKey = "operations_regular_payment_fkey"
+
+// accountFKey links an operation to an account of its owner.
+const accountFKey = "operations_account_fkey"
 
 // OperationRepository implements ledger.Repository.
 type OperationRepository struct {
@@ -35,10 +38,11 @@ func NewOperationRepository(pool *pgxpool.Pool) *OperationRepository {
 
 func (r *OperationRepository) Create(ctx context.Context, e ledger.Operation) (ledger.Operation, error) {
 	row := r.pool.QueryRow(ctx, `
-		INSERT INTO operations (user_id, kind, amount, category, occurred_on, comment, regular_payment_id)
-		VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''), $7)
+		INSERT INTO operations (user_id, kind, amount, category, occurred_on, comment, regular_payment_id,
+		                        currency, original_amount, account_id)
+		VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''), $7, $8, $9, $10)
 		RETURNING `+operationColumns,
-		e.UserID, e.Kind(), e.Amount, e.Category, e.Date, e.Comment, e.RegularPaymentID)
+		e.UserID, e.Kind(), e.Amount, e.Category, e.Date, e.Comment, e.RegularPaymentID, e.Currency, e.Original, e.AccountID)
 	created, err := scanOperation(row)
 	if err != nil {
 		return ledger.Operation{}, mapWriteError("create operation", err)
@@ -67,14 +71,16 @@ func (r *OperationRepository) Update(ctx context.Context, s ledger.Scope, e ledg
 		// expense to a stranger. $1 is the family ID added by scopeWhere.
 		w.add("EXISTS (SELECT 1 FROM users WHERE family_id = $1 AND telegram_id = ?)", e.UserID)
 	}
-	w.args = append(w.args, e.UserID, e.Kind(), e.Amount, e.Category, e.Date, e.Comment, e.RegularPaymentID)
+	w.args = append(w.args, e.UserID, e.Kind(), e.Amount, e.Category, e.Date, e.Comment, e.RegularPaymentID,
+		e.Currency, e.Original, e.AccountID)
 	n := len(w.args)
 	query := fmt.Sprintf(`
 		UPDATE operations
 		SET user_id = $%d, kind = $%d, amount = $%d, category = $%d, occurred_on = $%d,
-		    comment = NULLIF($%d, ''), regular_payment_id = $%d, updated_at = now()`+w.sql()+`
+		    comment = NULLIF($%d, ''), regular_payment_id = $%d,
+		    currency = $%d, original_amount = $%d, account_id = $%d, updated_at = now()`+w.sql()+`
 		RETURNING `+operationColumns,
-		n-6, n-5, n-4, n-3, n-2, n-1, n)
+		n-9, n-8, n-7, n-6, n-5, n-4, n-3, n-2, n-1, n)
 	updated, err := scanOperation(r.pool.QueryRow(ctx, query, w.args...))
 	if err != nil {
 		return ledger.Operation{}, mapWriteError("update operation", err)
@@ -180,7 +186,8 @@ func (r *OperationRepository) Aggregate(ctx context.Context, s ledger.Scope, f l
 
 func scanOperation(row pgx.Row) (ledger.Operation, error) {
 	var e ledger.Operation
-	err := row.Scan(&e.ID, &e.UserID, &e.Amount, &e.Category, &e.Date, &e.Comment, &e.RegularPaymentID, &e.CreatedAt, &e.UpdatedAt)
+	err := row.Scan(&e.ID, &e.UserID, &e.Amount, &e.Category, &e.Date, &e.Comment, &e.RegularPaymentID,
+		&e.Currency, &e.Original, &e.AccountID, &e.CreatedAt, &e.UpdatedAt)
 	return e, err
 }
 
@@ -192,6 +199,9 @@ func mapWriteError(op string, err error) error {
 	if errors.As(err, &pgErr) && pgErr.Code == pgForeignKeyViolation {
 		if pgErr.ConstraintName == regularPaymentFKey {
 			return &ledger.ValidationError{Field: "regular_payment_id", Message: "no such regular payment"}
+		}
+		if pgErr.ConstraintName == accountFKey {
+			return &ledger.ValidationError{Field: "account_id", Message: "no such account"}
 		}
 		return ledger.ErrUnknownUser
 	}

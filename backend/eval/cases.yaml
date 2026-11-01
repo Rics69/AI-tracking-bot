@@ -65,6 +65,72 @@
     tools: [get_summary]
     reply_contains: ["79650"]
 
+# ── Currencies, accounts, tasks ────────────────────────────────────────────
+# Rates of the eval: 1 USD = 100 ₽, 1 EUR = 110 ₽.
+
+- name: трата в долларах
+  tags: [money]
+  turns: ["кофе 5 долларов"]
+  expect:
+    operations:
+      - { amount: 500, category: food, date: today, comment: кофе }
+    reply_contains: ["500"]
+
+- name: трата в евро вчера
+  tags: [money, dates]
+  turns: ["такси 10 евро вчера"]
+  expect:
+    operations:
+      - { amount: 1100, category: transport, date: yesterday, comment: такси }
+
+- name: оплата наличкой
+  tags: [money]
+  accounts: ["Наличные"]
+  turns: ["кофе 350, оплатил наличкой"]
+  expect:
+    tools: [add_expense]
+    operations:
+      - { amount: 350, category: food, date: today, comment: кофе }
+
+- name: перевод между счетами не трата
+  tags: [money]
+  accounts: ["Накопительный"]
+  turns: ["перевёл с основного на накопительный 5000"]
+  expect:
+    tools: [add_transfer]
+    transfers: 1
+    unchanged: true
+
+- name: перевод человеку это трата
+  tags: [money]
+  accounts: ["Накопительный"]
+  turns: ["перевёл маме 2000"]
+  expect:
+    tools: [add_expense]
+    transfers: 0
+
+- name: задача на завтра
+  tags: [tasks]
+  turns: ["напомни завтра оплатить интернет"]
+  expect:
+    tools: [add_task]
+    tasks: ["интернет"]
+    unchanged: true
+
+- name: задача не запрещена как будущая трата
+  tags: [tasks]
+  turns: ["запланируй на понедельник позвонить в банк"]
+  expect:
+    tools: [add_task]
+    tasks: ["банк"]
+
+- name: что запланировано
+  tags: [tasks]
+  turns: ["напомни завтра оплатить интернет", "что у меня запланировано на неделю?"]
+  expect:
+    tools: [list_tasks]
+    reply_contains: ["интернет"]
+
 # ── Adding ──────────────────────────────────────────────────────────────────
 
 - name: простая трата

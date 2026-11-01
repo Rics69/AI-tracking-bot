@@ -16,6 +16,8 @@ import (
 
 	"github.com/shopspring/decimal"
 	"golang.org/x/text/encoding/charmap"
+
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 )
 
 const (
@@ -39,7 +41,16 @@ type Store interface {
 	Save(ctx context.Context, rates []Rate) error
 	// Latest returns the newest rate of each code that has one.
 	Latest(ctx context.Context, codes []string) ([]Rate, error)
+	// Dates lists the days with a rate of a code from a date on.
+	Dates(ctx context.Context, code string, from time.Time) ([]time.Time, error)
 }
+
+// Backfill reaches this far back on start: an operation may be dated to a past
+// day, and it is converted at the rate of that day.
+const backfillDays = 30
+
+// ErrNoRate: nothing is known about a currency yet.
+var ErrNoRate = ledger.ErrNoRate
 
 // Updater fetches the rates. Requests go directly: the Telegram proxy leads
 // abroad, and the Bank of Russia answers from inside the country.
@@ -66,8 +77,33 @@ func (u *Updater) Update(ctx context.Context) {
 	}
 }
 
-func (u *Updater) fetch(ctx context.Context) ([]Rate, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.url, nil)
+// Backfill fetches the working days missing from the last month. On a day
+// without a rate the Bank of Russia answers with the latest one before it.
+func (u *Updater) Backfill(ctx context.Context, today time.Time) {
+	known, err := u.store.Dates(ctx, Codes[0], today.AddDate(0, 0, -backfillDays))
+	if err != nil {
+		u.log.WarnContext(ctx, "backfill exchange rates", "err", err)
+		return
+	}
+	for d := today.AddDate(0, 0, -backfillDays); d.Before(today); d = d.AddDate(0, 0, 1) {
+		if d.Weekday() == time.Sunday || d.Weekday() == time.Monday || slices.ContainsFunc(known, d.Equal) {
+			continue // the rate of a Saturday covers Sunday and Monday
+		}
+		items, err := u.fetchURL(ctx, u.url+"?date_req="+d.Format("02/01/2006"))
+		if err == nil {
+			err = u.store.Save(ctx, items)
+		}
+		if err != nil {
+			u.log.WarnContext(ctx, "backfill exchange rates", "date", d.Format(time.DateOnly), "err", err)
+			return
+		}
+	}
+}
+
+func (u *Updater) fetch(ctx context.Context) ([]Rate, error) { return u.fetchURL(ctx, u.url) }
+
+func (u *Updater) fetchURL(ctx context.Context, url string) ([]Rate, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}

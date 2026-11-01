@@ -3,9 +3,12 @@
 import {
   ArrowDownLeftIcon,
   ArrowUpRightIcon,
+  CalendarCheckIcon,
   CalendarDaysIcon,
   ChartPieIcon,
+  LandmarkIcon,
   ListIcon,
+  type LucideIcon,
   WalletIcon,
 } from "lucide-react";
 import Image from "next/image";
@@ -16,7 +19,9 @@ import type { SavikState } from "@/api/client";
 import { useMe, useRecentOperations, useSavik, useSummary } from "@/api/queries";
 import { GoalsPanel } from "@/components/budget/goals";
 import { LimitCard } from "@/components/budget/limit-card";
-import { Card, Panel, Pill, StatCard } from "@/components/kit";
+import { QuestsCard } from "@/components/game/quests-card";
+import { RatesWidget } from "@/components/game/rates-widget";
+import { Card, IconCircle, Panel, Pill, StatCard } from "@/components/kit";
 import { CategoryColors, Distribution } from "@/components/money/distribution";
 import { OperationList } from "@/components/operations/operation-list";
 import { useOperationSheet } from "@/components/operations/sheet-context";
@@ -76,19 +81,19 @@ export function HomeScreen() {
           tone="soft"
           icon={ArrowDownLeftIcon}
           label="Доходы"
-          value={m ? formatMoney(m.income.sum) : <Skeleton className="h-7 w-20" />}
+          value={m ? formatMoney(Math.round(m.income.sum)) : <Skeleton className="h-7 w-20" />}
           pill={<Pill tone="soft">{count(m?.income.count, ["поступление", "поступления", "поступлений"])}</Pill>}
         />
         <StatCard
           icon={ArrowUpRightIcon}
           label="Расходы"
-          value={m ? formatMoney(m.expense.sum) : <Skeleton className="h-7 w-20" />}
+          value={m ? formatMoney(Math.round(m.expense.sum)) : <Skeleton className="h-7 w-20" />}
           pill={<Pill>{count(m?.expense.count, ["трата", "траты", "трат"])}</Pill>}
         />
         <StatCard
           icon={CalendarDaysIcon}
           label="Сегодня"
-          value={today.data ? formatMoney(today.data.expense.sum) : <Skeleton className="h-7 w-16" />}
+          value={today.data ? formatMoney(Math.round(today.data.expense.sum)) : <Skeleton className="h-7 w-16" />}
           pill={
             <Pill tone={today.data?.expense.count ? "neutral" : "success"}>
               {today.data?.expense.count ? count(today.data.expense.count, ["трата", "траты", "трат"]) : "без трат"}
@@ -96,6 +101,15 @@ export function HomeScreen() {
           }
         />
       </div>
+
+      <RatesWidget />
+
+      <div className="grid grid-cols-2 gap-3">
+        <QuickLink href="/accounts" icon={LandmarkIcon} label="Счета" />
+        <QuickLink href="/calendar" icon={CalendarCheckIcon} label="Календарь" />
+      </div>
+
+      <QuestsCard />
 
       <GoalsPanel />
 
@@ -118,8 +132,20 @@ export function HomeScreen() {
   );
 }
 
+function QuickLink({ href, icon, label }: { href: string; icon: LucideIcon; label: string }) {
+  return (
+    <Link href={href} className="block">
+      <Card className="flex items-center gap-3 p-3 transition-transform active:scale-[0.98]">
+        <IconCircle icon={icon} />
+        <span className="text-[15px] font-medium">{label}</span>
+      </Card>
+    </Link>
+  );
+}
+
+// The cards are narrow: whole rubles, a foreign amount brings kopecks with it.
 function money(v: number) {
-  return (v < 0 ? "−" : "") + formatMoney(Math.abs(v));
+  return (v < 0 ? "−" : "") + formatMoney(Math.abs(Math.round(v)));
 }
 
 function count(n: number | undefined, forms: [string, string, string]) {

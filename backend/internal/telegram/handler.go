@@ -20,6 +20,7 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/flow"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/game"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/stats"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/tasks"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
@@ -73,6 +74,11 @@ type Family interface {
 	SetBlocked(ctx context.Context, telegramID int64, on bool) (user.User, error)
 }
 
+// TaskDoer marks tasks done; *tasks.Service implements it.
+type TaskDoer interface {
+	Done(ctx context.Context, userID, id int64, today, at time.Time) (tasks.Task, error)
+}
+
 // Meter enforces daily limits and the token package; *usage.Meter implements it.
 type Meter interface {
 	Allow(ctx context.Context, userID int64, day time.Time) (bool, error)
@@ -103,6 +109,7 @@ type Config struct {
 	Flows        flow.Store // dialogs on buttons; nil, or no Budget: they are off
 	Budget       Budget
 	Game         *game.Service // quests, levels, challenges; nil: off
+	Tasks        TaskDoer      // the button of a reminder
 	BotUsername  string        // for referral links; set once the bot knows its name
 
 	PackageTokens int64     // the token package, for /stats; 0: none

@@ -52,7 +52,7 @@ export function BottomNav() {
             haptic.tap();
             sheet.openNew();
           }}
-          className="mx-1 flex size-12 items-center justify-center rounded-full bg-soft text-soft-foreground transition-transform active:scale-95"
+          className="mx-1 flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground transition-transform active:scale-95"
         >
           <PlusIcon className="size-6" strokeWidth={2.25} />
         </button>

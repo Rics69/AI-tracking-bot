@@ -28,6 +28,9 @@ tags:
   - name: operations
   - name: budget
   - name: family
+  - name: accounts
+  - name: tasks
+  - name: game
   - name: categories
 
 paths:
@@ -91,6 +94,281 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+
+  /accounts:
+    get:
+      operationId: listAccounts
+      tags: [accounts]
+      summary: Счета с остатками
+      responses:
+        '200':
+          description: Счета и итог в рублях
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: createAccount
+      tags: [accounts]
+      summary: Открыть счёт
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountCreate' }
+      responses:
+        '201':
+          description: Счёт
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /accounts/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    patch:
+      operationId: updateAccount
+      tags: [accounts]
+      summary: Изменить счёт или поправить остаток
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountUpdate' }
+      responses:
+        '200':
+          description: Счёт
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /transfers:
+    get:
+      operationId: listTransfers
+      tags: [accounts]
+      summary: Переводы между своими счетами
+      responses:
+        '200':
+          description: Новые сверху
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TransferList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: createTransfer
+      tags: [accounts]
+      summary: Записать перевод
+      description: Перевод не трата и не доход, в сводки и лимит не попадает. Покупка валюты — тоже перевод.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TransferCreate' }
+      responses:
+        '201':
+          description: Перевод
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Transfer' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /transfers/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    delete:
+      operationId: deleteTransfer
+      tags: [accounts]
+      summary: Отменить перевод
+      responses:
+        '204': { description: Удалён }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /rates:
+    get:
+      operationId: listRates
+      tags: [me]
+      summary: Последние курсы ЦБ
+      description: Пустой список, пока курсов нет. Источник недоступен — приходит последний известный курс с его датой.
+      responses:
+        '200':
+          description: Курсы
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RateList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /tasks:
+    get:
+      operationId: listTasks
+      tags: [tasks]
+      summary: Задачи за период
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: По дням; повторяющаяся задача приходит на каждый свой день
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: createTask
+      tags: [tasks]
+      summary: Запланировать задачу
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskCreate' }
+      responses:
+        '201':
+          description: Задача
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Task' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /tasks/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    patch:
+      operationId: updateTask
+      tags: [tasks]
+      summary: Изменить задачу
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskUpdate' }
+      responses:
+        '200':
+          description: Задача
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Task' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: deleteTask
+      tags: [tasks]
+      summary: Удалить задачу
+      responses:
+        '204': { description: Удалена }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /tasks/{id}/done:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    post:
+      operationId: doneTask
+      tags: [tasks]
+      summary: Отметить сделанной
+      description: Повторяющаяся задача переходит на следующую дату.
+      responses:
+        '200':
+          description: Задача
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Task' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /game:
+    get:
+      operationId: getGame
+      tags: [game]
+      summary: Опыт, уровень, серия и квесты на сегодня
+      responses:
+        '200':
+          description: Состояние игрока
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GameProfile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /quests/{slug}/done:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: doneQuest
+      tags: [game]
+      summary: Отметить ручной квест сделанным
+      description: Автоматические квесты код засчитывает сам.
+      responses:
+        '200':
+          description: Состояние игрока
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GameProfile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /cards:
+    post:
+      operationId: createCard
+      tags: [game]
+      summary: Ссылка на карточку для истории
+      description: |
+        Telegram забирает картинку истории сам, поэтому заголовок `Authorization` до
+        неё не дойдёт. Метод возвращает короткоживущую подписанную ссылку; сама картинка
+        отдаётся по ней без входа и не содержит денег.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CardRequest' }
+      responses:
+        '200':
+          description: Ссылка
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CardLink' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /operations:
     get:
@@ -696,6 +974,187 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    Currency:
+      type: string
+      enum: [RUB, USD, EUR]
+
+    Account:
+      type: object
+      required: [id, name, kind, currency, is_default, balance, balance_rub]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string, example: Наличные }
+        kind: { $ref: '#/components/schemas/AccountKind' }
+        currency: { $ref: '#/components/schemas/Currency' }
+        is_default: { type: boolean, description: Сюда попадают операции без счёта }
+        balance: { $ref: '#/components/schemas/Money' }
+        balance_rub:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: Остаток в рублях по последнему курсу
+
+    AccountKind:
+      type: string
+      enum: [card, cash, savings, foreign, other]
+
+    AccountList:
+      type: object
+      required: [items, total_rub]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Account' }
+        total_rub: { $ref: '#/components/schemas/Money' }
+
+    AccountCreate:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, maxLength: 40 }
+        kind: { $ref: '#/components/schemas/AccountKind' }
+        currency: { $ref: '#/components/schemas/Currency' }
+        balance:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: Сколько на счёте сейчас
+
+    AccountUpdate:
+      type: object
+      description: Передаются только изменяемые поля.
+      properties:
+        name: { type: string, maxLength: 40 }
+        kind: { $ref: '#/components/schemas/AccountKind' }
+        balance:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: Сколько на счёте сейчас. Правка не считается тратой или доходом
+        archived: { type: boolean }
+
+    Transfer:
+      type: object
+      required: [id, from_account_id, to_account_id, amount_from, amount_to, date]
+      properties:
+        id: { type: integer, format: int64 }
+        from_account_id: { type: integer, format: int64 }
+        to_account_id: { type: integer, format: int64 }
+        amount_from: { $ref: '#/components/schemas/Money' }
+        amount_to: { $ref: '#/components/schemas/Money' }
+        date: { type: string, format: date }
+        comment: { type: string }
+
+    TransferCreate:
+      type: object
+      required: [from_account_id, to_account_id, amount_from]
+      properties:
+        from_account_id: { type: integer, format: int64 }
+        to_account_id: { type: integer, format: int64 }
+        amount_from: { $ref: '#/components/schemas/Money' }
+        amount_to:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: Нужна, если у счетов разная валюта
+        date: { type: string, format: date }
+        comment: { type: string, maxLength: 200 }
+
+    TransferList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Transfer' }
+
+    Rate:
+      type: object
+      required: [code, value, date]
+      properties:
+        code: { $ref: '#/components/schemas/Currency' }
+        value: { $ref: '#/components/schemas/Money' }
+        date: { type: string, format: date, description: День курса ЦБ }
+
+    RateList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Rate' }
+
+    TaskRepeat:
+      type: string
+      enum: [none, daily, weekdays, weekly, monthly]
+
+    Task:
+      type: object
+      required: [id, title, date, repeat, done]
+      properties:
+        id: { type: integer, format: int64 }
+        title: { type: string }
+        date: { type: string, format: date, description: 'День в календаре; у повторяющейся задачи таких записей несколько' }
+        time: { type: string, example: '09:30' }
+        repeat: { $ref: '#/components/schemas/TaskRepeat' }
+        goal_id: { type: integer, format: int64 }
+        done: { type: boolean }
+
+    TaskList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Task' }
+
+    TaskCreate:
+      type: object
+      required: [title, date]
+      properties:
+        title: { type: string, maxLength: 200 }
+        date: { type: string, format: date }
+        time: { type: string, description: 'ЧЧ:ММ; нет — без напоминания' }
+        repeat: { $ref: '#/components/schemas/TaskRepeat' }
+        goal_id: { type: integer, format: int64 }
+
+    TaskUpdate:
+      type: object
+      description: Передаются только изменяемые поля. Пустой `time` убирает напоминание.
+      properties:
+        title: { type: string, maxLength: 200 }
+        date: { type: string, format: date }
+        time: { type: string }
+        repeat: { $ref: '#/components/schemas/TaskRepeat' }
+
+    Quest:
+      type: object
+      required: [slug, title, text, xp, manual, done]
+      properties:
+        slug: { type: string }
+        title: { type: string }
+        text: { type: string }
+        xp: { type: integer }
+        manual: { type: boolean, description: Засчитывается кнопкой; иначе код проверяет сам }
+        done: { type: boolean }
+
+    GameProfile:
+      type: object
+      required: [xp, level, streak, best_streak, quests]
+      properties:
+        xp: { type: integer }
+        level: { type: integer, minimum: 0, maximum: 5 }
+        streak: { type: integer, description: Дней подряд на сегодня }
+        best_streak: { type: integer }
+        quests:
+          type: array
+          items: { $ref: '#/components/schemas/Quest' }
+
+    CardRequest:
+      type: object
+      required: [kind]
+      properties:
+        kind: { type: string, enum: [goal, level, streak] }
+        goal_id: { type: integer, format: int64, description: Для `goal` }
+
+    CardLink:
+      type: object
+      required: [url, text]
+      properties:
+        url: { type: string, description: 'Адрес картинки: действует час, без денег на карточке' }
+        text: { type: string, description: Подпись к истории }
     ClientEvent:
       type: object
       required: [name]
@@ -769,7 +1228,7 @@ components:
 
     Operation:
       type: object
-      required: [id, user_id, kind, amount, category, date, created_at, updated_at]
+      required: [id, user_id, kind, amount, category, date, currency, created_at, updated_at]
       properties:
         id: { type: integer, format: int64, example: 42 }
         user_id: { type: integer, format: int64, description: Telegram ID владельца, example: 123456789 }
@@ -782,6 +1241,11 @@ components:
           type: integer
           format: int64
           description: Регулярный платёж, который оплачен этой тратой
+        currency: { $ref: '#/components/schemas/Currency' }
+        original_amount:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: 'Сколько заплачено в валюте `currency`; `amount` всегда в рублях. Нет — операция в рублях'
+        account_id: { type: integer, format: int64, description: Счёт; нет — счёт по умолчанию }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
@@ -789,7 +1253,11 @@ components:
       type: object
       required: [amount, category]
       properties:
-        amount: { $ref: '#/components/schemas/Money' }
+        amount:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: В валюте `currency`
+        currency: { $ref: '#/components/schemas/Currency' }
+        account_id: { type: integer, format: int64 }
         category: { $ref: '#/components/schemas/Category' }
         date:
           type: string
@@ -801,7 +1269,11 @@ components:
       type: object
       description: Передаются только изменяемые поля. Пустой `comment` удаляет комментарий.
       properties:
-        amount: { $ref: '#/components/schemas/Money' }
+        amount:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: В валюте операции
+        currency: { $ref: '#/components/schemas/Currency' }
+        account_id: { type: integer, format: int64 }
         category: { $ref: '#/components/schemas/Category' }
         date: { type: string, format: date }
         comment: { type: string, maxLength: 500 }

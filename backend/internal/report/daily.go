@@ -17,6 +17,7 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/rates"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/savik"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/tasks"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
@@ -45,6 +46,12 @@ type MorningExtras interface {
 	Morning(ctx context.Context, m user.User, today time.Time) (MorningExtra, error)
 }
 
+// MorningTasks is what is planned; *tasks.Service implements it.
+type MorningTasks interface {
+	Users(ctx context.Context, day time.Time) ([]int64, error)
+	Today(ctx context.Context, userID int64, day time.Time) ([]tasks.Task, error)
+}
+
 // Daily sends the morning message: today's limit for those who set a payday,
 // the main goal, regular payments due tomorrow and exchange rates. Like the
 // weekly report, the text is built by code from a phrase bank, so the numbers
@@ -59,11 +66,13 @@ type Daily struct {
 	// with its buttons; both optional.
 	Extras   MorningExtras
 	SendRows ActionSend
-	t        texts.Bot
-	loc      *time.Location // timezone of users who have not chosen one
-	now      func() time.Time
-	pick     func(n int) int // random phrase index
-	log      *slog.Logger
+	// Tasks adds what is planned for the day; optional.
+	Tasks MorningTasks
+	t     texts.Bot
+	loc   *time.Location // timezone of users who have not chosen one
+	now   func() time.Time
+	pick  func(n int) int // random phrase index
+	log   *slog.Logger
 }
 
 func NewDaily(budgets Budgets, members Members, runs Runs, r Rates, send SendFunc, t texts.Bot, loc *time.Location, log *slog.Logger) *Daily {
@@ -97,6 +106,13 @@ func (d *Daily) Tick(ctx context.Context) {
 		more, err := d.Extras.Reminded(ctx)
 		if err != nil {
 			d.log.ErrorContext(ctx, "daily reminder: list challenge users", "err", err)
+		}
+		ids = append(ids, more...)
+	}
+	if d.Tasks != nil {
+		more, err := d.Tasks.Users(ctx, dateOfTime(d.now().In(d.loc)))
+		if err != nil {
+			d.log.ErrorContext(ctx, "daily reminder: list task users", "err", err)
 		}
 		ids = append(ids, more...)
 	}
@@ -236,6 +252,15 @@ func (d *Daily) Build(ctx context.Context, m user.User, today time.Time) (string
 	for _, p := range payments {
 		if p.DueOn(tomorrow) {
 			lines = append(lines, texts.Fill(d.t.ReminderPayment, "title", p.Title, "amount", Money(p.Amount)))
+		}
+	}
+	if d.Tasks != nil {
+		list, err := d.Tasks.Today(ctx, userID, today)
+		if err != nil {
+			d.log.WarnContext(ctx, "daily reminder: tasks", "user_id", userID, "err", err)
+		}
+		if len(list) > 0 {
+			lines = append(lines, taskLine(d.t, list))
 		}
 	}
 	var extra MorningExtra

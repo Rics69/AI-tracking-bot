@@ -51,7 +51,7 @@ function Ready({ b }: { b: BudgetToday }) {
         over={over || broke}
         label={`Потрачено ${formatMoney(b.spent_today)} из ${formatMoney(b.limit)}`}
       >
-        <span className="text-[30px] leading-none font-medium tracking-tight tabular-nums">
+        <span className="text-[30px] leading-none font-medium tracking-tight tabular-nums text-gold">
           {over ? "−" + formatMoney(-b.left) : formatMoney(Math.max(b.left, 0))}
         </span>
         <span className={cn("text-[13px]", over || broke ? "text-destructive" : "text-muted-foreground")}>

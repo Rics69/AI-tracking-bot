@@ -7,25 +7,22 @@ import { formatMoney, formatShare } from "@/lib/format";
 
 // Expense categories keep their colour on every screen and under every filter:
 // colour follows the category, never its rank. The validated categorical
-// palette in its fixed order (light / dark steps), checked on the card
-// surfaces (#ffffff / #161616): adjacent CVD ΔE ≥ 8.4, normal-vision ≥ 19.3.
-// Three light steps are below 3:1 against white, so every segment also has a
-// labelled legend row with its amount.
-const CATEGORY_COLORS: Partial<Record<Category, { light: string; dark: string }>> = {
-  food: { light: "#2a78d6", dark: "#3987e5" },
-  transport: { light: "#eb6834", dark: "#d95926" },
-  housing: { light: "#1baf7a", dark: "#199e70" },
-  entertainment: { light: "#eda100", dark: "#c98500" },
-  health: { light: "#e87ba4", dark: "#d55181" },
-  shopping: { light: "#008300", dark: "#008300" },
-  other: { light: "#6250d6", dark: "#9085e9" },
+// palette in its fixed order, checked on the card surface (#161616): adjacent
+// CVD ΔE ≥ 8.4, normal-vision ≥ 19.3.
+const CATEGORY_COLORS: Partial<Record<Category, string>> = {
+  food: "#3987e5",
+  transport: "#d95926",
+  housing: "#199e70",
+  entertainment: "#c98500",
+  health: "#d55181",
+  shopping: "#008300",
+  other: "#9085e9",
 };
 
-/** Defines --cat-<code> for light and dark: rendered once per screen that shows categories. */
+/** Defines --cat-<code>: rendered once per screen that shows categories. */
 export function CategoryColors() {
-  const light = Object.entries(CATEGORY_COLORS).map(([c, v]) => `--cat-${c}: ${v.light};`).join(" ");
-  const dark = Object.entries(CATEGORY_COLORS).map(([c, v]) => `--cat-${c}: ${v.dark};`).join(" ");
-  return <style>{`:root { ${light} } .dark { ${dark} }`}</style>;
+  const colors = Object.entries(CATEGORY_COLORS).map(([c, v]) => `--cat-${c}: ${v};`).join(" ");
+  return <style>{`:root { ${colors} }`}</style>;
 }
 
 /**
