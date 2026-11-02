@@ -9,6 +9,7 @@ import (
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/access"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/accounts"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/debts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/game"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/library"
@@ -32,6 +33,7 @@ type Deps struct {
 	Tasks    *tasks.Service
 	Game     *game.Service
 	Access   *access.Service
+	Debts    *debts.Service
 	Library  library.Catalog
 	Rates    RateSource
 	// Texts and BotName give cards their wording and the address of the bot.

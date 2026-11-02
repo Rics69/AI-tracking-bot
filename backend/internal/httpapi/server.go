@@ -9,6 +9,7 @@ import (
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/access"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/accounts"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/debts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/game"
@@ -73,6 +74,7 @@ type Server struct {
 	tasks      *tasks.Service
 	game       *game.Service
 	access     *access.Service
+	debts      *debts.Service
 	library    library.Catalog
 	rates      RateSource
 	texts      texts.Bot
@@ -90,7 +92,7 @@ var _ StrictServerInterface = (*Server)(nil)
 // NewServer builds the API from its dependencies.
 func NewServer(d Deps) *Server {
 	s := &Server{ledger: d.Ledger, family: d.Family, budget: d.Budget, events: d.Events, loc: d.Location,
-		accounts: d.Accounts, tasks: d.Tasks, game: d.Game, access: d.Access, library: d.Library, rates: d.Rates, texts: d.Texts, botName: d.BotName}
+		accounts: d.Accounts, tasks: d.Tasks, game: d.Game, access: d.Access, debts: d.Debts, library: d.Library, rates: d.Rates, texts: d.Texts, botName: d.BotName}
 	if d.Auth != nil {
 		s.cardSecret = d.Auth.BotToken
 	}

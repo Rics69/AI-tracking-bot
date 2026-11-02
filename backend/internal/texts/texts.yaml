@@ -47,6 +47,7 @@ help: |-
   /challenge — челленджи
   /review — заявка на разбор в ролике
   /club — клуб
+  /debts — долги и чистый капитал
   /app — открыть приложение
   /family — семья: вести расходы вместе
   /settings — итоги недели и часовой пояс
@@ -132,11 +133,23 @@ dream_realistic: реально
 dream_ambitious: амбициозно
 dream_stretch: нужен больший доход или срок
 dream_all_there: "{title} за {price}: вся сумма уже отложена."
-dream_boost_note: Если доход вырастет на 10%. Идеи, как его поднять, — в рубрике «Апгрейд дохода» в нашем Telegram-канале.
+dream_boost_note: Если доход вырастет на 10%. Идеи, как его поднять, — в рубрике «Апгрейд дохода» в канале @savepoint_rpg.
 dream_make_goal: Сделать целью
 dream_boost_button: А если доход +10%?
 dream_later: Не сейчас
 dream_goal_saved: Цель «{title}» создана. Прогресс виден в приложении и в утреннем сообщении.
+
+# Долги и капитал. {total}, {assets}, {net}; {name}, {balance}, {rate} — строка долга,
+# {debts} — строки. Это учёт, советов здесь нет.
+debts_none: "Долгов нет. Чтобы добавить, напишите, например: кредитка 150000 под 29,9, минимальный 4500."
+debts_view: |-
+  Чистый капитал: {net}
+  На счетах {assets}, долгов {total}
+
+  {debts}
+
+  План погашения — в приложении. Это учёт, а не рекомендация.
+debts_line: "• {name}: {balance}, {rate}% годовых"
 
 # Квесты, опыт и серия. {title}, {text}, {xp} — квест, {level}, {name} — уровень,
 # {days} — «7 дней», {streak} — то же для текущей серии.
@@ -435,6 +448,9 @@ reminder_rates: "{rates}, курс ЦБ на {date}"
 # Одно сообщение после 30 дней без активности, дальше тишина.
 comeback: "Давно не виделись. Вернуться к учёту? Напишите, например: кофе 350."
 comeback_goal: "Вернуться к цели «{title}»? Накоплено {percent}%."
+# За 3 дня до платежа по долгу. {name}, {amount} — минимальный платёж, {days}.
+reminder_debt: "Через {days} дня платёж по долгу «{name}»: {amount}."
+debt_first_closed: "Первый долг закрыт. +{xp} опыта."
 # Прогресс цели: на 25, 50 и 75%, и отдельно при достижении.
 goal_progress: "Цель «{title}»: {percent}%, {saved} из {target}."
 goal_reached: "Цель «{title}» накоплена: {target}."
@@ -486,6 +502,7 @@ command_level: Мой уровень
 command_challenge: Челленджи
 command_review: Заявка на разбор
 command_club: Клуб
+command_debts: Долги и капитал
 command_family: Семья
 command_settings: Настройки
 command_privacy: Как хранятся данные

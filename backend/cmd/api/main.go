@@ -16,6 +16,7 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/accounts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/config"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/debts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/game"
@@ -98,6 +99,7 @@ func run() error {
 		Tasks:    tasks.NewService(postgres.NewTaskRepository(pool)),
 		Game:     play,
 		Access:   club,
+		Debts:    debts.NewService(postgres.NewDebtRepository(pool), operations, money),
 		Library:  guides,
 		Rates:    rateStore,
 		Texts:    botTexts,

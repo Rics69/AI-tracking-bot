@@ -649,7 +649,8 @@ func Commands(t texts.Bot, withApp bool) []models.BotCommand {
 		models.BotCommand{Command: "level", Description: t.CommandLevel},
 		models.BotCommand{Command: "challenge", Description: t.CommandChallenge},
 		models.BotCommand{Command: "review", Description: t.CommandReview},
-		models.BotCommand{Command: "club", Description: t.CommandClub})
+		models.BotCommand{Command: "club", Description: t.CommandClub},
+		models.BotCommand{Command: "debts", Description: t.CommandDebts})
 	return append(commands, []models.BotCommand{
 		{Command: "family", Description: t.CommandFamily},
 		{Command: "settings", Description: t.CommandSettings},

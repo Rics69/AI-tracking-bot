@@ -66,8 +66,9 @@ type Daily struct {
 	// with its buttons; both optional.
 	Extras   MorningExtras
 	SendRows ActionSend
-	// Tasks adds what is planned for the day; optional.
+	// Tasks adds what is planned for the day, Debts the payments coming up; optional.
 	Tasks MorningTasks
+	Debts MorningDebts
 	t     texts.Bot
 	loc   *time.Location // timezone of users who have not chosen one
 	now   func() time.Time
@@ -113,6 +114,13 @@ func (d *Daily) Tick(ctx context.Context) {
 		more, err := d.Tasks.Users(ctx, dateOfTime(d.now().In(d.loc)))
 		if err != nil {
 			d.log.ErrorContext(ctx, "daily reminder: list task users", "err", err)
+		}
+		ids = append(ids, more...)
+	}
+	if d.Debts != nil {
+		more, err := d.Debts.Users(ctx)
+		if err != nil {
+			d.log.ErrorContext(ctx, "daily reminder: list debt users", "err", err)
 		}
 		ids = append(ids, more...)
 	}
@@ -261,6 +269,15 @@ func (d *Daily) Build(ctx context.Context, m user.User, today time.Time) (string
 		}
 		if len(list) > 0 {
 			lines = append(lines, taskLine(d.t, list))
+		}
+	}
+	if d.Debts != nil {
+		list, err := d.Debts.DueOn(ctx, userID, today.AddDate(0, 0, debtNoticeDays))
+		if err != nil {
+			d.log.WarnContext(ctx, "daily reminder: debts", "user_id", userID, "err", err)
+		}
+		if len(list) > 0 {
+			lines = append(lines, debtLine(d.t, list))
 		}
 	}
 	var extra MorningExtra

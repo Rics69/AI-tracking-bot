@@ -55,6 +55,7 @@ const (
 	reasonChallenge = "challenge"
 	reasonFinish    = "finish"
 	reasonReferral  = "referral"
+	reasonDebt      = "debt"
 	reasonFreeze    = "freeze" // no experience: the key keeps it to once a week
 )
 
@@ -534,6 +535,15 @@ func (s *Service) Touch(ctx context.Context, userID int64, day time.Time) (*Mile
 // ActiveSince lists who recorded something after since.
 func (s *Service) ActiveSince(ctx context.Context, since time.Time) (map[int64]time.Time, error) {
 	return s.store.ActiveSince(ctx, since)
+}
+
+// firstDebtXP is the award for the first debt closed.
+const firstDebtXP = 100
+
+// RewardDebt gives the award for the first closed debt, once.
+func (s *Service) RewardDebt(ctx context.Context, userID int64) (int, bool, error) {
+	awarded, err := s.store.AddXP(ctx, userID, firstDebtXP, reasonDebt, "first")
+	return firstDebtXP, awarded, err
 }
 
 // Levels.

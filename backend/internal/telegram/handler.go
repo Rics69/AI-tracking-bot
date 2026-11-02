@@ -114,6 +114,7 @@ type Config struct {
 	Game         *game.Service // quests, levels, challenges; nil: off
 	Tasks        TaskDoer      // the button of a reminder
 	Access       Access        // the club; nil: off
+	Debts        DebtBook      // debts and net worth; nil: off
 	ClubChats    []int64       // the closed channel and chat
 	BotUsername  string        // for referral links; set once the bot knows its name
 
@@ -227,6 +228,9 @@ func (h *Handler) handleMessage(ctx context.Context, s Sender, msg *models.Messa
 			return
 		}
 		h.showChallenges(ctx, s, chatID, u)
+		return
+	case isCommand(text, "/debts"):
+		h.showDebts(ctx, s, chatID, u)
 		return
 	case isCommand(text, "/club"):
 		h.showClub(ctx, s, chatID, u)

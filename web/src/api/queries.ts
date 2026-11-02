@@ -17,6 +17,9 @@ import {
   type CardRequest,
   type Category,
   type ClientEvent,
+  type DebtCreate,
+  type DebtPayment,
+  type DebtUpdate,
   type GoalCreate,
   type GoalUpdate,
   type Kind,
@@ -59,6 +62,11 @@ export const keys = {
   accounts: ["money", "accounts"] as const,
   transfers: ["money", "transfers"] as const,
   game: ["money", "game"] as const,
+  // A payment is an expense: debts and net worth move with operations too.
+  debts: ["money", "debts"] as const,
+  debtPlan: (extra: number) => ["money", "debts", "plan", extra] as const,
+  debtPayments: (id: number) => ["money", "debts", id, "payments"] as const,
+  netWorth: ["money", "net-worth"] as const,
   club: ["club"] as const,
   guides: ["guides"] as const,
   guide: (slug: string) => ["guides", slug] as const,
@@ -377,6 +385,75 @@ export function useRates() {
     queryFn: async () => unwrap(await api.GET("/rates")),
     staleTime: 10 * 60_000,
     retry: false, // the widget is optional: without rates the screen stays as it is
+  });
+}
+
+// Debts and net worth.
+
+export function useDebts() {
+  return useQuery({
+    queryKey: keys.debts,
+    queryFn: async () => unwrap(await api.GET("/debts")),
+  });
+}
+
+export function useNetWorth() {
+  return useQuery({
+    queryKey: keys.netWorth,
+    queryFn: async () => unwrap(await api.GET("/net-worth")),
+  });
+}
+
+export function useDebtPlan(extra: number, enabled: boolean) {
+  return useQuery({
+    queryKey: keys.debtPlan(extra),
+    queryFn: async () => unwrap(await api.GET("/debts/plan", { params: { query: { extra: String(extra) } } })),
+    enabled,
+    retry: false, // payments that do not cover the interest are an answer, not a failure
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useCreateDebt() {
+  return useMoneyMutation(async (body: DebtCreate) => unwrap(await api.POST("/debts", { body })));
+}
+
+export function useUpdateDebt() {
+  return useMoneyMutation(async ({ id, body }: { id: number; body: DebtUpdate }) =>
+    unwrap(await api.PATCH("/debts/{id}", { params: { path: { id } }, body })),
+  );
+}
+
+export function useDeleteDebt() {
+  return useMoneyMutation(async (id: number) =>
+    unwrap(await api.DELETE("/debts/{id}", { params: { path: { id } } })),
+  );
+}
+
+export function usePayDebt() {
+  return useMoneyMutation(async ({ id, body }: { id: number; body: DebtPayment }) =>
+    unwrap(await api.POST("/debts/{id}/payments", { params: { path: { id } }, body })),
+  );
+}
+
+export function useDebtPayments(id: number) {
+  return useQuery({
+    queryKey: keys.debtPayments(id),
+    queryFn: async () => unwrap(await api.GET("/debts/{id}/payments", { params: { path: { id } } })),
+  });
+}
+
+export function useCancelDebtPayment() {
+  return useMoneyMutation(async (id: number) =>
+    unwrap(await api.DELETE("/debt-payments/{id}", { params: { path: { id } } })),
+  );
+}
+
+/** Takes back the payment that closed a debt: a closed debt is off the list. */
+export function useCancelLastPayment() {
+  return useMoneyMutation(async (debtId: number) => {
+    const { items } = unwrap(await api.GET("/debts/{id}/payments", { params: { path: { id: debtId } } }));
+    if (items[0]) unwrap(await api.DELETE("/debt-payments/{id}", { params: { path: { id: items[0].id } } }));
   });
 }
 

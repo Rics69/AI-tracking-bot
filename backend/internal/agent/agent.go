@@ -53,6 +53,7 @@ type Config struct {
 	// Accounts and Tasks enable accounts, transfers and the calendar.
 	Accounts Accounts
 	Tasks    Tasks
+	Debts    Debts           // debts and net worth; optional
 	Events   *events.Tracker // optional
 }
 
@@ -68,6 +69,7 @@ type Agent struct {
 	budget   Budget
 	accounts Accounts
 	tasks    Tasks
+	debts    Debts
 	events   *events.Tracker
 	log      *slog.Logger
 }
@@ -80,7 +82,7 @@ func New(client llm.Client, ledger Ledger, clock Clock, history HistoryStore, cf
 	return &Agent{
 		llm: client, ledger: ledger, clock: clock, history: history,
 		loc: cfg.Location, maxSteps: cfg.MaxSteps, usage: cfg.Usage, budget: cfg.Budget,
-		accounts: cfg.Accounts, tasks: cfg.Tasks, events: cfg.Events, log: log,
+		accounts: cfg.Accounts, tasks: cfg.Tasks, debts: cfg.Debts, events: cfg.Events, log: log,
 	}
 }
 
@@ -122,6 +124,9 @@ func (a *Agent) Reply(ctx context.Context, caller Caller, text string) (string, 
 	}
 	if a.accounts != nil {
 		tools = append(tools, moneyToolDefs(today)...)
+	}
+	if a.debts != nil {
+		tools = append(tools, debtToolDefs(today)...)
 	}
 	mc := a.loadMoneyContext(ctx, caller.UserID, today)
 	messages := []llm.Message{{Role: llm.RoleSystem, Content: systemPrompt(today, loc, caller.Name, mc)}}

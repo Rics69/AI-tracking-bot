@@ -14,6 +14,7 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/accounts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/agent"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/debts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/llm"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/quick"
@@ -130,6 +131,21 @@ func (rn runner) run(ctx context.Context, c Case) Result {
 	cfg := rn.cfg
 	cfg.Budget = budgets
 	cfg.Accounts, cfg.Tasks = money, tasks.NewService(taskStore)
+	owed := debts.NewService(memory.NewDebts(), svc, money)
+	cfg.Debts = owed
+	for _, d := range c.Debts {
+		balance, err := decimal.NewFromString(d.Balance)
+		if err != nil {
+			res.Failures = append(res.Failures, "bad seed: "+err.Error())
+			return res
+		}
+		rate, _ := decimal.NewFromString(d.Rate)
+		minimum, _ := decimal.NewFromString(d.MinPayment)
+		if _, err := owed.Create(ctx, debts.Debt{UserID: userID, Name: d.Name, Principal: balance, Rate: rate, MinPayment: minimum}, today); err != nil {
+			res.Failures = append(res.Failures, "bad seed: "+err.Error())
+			return res
+		}
+	}
 	for _, name := range c.Accounts {
 		if _, err := money.Create(ctx, accounts.Account{UserID: userID, Name: name}); err != nil {
 			res.Failures = append(res.Failures, "bad seed: "+err.Error())
@@ -169,6 +185,17 @@ func (rn runner) run(ctx context.Context, c Case) Result {
 	}
 	res.Failures = append(res.Failures, check(c, today, before, repo.All(), titles, res)...)
 	res.Failures = append(res.Failures, checkBudget(ctx, c, today, budgets, store, res)...)
+	if want := c.Expect.Debts; want != nil {
+		list, _, _ := owed.List(ctx, userID)
+		if len(list) != len(want) {
+			res.Failures = append(res.Failures, fmt.Sprintf("debts: want %+v, got %+v", want, list))
+		}
+		for i := range min(len(list), len(want)) {
+			if !containsNorm(list[i].Name, want[i].Name) || !list[i].Balance.Equal(decimal.RequireFromString(want[i].Balance)) {
+				res.Failures = append(res.Failures, fmt.Sprintf("debt %d: want %+v, got %s %s", i, want[i], list[i].Name, list[i].Balance))
+			}
+		}
+	}
 	if want := c.Expect.Transfers; want != nil && len(moneyStore.AllTransfers()) != *want {
 		res.Failures = append(res.Failures, fmt.Sprintf("transfers: want %d, got %d", *want, len(moneyStore.AllTransfers())))
 	}

@@ -9,6 +9,7 @@ import {
   LandmarkIcon,
   ListIcon,
   type LucideIcon,
+  ScaleIcon,
   WalletIcon,
 } from "lucide-react";
 import Image from "next/image";
@@ -107,6 +108,7 @@ export function HomeScreen() {
       <div className="grid grid-cols-2 gap-3">
         <QuickLink href="/accounts" icon={LandmarkIcon} label="Счета" />
         <QuickLink href="/calendar" icon={CalendarCheckIcon} label="Календарь" />
+        <QuickLink href="/debts" icon={ScaleIcon} label="Долги и капитал" />
       </div>
 
       <QuestsCard />

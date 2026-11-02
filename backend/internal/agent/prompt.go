@@ -78,6 +78,12 @@ func systemPrompt(today time.Time, loc *time.Location, userName string, mc *mone
 		if mc.upcoming != "" {
 			b.WriteString(moneyRules)
 		}
+	}
+	b.WriteString(noAdviceRule)
+	if mc != nil {
+		if mc.debts != nil {
+			b.WriteString(debtRules)
+		}
 		b.WriteString(mc.String())
 	}
 	return b.String()

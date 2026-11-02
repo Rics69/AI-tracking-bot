@@ -22,6 +22,8 @@ type Case struct {
 	Plan     *PlanSpec     `yaml:"plan"`
 	Goals    []GoalSpec    `yaml:"goals"`
 	Payments []PaymentSpec `yaml:"payments"`
+	// Debts are the user's debts before the dialog.
+	Debts []DebtSpec `yaml:"debts"`
 	// Accounts are the user's accounts besides the default one, in rubles.
 	Accounts []string `yaml:"accounts"`
 	// Quick are messages recorded by the fast path before Turns, the way the bot does.
@@ -47,8 +49,10 @@ type Expect struct {
 	ReplyNotContains []string `yaml:"reply_not_contains"`
 	// Transfers is how many transfers there must be; Tasks are the titles of
 	// tasks (substrings) in order of creation. Nil is not checked.
-	Transfers *int     `yaml:"transfers"`
-	Tasks     []string `yaml:"tasks"`
+	Transfers *int `yaml:"transfers"`
+	// Debts is the final list of open debts, largest rate first; names match by substring.
+	Debts []DebtSpec `yaml:"debts"`
+	Tasks []string   `yaml:"tasks"`
 	// ReplyHasLimit: the last reply quotes today's limit, computed after the dialog.
 	ReplyHasLimit bool `yaml:"reply_has_limit"`
 	// Plan, Goals and Payments are the exact final limit settings; nil is not checked.
@@ -61,6 +65,14 @@ type Expect struct {
 type PlanSpec struct {
 	Paydays        []int  `yaml:"paydays"`
 	ExpectedIncome string `yaml:"expected_income"` // empty: none (expectations: not checked)
+}
+
+// DebtSpec is a debt in a case file.
+type DebtSpec struct {
+	Name       string `yaml:"name"`
+	Balance    string `yaml:"balance"`
+	Rate       string `yaml:"rate"`
+	MinPayment string `yaml:"min_payment"`
 }
 
 // GoalSpec is a goal. In expectations Title matches by substring, case-insensitively.

@@ -32,6 +32,7 @@ tags:
   - name: tasks
   - name: game
   - name: club
+  - name: debts
   - name: categories
 
 paths:
@@ -370,6 +371,167 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+
+  /debts:
+    get:
+      operationId: listDebts
+      tags: [debts]
+      summary: Открытые долги
+      responses:
+        '200':
+          description: Долги и их сумма
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DebtList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: createDebt
+      tags: [debts]
+      summary: Добавить долг
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DebtCreate' }
+      responses:
+        '201':
+          description: Долг
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Debt' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /debts/plan:
+    get:
+      operationId: getDebtPlan
+      tags: [debts]
+      summary: План погашения двумя способами
+      description: Считает код. Способ выбирает пользователь, сервис не советует.
+      parameters:
+        - name: extra
+          in: query
+          description: Сумма в месяц сверх минимальных платежей, в рублях
+          schema: { type: string, example: '10000' }
+      responses:
+        '200':
+          description: Лавина и снежный ком
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DebtPlan' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /debts/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    patch:
+      operationId: updateDebt
+      tags: [debts]
+      summary: Изменить долг или поправить остаток
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DebtUpdate' }
+      responses:
+        '200':
+          description: Долг
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Debt' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: deleteDebt
+      tags: [debts]
+      summary: Удалить долг
+      description: Траты, записанные как платежи, остаются.
+      responses:
+        '204': { description: Удалён }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /debts/{id}/payments:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    get:
+      operationId: listDebtPayments
+      tags: [debts]
+      summary: Платежи по долгу
+      responses:
+        '200':
+          description: Платежи, новые сверху
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DebtPaymentList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      operationId: payDebt
+      tags: [debts]
+      summary: Записать платёж по долгу
+      description: Деньги уходят как трата, поэтому платёж виден в счетах и лимите.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DebtPayment' }
+      responses:
+        '201':
+          description: Долг после платежа
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Debt' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /debt-payments/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    delete:
+      operationId: cancelDebtPayment
+      tags: [debts]
+      summary: Отменить платёж
+      description: Убирает и платёж, и его трату; закрытый долг снова открывается.
+      responses:
+        '204': { description: Отменён }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /net-worth:
+    get:
+      operationId: getNetWorth
+      tags: [debts]
+      summary: Чистый капитал
+      description: Счета минус долги, сейчас и по месяцам.
+      responses:
+        '200':
+          description: Капитал
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NetWorth' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /club:
     get:
@@ -1044,6 +1206,123 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    DebtKind:
+      type: string
+      enum: [card, loan, installment, microloan, friend]
+
+    Debt:
+      type: object
+      required: [id, name, kind, balance, rate, min_payment]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string, example: Кредитка }
+        kind: { $ref: '#/components/schemas/DebtKind' }
+        balance: { $ref: '#/components/schemas/Money' }
+        rate:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: Процентов годовых
+        min_payment: { $ref: '#/components/schemas/Money' }
+        due_day: { type: integer, minimum: 1, maximum: 31 }
+
+    DebtList:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Debt' }
+        total: { $ref: '#/components/schemas/Money' }
+
+    DebtCreate:
+      type: object
+      required: [name, balance]
+      properties:
+        name: { type: string, maxLength: 60 }
+        kind: { $ref: '#/components/schemas/DebtKind' }
+        balance: { $ref: '#/components/schemas/Money' }
+        rate: { $ref: '#/components/schemas/Money' }
+        min_payment: { $ref: '#/components/schemas/Money' }
+        due_day: { type: integer, minimum: 1, maximum: 31 }
+
+    DebtUpdate:
+      type: object
+      description: Передаются только изменяемые поля.
+      properties:
+        name: { type: string, maxLength: 60 }
+        kind: { $ref: '#/components/schemas/DebtKind' }
+        balance:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: Сколько осталось отдать сейчас, с процентами банка
+        rate: { $ref: '#/components/schemas/Money' }
+        min_payment: { $ref: '#/components/schemas/Money' }
+        due_day: { type: integer, minimum: 1, maximum: 31 }
+
+    DebtPayment:
+      type: object
+      required: [amount]
+      properties:
+        amount: { $ref: '#/components/schemas/Money' }
+        date: { type: string, format: date }
+        account_id: { type: integer, format: int64 }
+
+    DebtPaymentRecord:
+      type: object
+      required: [id, amount, date]
+      properties:
+        id: { type: integer, format: int64 }
+        amount: { $ref: '#/components/schemas/Money' }
+        date: { type: string, format: date }
+
+    DebtPaymentList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/DebtPaymentRecord' }
+
+    DebtClosing:
+      type: object
+      required: [name, month]
+      properties:
+        name: { type: string }
+        month: { type: string, format: date, description: Первое число месяца последнего платежа }
+
+    DebtSchedule:
+      type: object
+      required: [months, interest, closings]
+      properties:
+        months: { type: integer }
+        interest: { $ref: '#/components/schemas/Money' }
+        closings:
+          type: array
+          items: { $ref: '#/components/schemas/DebtClosing' }
+
+    DebtPlan:
+      type: object
+      required: [avalanche, snowball]
+      properties:
+        avalanche: { $ref: '#/components/schemas/DebtSchedule' }
+        snowball: { $ref: '#/components/schemas/DebtSchedule' }
+
+    NetWorthPoint:
+      type: object
+      required: [month, net]
+      properties:
+        month: { type: string, format: date }
+        net: { $ref: '#/components/schemas/Money' }
+
+    NetWorth:
+      type: object
+      required: [assets, debts, net, history]
+      properties:
+        assets: { $ref: '#/components/schemas/Money' }
+        debts: { $ref: '#/components/schemas/Money' }
+        net: { $ref: '#/components/schemas/Money' }
+        history:
+          type: array
+          items: { $ref: '#/components/schemas/NetWorthPoint' }
+
     ClubState:
       type: object
       required: [active]

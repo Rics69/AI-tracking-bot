@@ -268,6 +268,132 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/debts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Открытые долги */
+        get: operations["listDebts"];
+        put?: never;
+        /** Добавить долг */
+        post: operations["createDebt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/debts/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * План погашения двумя способами
+         * @description Считает код. Способ выбирает пользователь, сервис не советует.
+         */
+        get: operations["getDebtPlan"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/debts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Удалить долг
+         * @description Траты, записанные как платежи, остаются.
+         */
+        delete: operations["deleteDebt"];
+        options?: never;
+        head?: never;
+        /** Изменить долг или поправить остаток */
+        patch: operations["updateDebt"];
+        trace?: never;
+    };
+    "/debts/{id}/payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** Платежи по долгу */
+        get: operations["listDebtPayments"];
+        put?: never;
+        /**
+         * Записать платёж по долгу
+         * @description Деньги уходят как трата, поэтому платёж виден в счетах и лимите.
+         */
+        post: operations["payDebt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/debt-payments/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Отменить платёж
+         * @description Убирает и платёж, и его трату; закрытый долг снова открывается.
+         */
+        delete: operations["cancelDebtPayment"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/net-worth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Чистый капитал
+         * @description Счета минус долги, сейчас и по месяцам.
+         */
+        get: operations["getNetWorth"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/club": {
         parameters: {
             query?: never;
@@ -767,6 +893,87 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @enum {string} */
+        DebtKind: "card" | "loan" | "installment" | "microloan" | "friend";
+        Debt: {
+            /** Format: int64 */
+            id: number;
+            /** @example Кредитка */
+            name: string;
+            kind: components["schemas"]["DebtKind"];
+            balance: components["schemas"]["Money"];
+            /** @description Процентов годовых */
+            rate: components["schemas"]["Money"];
+            min_payment: components["schemas"]["Money"];
+            due_day?: number;
+        };
+        DebtList: {
+            items: components["schemas"]["Debt"][];
+            total: components["schemas"]["Money"];
+        };
+        DebtCreate: {
+            name: string;
+            kind?: components["schemas"]["DebtKind"];
+            balance: components["schemas"]["Money"];
+            rate?: components["schemas"]["Money"];
+            min_payment?: components["schemas"]["Money"];
+            due_day?: number;
+        };
+        /** @description Передаются только изменяемые поля. */
+        DebtUpdate: {
+            name?: string;
+            kind?: components["schemas"]["DebtKind"];
+            /** @description Сколько осталось отдать сейчас, с процентами банка */
+            balance?: components["schemas"]["Money"];
+            rate?: components["schemas"]["Money"];
+            min_payment?: components["schemas"]["Money"];
+            due_day?: number;
+        };
+        DebtPayment: {
+            amount: components["schemas"]["Money"];
+            /** Format: date */
+            date?: string;
+            /** Format: int64 */
+            account_id?: number;
+        };
+        DebtPaymentRecord: {
+            /** Format: int64 */
+            id: number;
+            amount: components["schemas"]["Money"];
+            /** Format: date */
+            date: string;
+        };
+        DebtPaymentList: {
+            items: components["schemas"]["DebtPaymentRecord"][];
+        };
+        DebtClosing: {
+            name: string;
+            /**
+             * Format: date
+             * @description Первое число месяца последнего платежа
+             */
+            month: string;
+        };
+        DebtSchedule: {
+            months: number;
+            interest: components["schemas"]["Money"];
+            closings: components["schemas"]["DebtClosing"][];
+        };
+        DebtPlan: {
+            avalanche: components["schemas"]["DebtSchedule"];
+            snowball: components["schemas"]["DebtSchedule"];
+        };
+        NetWorthPoint: {
+            /** Format: date */
+            month: string;
+            net: components["schemas"]["Money"];
+        };
+        NetWorth: {
+            assets: components["schemas"]["Money"];
+            debts: components["schemas"]["Money"];
+            net: components["schemas"]["Money"];
+            history: components["schemas"]["NetWorthPoint"][];
+        };
         ClubState: {
             active: boolean;
             /**
@@ -1922,6 +2129,234 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    listDebts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Долги и их сумма */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DebtList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createDebt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DebtCreate"];
+            };
+        };
+        responses: {
+            /** @description Долг */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Debt"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getDebtPlan: {
+        parameters: {
+            query?: {
+                /** @description Сумма в месяц сверх минимальных платежей, в рублях */
+                extra?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Лавина и снежный ком */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DebtPlan"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    deleteDebt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Удалён */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateDebt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DebtUpdate"];
+            };
+        };
+        responses: {
+            /** @description Долг */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Debt"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listDebtPayments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Платежи, новые сверху */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DebtPaymentList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    payDebt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DebtPayment"];
+            };
+        };
+        responses: {
+            /** @description Долг после платежа */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Debt"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    cancelDebtPayment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Отменён */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getNetWorth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Капитал */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetWorth"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     getClub: {

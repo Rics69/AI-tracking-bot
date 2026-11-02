@@ -13,6 +13,7 @@ import (
 
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/accounts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/debts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/llm"
@@ -242,6 +243,12 @@ func (a *Agent) runTool(ctx context.Context, t turn, call *llm.ToolCall) (string
 		result, err = a.update(ctx, t, call.Arguments)
 	case toolDelete:
 		result, err = a.delete(ctx, t, call.Arguments)
+	case toolAddDebt:
+		result, err = a.addDebt(ctx, t, call.Arguments)
+	case toolPayDebt:
+		result, err = a.payDebt(ctx, t, call.Arguments)
+	case toolGetDebts:
+		result, err = a.getDebts(ctx, t, call.Arguments)
 	case toolAddTransfer:
 		result, err = a.addTransfer(ctx, t, call.Arguments)
 	case toolAddTask:
@@ -273,6 +280,8 @@ func (a *Agent) runTool(ctx context.Context, t turn, call *llm.ToolCall) (string
 		result = map[string]string{"error": "operation not found; call find_operations to get a valid id"}
 	case errors.Is(err, budget.ErrNotFound):
 		result = map[string]string{"error": "no such goal or regular payment; take the id from the lists in the instructions"}
+	case errors.Is(err, debts.ErrNotFound):
+		result = map[string]string{"error": "no such debt; take the name from the list in the instructions"}
 	case errors.Is(err, accounts.ErrNotFound):
 		result = map[string]string{"error": "no such account; take the name from the list in the instructions"}
 	default:

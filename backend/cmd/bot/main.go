@@ -22,6 +22,7 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/card"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/config"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/debts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/flow"
@@ -75,6 +76,7 @@ func run() error {
 	money := accounts.NewService(postgres.NewAccountRepository(pool), rateStore)
 	expenses.Rates, expenses.Accounts = rateStore, money
 	plans := tasks.NewService(postgres.NewTaskRepository(pool))
+	owed := debts.NewService(postgres.NewDebtRepository(pool), expenses, money)
 	// History lives in PostgreSQL: a restart or redeploy does not cut dialogs short.
 	history := postgres.NewChatHistoryRepository(pool, cfg.HistoryTurns, cfg.HistoryTTL)
 	flows := postgres.NewFlowRepository(pool)
@@ -101,7 +103,7 @@ func run() error {
 		return err
 	}
 	assistant := agent.New(client, expenses, expenses, history,
-		agent.Config{Location: cfg.Location, MaxSteps: cfg.MaxSteps, Usage: meter, Budget: budgets, Accounts: money, Tasks: plans, Events: tracker},
+		agent.Config{Location: cfg.Location, MaxSteps: cfg.MaxSteps, Usage: meter, Budget: budgets, Accounts: money, Tasks: plans, Debts: owed, Events: tracker},
 		log.With("component", "agent"))
 	users := postgres.NewUserRepository(pool)
 	members := family.NewService(users, postgres.NewInviteRepository(pool), postgres.NewSettingsRepository(pool))
@@ -134,6 +136,7 @@ func run() error {
 		Game:         play,
 		Tasks:        plans,
 		Access:       club,
+		Debts:        owed,
 		ClubChats:    cfg.ClubChats,
 
 		PackageTokens: cfg.LLMTokenPackage,
@@ -231,6 +234,12 @@ func run() error {
 	milestones.SendCard = sendCard
 	go milestones.Run(ctx)
 	go report.NewTaskReminders(plans, users, runs, sendRows, botTexts, cfg.Location, log.With("component", "tasks")).Run(ctx)
+	capital := report.NewCapital(owed, play, users,
+		func(ctx context.Context, chatID int64, text string) error {
+			return undeliverable(handler.Send(ctx, b, chatID, text))
+		},
+		botTexts, cfg.Location, log.With("component", "capital"))
+	go every(ctx, time.Hour, func() { capital.Tick(ctx) })
 	sync := report.NewClubSync(club, runs,
 		func(ctx context.Context, chatID int64, text string) error {
 			return undeliverable(handler.Send(ctx, b, chatID, text))
@@ -249,7 +258,7 @@ func run() error {
 		},
 		botTexts, cfg.Location, log.With("component", "reminder"))
 	daily.Extras = report.GameMorning{Game: play, Texts: botTexts}
-	daily.Tasks = plans
+	daily.Tasks, daily.Debts = plans, owed
 	daily.SendRows = func(ctx context.Context, chatID int64, text string, rows [][]game.Action) error {
 		err := handler.SendActions(ctx, b, chatID, text, fromMorning, rows)
 		if err == nil {

@@ -87,6 +87,10 @@ type Bot struct {
 	DreamLater       string   `yaml:"dream_later"`
 	DreamGoalSaved   string   `yaml:"dream_goal_saved"`
 
+	DebtsNone string `yaml:"debts_none"`
+	DebtsView string `yaml:"debts_view"`
+	DebtsLine string `yaml:"debts_line"`
+
 	QuestsHeader    string `yaml:"quests_header"`
 	QuestLine       string `yaml:"quest_line"`
 	QuestClosedLine string `yaml:"quest_closed_line"`
@@ -274,6 +278,8 @@ type Bot struct {
 	ReminderNoIncome string    `yaml:"reminder_no_income"`
 	ReminderPayment  string    `yaml:"reminder_payment"`
 	ReminderGoal     string    `yaml:"reminder_goal"`
+	ReminderDebt     string    `yaml:"reminder_debt"`
+	DebtFirstClosed  string    `yaml:"debt_first_closed"`
 	ReminderRates    string    `yaml:"reminder_rates"`
 	Comeback         string    `yaml:"comeback"`
 	ComebackGoal     string    `yaml:"comeback_goal"`
@@ -308,6 +314,7 @@ type Bot struct {
 	CommandReview    string `yaml:"command_review"`
 	CommandReviews   string `yaml:"command_reviews"`
 	CommandClub      string `yaml:"command_club"`
+	CommandDebts     string `yaml:"command_debts"`
 	CommandGrant     string `yaml:"command_grant"`
 	CommandRevoke    string `yaml:"command_revoke"`
 	CommandNewPromo  string `yaml:"command_new_promo"`

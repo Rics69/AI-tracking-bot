@@ -18,6 +18,7 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/access"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/accounts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/debts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/game"
@@ -92,7 +93,7 @@ func newEnv(t *testing.T) *env {
 		Ledger: e.ledgerS, Family: fam, Budget: e.budgetS, Auth: e.auth, Events: e.tracker, Location: time.UTC,
 		Accounts: money, Tasks: tasks.NewService(memory.NewTasks()), Game: game.NewService(catalog, memory.NewGame(), e.ledgerS, e.budgetS),
 		Rates: rateStore, Texts: tx, BotName: fam.BotUsername,
-		Access: e.club, Library: guides,
+		Access: e.club, Library: guides, Debts: debts.NewService(memory.NewDebts(), e.ledgerS, money),
 		Health: func(context.Context) error { return nil }, Log: log,
 	})
 	return e

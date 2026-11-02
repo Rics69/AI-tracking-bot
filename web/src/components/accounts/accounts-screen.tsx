@@ -46,7 +46,7 @@ function kindOf(k: AccountKind) {
   return kinds.find((x) => x.value === k) ?? kinds[0];
 }
 
-function fail(err: unknown) {
+export function fail(err: unknown) {
   haptic.error();
   toast.error(err instanceof Error ? err.message : "Не удалось сохранить");
 }
@@ -195,7 +195,7 @@ function TransfersPanel({ accounts }: { accounts: Account[] }) {
   );
 }
 
-function Field({ id, label, children }: { id: string; label: string; children: ReactNode }) {
+export function Field({ id, label, children }: { id: string; label: string; children: ReactNode }) {
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <label htmlFor={id} className="text-sm font-medium text-muted-foreground">
@@ -206,8 +206,8 @@ function Field({ id, label, children }: { id: string; label: string; children: R
   );
 }
 
-const inputClass = "h-11 rounded-full px-4 text-[15px]";
-const selectClass = "h-11 min-w-0 rounded-full bg-muted px-4 text-[15px] outline-none";
+export const inputClass = "h-11 rounded-full px-4 text-[15px]";
+export const selectClass = "h-11 min-w-0 rounded-full bg-muted px-4 text-[15px] outline-none";
 
 function AccountForm({ onDone }: { onDone: () => void }) {
   const create = useCreateAccount();
