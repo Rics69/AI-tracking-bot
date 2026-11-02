@@ -6,11 +6,13 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/access"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/accounts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/game"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/library"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/tasks"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
@@ -34,6 +36,10 @@ func writeError(log *slog.Logger, w http.ResponseWriter, r *http.Request, err er
 		field := "reminder_hour"
 		status = http.StatusBadRequest
 		detail = ErrorDetail{Code: ErrCodeValidation, Message: err.Error(), Field: &field}
+	case errors.Is(err, access.ErrPromoInvalid), errors.Is(err, access.ErrPromoUsed):
+		field := "code"
+		status = http.StatusBadRequest
+		detail = ErrorDetail{Code: ErrCodeValidation, Message: err.Error(), Field: &field}
 	case errors.Is(err, ErrUnauthorized):
 		status = http.StatusUnauthorized
 		detail = ErrorDetail{Code: ErrCodeUnauthorized, Message: err.Error()}
@@ -45,7 +51,8 @@ func writeError(log *slog.Logger, w http.ResponseWriter, r *http.Request, err er
 		detail = ErrorDetail{Code: ErrCodeForbidden, Message: err.Error()}
 	case errors.Is(err, ledger.ErrNotFound), errors.Is(err, user.ErrNotFound), errors.Is(err, family.ErrInviteNotFound),
 		errors.Is(err, family.ErrNotMember), errors.Is(err, budget.ErrNotFound), errors.Is(err, accounts.ErrNotFound),
-		errors.Is(err, tasks.ErrNotFound), errors.Is(err, game.ErrUnknown), errors.Is(err, errBadCard):
+		errors.Is(err, tasks.ErrNotFound), errors.Is(err, game.ErrUnknown), errors.Is(err, errBadCard),
+		errors.Is(err, library.ErrNotFound):
 		status = http.StatusNotFound
 		detail = ErrorDetail{Code: ErrCodeNotFound, Message: err.Error()}
 	case errors.Is(err, family.ErrHeadRemoval), errors.Is(err, family.ErrBotUnknown),

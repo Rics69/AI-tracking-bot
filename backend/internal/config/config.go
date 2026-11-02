@@ -91,6 +91,13 @@ type Bot struct {
 	// Daily limits per user, so nobody spends the whole token budget; 0: unlimited.
 	UserDailyMessages int   `env:"USER_DAILY_MESSAGES" envDefault:"150"`
 	UserDailyTokens   int64 `env:"USER_DAILY_TOKENS" envDefault:"200000"`
+	// ClubMessages and ClubTokens are the daily limits of the club until the
+	// owner sets others with /limits.
+	ClubMessages int   `env:"CLUB_DAILY_MESSAGES" envDefault:"500"`
+	ClubTokens   int64 `env:"CLUB_DAILY_TOKENS" envDefault:"1000000"`
+	// ClubChats are the IDs of the closed channel and chat; the bot must be an
+	// admin there. Empty: the club has no chats yet.
+	ClubChats []int64 `env:"CLUB_CHAT_IDS" envSeparator:","`
 	// LLMTokenPackage is the supply of tokens shared by all users, counted from
 	// LLMPackageSince (YYYY-MM-DD; empty: all usage on record). When it runs out
 	// only quick records work. 0: no package.

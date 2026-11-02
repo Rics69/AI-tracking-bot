@@ -17,6 +17,7 @@ import (
 	"github.com/go-telegram/bot/models"
 	"github.com/shopspring/decimal"
 
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/access"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/agent"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
@@ -29,6 +30,7 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/stats"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/memory"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/usage"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
 
@@ -59,6 +61,10 @@ type fakeSender struct {
 
 	photos [][]byte
 	files  []string
+
+	links    []bot.CreateChatInviteLinkParams
+	banned   []int64
+	unbanned []int64
 }
 
 func (f *fakeSender) SendMessage(_ context.Context, p *bot.SendMessageParams) (*models.Message, error) {
@@ -108,6 +114,27 @@ func (f *fakeSender) SendDocument(_ context.Context, p *bot.SendDocumentParams) 
 	f.files = append(f.files, string(data))
 	f.out = append(f.out, out{chat: p.ChatID.(int64), text: p.Caption})
 	return &models.Message{}, nil
+}
+
+func (f *fakeSender) CreateChatInviteLink(_ context.Context, p *bot.CreateChatInviteLinkParams) (*models.ChatInviteLink, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.links = append(f.links, *p)
+	return &models.ChatInviteLink{InviteLink: fmt.Sprintf("https://t.me/+%v", p.ChatID)}, nil
+}
+
+func (f *fakeSender) BanChatMember(_ context.Context, p *bot.BanChatMemberParams) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.banned = append(f.banned, p.UserID)
+	return true, nil
+}
+
+func (f *fakeSender) UnbanChatMember(_ context.Context, p *bot.UnbanChatMemberParams) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.unbanned = append(f.unbanned, p.UserID)
+	return true, nil
 }
 
 func (f *fakeSender) SendChatAction(context.Context, *bot.SendChatActionParams) (bool, error) {
@@ -1475,6 +1502,162 @@ func TestReview(t *testing.T) {
 	}
 }
 
+// setupClub is setupGame with the club on.
+func setupClub(t *testing.T) (*env, *access.Service) {
+	t.Helper()
+	e, _, _ := setupGame(t)
+	club := access.New(memory.NewAccess(), memory.NewSettings(), usage.Limits{Messages: 150}, usage.Limits{Messages: 500})
+	e.h.cfg.Access = club
+	e.h.cfg.ClubChats = []int64{-100, -200}
+	e.h.cfg.Game.Access = club
+	return e, club
+}
+
+func TestClubByTheOwner(t *testing.T) {
+	e, club := setupClub(t)
+	ctx := context.Background()
+	for _, id := range []int64{admin, anna} {
+		e.onboard(t, id)
+		e.press(id, flowButton(stepChoice, "just"))
+		e.press(id, flowButton(stepRecord, valueSkip))
+	}
+	e.message(anna, "/club")
+	if got := e.s.last(t, anna); got.text != e.t.ClubAbout {
+		t.Fatalf("without the club = %q", got.text)
+	}
+	e.message(anna, "/grant 1 30")
+	if club.Has(ctx, anna, access.FeatureLibrary) {
+		t.Fatal("a user gave themselves the club")
+	}
+
+	e.message(admin, "/grant 1 30")
+	if !club.Has(ctx, anna, access.FeatureLibrary) {
+		t.Fatal("the owner's grant did nothing")
+	}
+	if got := e.s.last(t, anna); got.text != e.t.ClubGranted {
+		t.Errorf("told = %q", got.text)
+	}
+	e.message(anna, "/club")
+	got := e.s.last(t, anna)
+	if !strings.Contains(got.text, "Вы в клубе до") || !slices.Equal(got.buttons, []string{cbClubJoin}) {
+		t.Fatalf("/club = %+v", got)
+	}
+	e.press(anna, cbClubJoin)
+	if len(e.s.links) != 2 || e.s.links[0].MemberLimit != 1 || e.s.links[0].ExpireDate == 0 {
+		t.Fatalf("links = %+v", e.s.links)
+	}
+	if got := e.s.last(t, anna); !strings.Contains(got.text, "https://t.me/+-100") {
+		t.Errorf("links message = %q", got.text)
+	}
+
+	e.message(admin, "/revoke 1")
+	if club.Has(ctx, anna, access.FeatureLibrary) {
+		t.Error("still in the club")
+	}
+	if !slices.Equal(e.s.banned, []int64{anna, anna}) || !slices.Equal(e.s.unbanned, []int64{anna, anna}) {
+		t.Errorf("removed from chats: %v, %v", e.s.banned, e.s.unbanned)
+	}
+	e.press(anna, cbClubJoin)
+	if got := e.s.last(t, anna); got.text != e.t.ClubAbout || len(e.s.links) != 2 {
+		t.Errorf("links after the end = %q", got.text)
+	}
+}
+
+func TestPromoCommand(t *testing.T) {
+	e, club := setupClub(t)
+	ctx := context.Background()
+	for _, id := range []int64{admin, anna} {
+		e.onboard(t, id)
+		e.press(id, flowButton(stepChoice, "just"))
+		e.press(id, flowButton(stepRecord, valueSkip))
+	}
+	e.message(admin, "/newpromo 14 1 FIRST100")
+	if got := e.s.last(t, admin); !strings.Contains(got.text, "FIRST100") {
+		t.Fatalf("code = %q", got.text)
+	}
+	e.message(anna, "/promo")
+	if got := e.s.last(t, anna); got.text != e.t.PromoUsage {
+		t.Errorf("no code = %q", got.text)
+	}
+	e.message(anna, "/promo nope")
+	if got := e.s.last(t, anna); got.text != e.t.PromoInvalid {
+		t.Errorf("bad code = %q", got.text)
+	}
+	e.message(anna, "/promo first100")
+	if !club.Has(ctx, anna, access.FeatureLibrary) {
+		t.Fatal("the code did nothing")
+	}
+	e.message(anna, "/promo FIRST100")
+	if got := e.s.last(t, anna); got.text != e.t.PromoUsed {
+		t.Errorf("twice = %q", got.text)
+	}
+}
+
+func TestLimitsCommand(t *testing.T) {
+	e, club := setupClub(t)
+	ctx := context.Background()
+	e.onboard(t, admin)
+	e.press(admin, flowButton(stepChoice, "just"))
+	e.press(admin, flowButton(stepRecord, valueSkip))
+	e.message(admin, "/limits free 30 100000")
+	if got := e.s.last(t, admin); !strings.Contains(got.text, "Free: 30 ответов, 100000 токенов") {
+		t.Fatalf("limits = %q", got.text)
+	}
+	if l, _ := club.Limits(ctx, anna); l.Messages != 30 {
+		t.Errorf("free = %+v", l)
+	}
+	e.message(admin, "/limits gold 1 1")
+	if got := e.s.last(t, admin); got.text != e.t.AdminLimitsUsage {
+		t.Errorf("a bad tier = %q", got.text)
+	}
+}
+
+func TestThreeFriendsOpenTheClub(t *testing.T) {
+	e, club := setupClub(t)
+	ctx := context.Background()
+	e.onboard(t, anna)
+	e.press(anna, flowButton(stepChoice, "just"))
+	e.press(anna, flowButton(stepRecord, valueSkip))
+	code, err := e.h.cfg.Game.ReferralCode(ctx, anna)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id := int64(11); id <= 13; id++ {
+		if club.Has(ctx, anna, access.FeatureLibrary) {
+			t.Fatalf("the club came before friend %d", id)
+		}
+		e.message(id, "/start ref_"+code)
+		e.press(id, cbConsent)
+		e.press(id, flowButton(stepChoice, "just"))
+		e.press(id, flowButton(stepRecord, valueSkip))
+	}
+	if !club.Has(ctx, anna, access.FeatureLibrary) {
+		t.Fatal("three friends must open the club")
+	}
+	if got := e.s.last(t, anna); got.text != e.t.ReferralClub {
+		t.Errorf("told = %q", got.text)
+	}
+}
+
+func TestClubChallengeFromTheBot(t *testing.T) {
+	e, club := setupClub(t)
+	ctx := context.Background()
+	e.onboard(t, anna)
+	e.press(anna, flowButton(stepChoice, "just"))
+	e.press(anna, flowButton(stepRecord, valueSkip))
+	e.press(anna, game.ActJoin+":club-debt-free")
+	if got := e.s.last(t, anna); got.text != e.t.ChallengeClubOnly {
+		t.Fatalf("without the club = %q", got.text)
+	}
+	if _, err := club.Grant(ctx, anna, access.SourceAdmin, 30); err != nil {
+		t.Fatal(err)
+	}
+	e.press(anna, game.ActJoin+":club-debt-free")
+	if got := e.s.last(t, anna); !strings.Contains(got.text, "Вы в челлендже") {
+		t.Errorf("in the club = %q", got.text)
+	}
+}
+
 func (f *fakeStats) Snapshot(_ context.Context, now, _, _, _ time.Time) (stats.Snapshot, error) {
 	f.asked++
 	return stats.Snapshot{At: now, Users: 3, Consented: 2}, nil
@@ -1524,7 +1707,7 @@ func TestAdminCommands(t *testing.T) {
 	if got := e.s.last(t, anna); got.text != "Записано" {
 		t.Errorf("unbanned user: %q", got.text)
 	}
-	if len(AdminCommands(e.t, true)) != len(Commands(e.t, true))+4 {
+	if len(AdminCommands(e.t, true)) != len(Commands(e.t, true))+8 {
 		t.Error("the owner's menu must add /stats, /ban and /unban")
 	}
 }

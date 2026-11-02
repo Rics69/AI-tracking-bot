@@ -34,9 +34,10 @@ type Snapshot struct {
 	Today Usage // the LLM today and this month, in the owner's timezone
 	Month Usage
 
-	Package  Package
-	Recorded Recorded      // operations of the last 7 days by the way they came
-	Sources  []SourceCount // where those who joined in the last 7 days came from, biggest first
+	ClubMembers int
+	Package     Package
+	Recorded    Recorded      // operations of the last 7 days by the way they came
+	Sources     []SourceCount // where those who joined in the last 7 days came from, biggest first
 }
 
 // Package is the supply of LLM tokens. Cached tokens are not billed and do not count.
@@ -91,6 +92,9 @@ func Render(s Snapshot) string {
 		Num(int64(s.WithPlan)), Num(int64(s.WithGoals)), Num(int64(s.WithPayments)))
 	fmt.Fprintf(&b, "Семьи из двух и больше: %s (%s человек)\n\n", Num(int64(s.Families)), Num(int64(s.InFamilies)))
 
+	if s.ClubMembers > 0 {
+		fmt.Fprintf(&b, "В клубе: %s\n", Num(int64(s.ClubMembers)))
+	}
 	b.WriteString(recorded(s.Recorded))
 	if len(s.Sources) > 0 {
 		parts := make([]string, len(s.Sources))

@@ -60,6 +60,9 @@ type Meter struct {
 	now    func() time.Time
 	log    *slog.Logger
 
+	// tiers, if set, decides each user's limits instead of limits.
+	tiers func(ctx context.Context, userID int64) (Limits, error)
+
 	pack Package
 	// The last answer of Exhausted.
 	mu        sync.Mutex
@@ -115,20 +118,35 @@ func (m *Meter) watch(ctx context.Context, failed bool) {
 
 // Allow reports whether the user is within today's limits.
 func (m *Meter) Allow(ctx context.Context, userID int64, day time.Time) (bool, error) {
-	if userID == m.exempt || (m.limits.Messages == 0 && m.limits.Tokens == 0) {
+	if userID == m.exempt {
+		return true, nil
+	}
+	limits := m.limits
+	if m.tiers != nil {
+		var err error
+		if limits, err = m.tiers(ctx, userID); err != nil {
+			return false, err
+		}
+	}
+	if limits.Messages == 0 && limits.Tokens == 0 {
 		return true, nil
 	}
 	d, err := m.store.Get(ctx, userID, day)
 	if err != nil {
 		return false, err
 	}
-	if m.limits.Messages > 0 && d.Requests >= m.limits.Messages {
+	if limits.Messages > 0 && d.Requests >= limits.Messages {
 		return false, nil
 	}
-	if m.limits.Tokens > 0 && d.Tokens() >= m.limits.Tokens {
+	if limits.Tokens > 0 && d.Tokens() >= limits.Tokens {
 		return false, nil
 	}
 	return true, nil
+}
+
+// UseTiers makes limits depend on the user: their tier, the current settings.
+func (m *Meter) UseTiers(tiers func(ctx context.Context, userID int64) (Limits, error)) {
+	m.tiers = tiers
 }
 
 // SetPackage turns on the shared supply of tokens.

@@ -12,6 +12,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/access"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/agent"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/card"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
@@ -351,6 +352,8 @@ func (h *Handler) joinChallenge(ctx context.Context, s Sender, chatID int64, mes
 		h.reply(ctx, s, chatID, messageID, view{text: h.t.FlowStale})
 	case errors.Is(err, game.ErrClosed):
 		h.reply(ctx, s, chatID, messageID, view{text: h.t.ChallengeClosed})
+	case errors.Is(err, game.ErrClubOnly):
+		h.reply(ctx, s, chatID, messageID, view{text: h.t.ChallengeClubOnly})
 	case err != nil:
 		h.replyOrFail(ctx, s, chatID, messageID, view{}, err)
 	case !joined:
@@ -418,14 +421,23 @@ func (h *Handler) rewardReferral(ctx context.Context, s Sender, u user.User) {
 	if !h.gameOn() {
 		return
 	}
-	referrer, err := h.cfg.Game.RewardReferrer(ctx, u.TelegramID)
+	referrer, friends, err := h.cfg.Game.RewardReferrer(ctx, u.TelegramID)
 	if err != nil {
 		h.log.ErrorContext(ctx, "referral reward", "user_id", u.TelegramID, "err", err)
 		return
 	}
-	if referrer != 0 {
-		h.notify(ctx, s, referrer, h.t.ReferralRewarded)
+	if referrer == 0 {
+		return
 	}
+	h.notify(ctx, s, referrer, h.t.ReferralRewarded)
+	if h.cfg.Access == nil || friends%access.ReferralsForClub != 0 {
+		return
+	}
+	if _, err := h.cfg.Access.Grant(ctx, referrer, access.SourceReferral, access.ReferralDays); err != nil {
+		h.log.ErrorContext(ctx, "referral club", "user_id", referrer, "err", err)
+		return
+	}
+	h.notify(ctx, s, referrer, h.t.ReferralClub)
 }
 
 // goalCard sends the card of a goal again, now with the amounts.

@@ -112,6 +112,15 @@ func (r *GameRepository) ReferrerOf(ctx context.Context, code string) (int64, er
 	return id, nil
 }
 
+func (r *GameRepository) Rewarded(ctx context.Context, referrerID int64) (int, error) {
+	var n int
+	err := r.pool.QueryRow(ctx, `SELECT count(*) FROM xp_log WHERE user_id = $1 AND reason = 'referral'`, referrerID).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count referrals: %w", err)
+	}
+	return n, nil
+}
+
 func (r *GameRepository) AddReferral(ctx context.Context, referrerID, userID int64) error {
 	_, err := r.pool.Exec(ctx, `INSERT INTO referrals (user_id, referrer_id) VALUES ($1, $2)
 		ON CONFLICT (user_id) DO NOTHING`, userID, referrerID)

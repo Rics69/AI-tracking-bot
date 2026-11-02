@@ -55,6 +55,7 @@ const (
 	reasonChallenge = "challenge"
 	reasonFinish    = "finish"
 	reasonReferral  = "referral"
+	reasonFreeze    = "freeze" // no experience: the key keeps it to once a week
 )
 
 var (
@@ -62,6 +63,8 @@ var (
 	ErrUnknown = errors.New("unknown quest or challenge")
 	// ErrClosed: the challenge does not take new people.
 	ErrClosed = errors.New("challenge is closed")
+	// ErrClubOnly: the challenge is for the club.
+	ErrClubOnly = errors.New("challenge is for the club")
 )
 
 // Profile is the state of a player.
@@ -152,6 +155,8 @@ type Store interface {
 	// SetReferralCode stores a code unless the user has one; it returns the code in force.
 	SetReferralCode(ctx context.Context, userID int64, code string) (string, error)
 	ReferrerOf(ctx context.Context, code string) (int64, error) // 0: nobody
+	// Rewarded counts the friends a user has been rewarded for.
+	Rewarded(ctx context.Context, referrerID int64) (int, error)
 	AddReferral(ctx context.Context, referrerID, userID int64) error
 	Referrer(ctx context.Context, userID int64) (int64, error) // 0: nobody
 	// ActiveSince lists the moment of the latest operation of those who
@@ -214,12 +219,25 @@ const (
 	ActTaskDone = "taskd"   // :task ID
 )
 
+// Features of the club the game asks about.
+const (
+	FeatureClubChallenges = "club_challenges"
+	FeatureStreakFreeze   = "streak_freeze"
+)
+
+// Access tells what the club opens; *access.Service implements it.
+type Access interface {
+	Has(ctx context.Context, userID int64, feature string) bool
+}
+
 // Service is the rules of the game.
 type Service struct {
 	catalog Catalog
 	store   Store
 	ledger  Ledger
 	budgets Budgets
+	// Access opens club challenges and the streak freeze; nil: nobody has them.
+	Access Access
 }
 
 func NewService(c Catalog, store Store, l Ledger, b Budgets) *Service {
@@ -473,8 +491,31 @@ type Milestone struct {
 	XP   int
 }
 
+func (s *Service) has(ctx context.Context, userID int64, feature string) bool {
+	return s.Access != nil && s.Access.Has(ctx, userID, feature)
+}
+
+// freeze covers one missed day of a streak, once a week: a privilege of the
+// club. It counts as the day before, so the streak goes on.
+func (s *Service) freeze(ctx context.Context, userID int64, day time.Time) error {
+	p, err := s.store.Profile(ctx, userID)
+	if err != nil || p.LastDay == nil || !p.LastDay.Equal(day.AddDate(0, 0, -2)) || !s.has(ctx, userID, FeatureStreakFreeze) {
+		return err
+	}
+	year, week := day.ISOWeek()
+	used, err := s.store.AddXP(ctx, userID, 0, reasonFreeze, fmt.Sprintf("%d-%d", year, week))
+	if err != nil || !used {
+		return err
+	}
+	_, _, err = s.store.TouchStreak(ctx, userID, day.AddDate(0, 0, -1))
+	return err
+}
+
 // Touch counts day as active and reports a milestone reached by it.
 func (s *Service) Touch(ctx context.Context, userID int64, day time.Time) (*Milestone, error) {
+	if err := s.freeze(ctx, userID, day); err != nil {
+		return nil, err
+	}
 	p, advanced, err := s.store.TouchStreak(ctx, userID, day)
 	if err != nil || !advanced {
 		return nil, err
@@ -632,17 +673,19 @@ func (s *Service) Refer(ctx context.Context, code string, userID int64) error {
 }
 
 // RewardReferrer gives the experience once the new user has finished
-// onboarding. It returns who got it, 0 if nobody.
-func (s *Service) RewardReferrer(ctx context.Context, userID int64) (int64, error) {
+// onboarding. It returns who got it, 0 if nobody, and how many friends they
+// have brought so far.
+func (s *Service) RewardReferrer(ctx context.Context, userID int64) (int64, int, error) {
 	referrer, err := s.store.Referrer(ctx, userID)
 	if err != nil || referrer == 0 {
-		return 0, err
+		return 0, 0, err
 	}
 	awarded, err := s.store.AddXP(ctx, referrer, referralXP, reasonReferral, strconv.FormatInt(userID, 10))
 	if err != nil || !awarded {
-		return 0, err
+		return 0, 0, err
 	}
-	return referrer, nil
+	friends, err := s.store.Rewarded(ctx, referrer)
+	return referrer, friends, err
 }
 
 // Challenges.
@@ -665,6 +708,9 @@ func (s *Service) Join(ctx context.Context, slug string, userID int64, day time.
 	}
 	if !c.Open(day) {
 		return c, false, ErrClosed
+	}
+	if c.Access == AccessClub && !s.has(ctx, userID, FeatureClubChallenges) {
+		return c, false, ErrClubOnly
 	}
 	joined, err := s.store.Join(ctx, slug, userID, c.StartFor(day))
 	return c, joined, err

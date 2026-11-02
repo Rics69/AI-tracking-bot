@@ -15,6 +15,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/access"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/accounts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
@@ -22,10 +23,12 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/game"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/initdata"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/library"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/rates"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/memory"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/tasks"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/usage"
 )
 
 const botToken = "123456:test-token"
@@ -49,6 +52,7 @@ type env struct {
 	budgetS *budget.Service
 	events  *memory.Events
 	tracker *events.Tracker
+	club    *access.Service
 }
 
 func newEnv(t *testing.T) *env {
@@ -70,6 +74,11 @@ func newEnv(t *testing.T) *env {
 	})
 	money := accounts.NewService(memory.NewAccounts(ops), rateStore)
 	e.ledgerS.Rates, e.ledgerS.Accounts = rateStore, money
+	e.club = access.New(memory.NewAccess(), memory.NewSettings(), usage.Limits{}, usage.Limits{})
+	guides, err := library.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
 	catalog, err := game.LoadCatalog()
 	if err != nil {
 		t.Fatal(err)
@@ -83,6 +92,7 @@ func newEnv(t *testing.T) *env {
 		Ledger: e.ledgerS, Family: fam, Budget: e.budgetS, Auth: e.auth, Events: e.tracker, Location: time.UTC,
 		Accounts: money, Tasks: tasks.NewService(memory.NewTasks()), Game: game.NewService(catalog, memory.NewGame(), e.ledgerS, e.budgetS),
 		Rates: rateStore, Texts: tx, BotName: fam.BotUsername,
+		Access: e.club, Library: guides,
 		Health: func(context.Context) error { return nil }, Log: log,
 	})
 	return e
@@ -611,6 +621,45 @@ func TestCardLink(t *testing.T) {
 	}
 	if status, _ := e.do(t, anna, http.MethodPost, "/api/v1/cards", `{"kind":"goal","goal_id":404}`); status != 404 {
 		t.Errorf("no such goal: %d", status)
+	}
+}
+
+func TestClubAndLibrary(t *testing.T) {
+	e := newEnv(t)
+	e.onboard(t, anna)
+	if got := e.ok(t, anna, 200, http.MethodGet, "/api/v1/club", ""); got["active"] != false {
+		t.Fatalf("club = %v", got)
+	}
+	list := e.ok(t, anna, 200, http.MethodGet, "/api/v1/library", "")
+	if len(list["items"].([]any)) < 3 {
+		t.Fatalf("the list is seen by everyone: %v", list)
+	}
+	path := "/api/v1/library/safety-cushion"
+	locked := e.ok(t, anna, 200, http.MethodGet, path, "")
+	if locked["locked"] != true || strings.Contains(locked["body"].(string), "##") {
+		t.Fatalf("without the club = %v", locked)
+	}
+	if status, _ := e.do(t, anna, http.MethodGet, "/api/v1/library/nothing", ""); status != 404 {
+		t.Errorf("no such guide: %d", status)
+	}
+	if status, body := e.do(t, anna, http.MethodPost, "/api/v1/club/promo", `{"code":"NOPE"}`); status != 400 || errorCode(body) != "validation_error" {
+		t.Errorf("a bad code: %d %v", status, body)
+	}
+	code, err := e.club.NewPromo(context.Background(), "", 30, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := e.ok(t, anna, 200, http.MethodPost, "/api/v1/club/promo", fmt.Sprintf(`{"code":%q}`, code))
+	if got["active"] != true || got["until"] == nil {
+		t.Fatalf("after the code = %v", got)
+	}
+	open := e.ok(t, anna, 200, http.MethodGet, path, "")
+	if open["locked"] != false || !strings.Contains(open["body"].(string), "##") {
+		t.Errorf("in the club = %v", open)
+	}
+	e.tracker.Wait()
+	if got := e.events.Named(events.LibraryOpen); len(got) != 2 {
+		t.Errorf("library_open = %+v", got)
 	}
 }
 

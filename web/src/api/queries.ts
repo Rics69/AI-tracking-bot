@@ -59,6 +59,9 @@ export const keys = {
   accounts: ["money", "accounts"] as const,
   transfers: ["money", "transfers"] as const,
   game: ["money", "game"] as const,
+  club: ["club"] as const,
+  guides: ["guides"] as const,
+  guide: (slug: string) => ["guides", slug] as const,
   rates: ["rates"] as const,
   tasks: (from: string, to: string) => ["tasks", from, to] as const,
   allTasks: ["tasks"] as const,
@@ -428,4 +431,38 @@ export function useDoneQuest() {
 
 export async function createCard(body: CardRequest) {
   return unwrap(await api.POST("/cards", { body }));
+}
+
+// The club.
+
+export function useClub() {
+  return useQuery({
+    queryKey: keys.club,
+    queryFn: async () => unwrap(await api.GET("/club")),
+  });
+}
+
+export function useRedeemPromo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (code: string) => unwrap(await api.POST("/club/promo", { body: { code } })),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.club });
+      void qc.invalidateQueries({ queryKey: keys.guides });
+    },
+  });
+}
+
+export function useGuides() {
+  return useQuery({
+    queryKey: keys.guides,
+    queryFn: async () => unwrap(await api.GET("/library")),
+  });
+}
+
+export function useGuide(slug: string) {
+  return useQuery({
+    queryKey: keys.guide(slug),
+    queryFn: async () => unwrap(await api.GET("/library/{slug}", { params: { path: { slug } } })),
+  });
 }

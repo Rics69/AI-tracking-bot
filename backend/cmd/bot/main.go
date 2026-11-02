@@ -16,6 +16,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/access"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/accounts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/agent"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
@@ -112,7 +113,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	club := access.New(postgres.NewAccessRepository(pool), postgres.NewSettingsRepository(pool),
+		usage.Limits{Messages: cfg.UserDailyMessages, Tokens: cfg.UserDailyTokens},
+		usage.Limits{Messages: cfg.ClubMessages, Tokens: cfg.ClubTokens})
+	meter.UseTiers(club.Limits)
 	play := game.NewService(catalog, postgres.NewGameRepository(pool), expenses, budgets)
+	play.Access = club
 	handler := telegram.NewHandler(assistant, members, meter, telegram.Config{
 		ReplyTimeout: cfg.ReplyTimeout,
 		Location:     cfg.Location,
@@ -127,6 +133,8 @@ func run() error {
 		Budget:       budgets,
 		Game:         play,
 		Tasks:        plans,
+		Access:       club,
+		ClubChats:    cfg.ClubChats,
 
 		PackageTokens: cfg.LLMTokenPackage,
 		PackageSince:  packageSince,
@@ -223,6 +231,13 @@ func run() error {
 	milestones.SendCard = sendCard
 	go milestones.Run(ctx)
 	go report.NewTaskReminders(plans, users, runs, sendRows, botTexts, cfg.Location, log.With("component", "tasks")).Run(ctx)
+	sync := report.NewClubSync(club, runs,
+		func(ctx context.Context, chatID int64, text string) error {
+			return undeliverable(handler.Send(ctx, b, chatID, text))
+		},
+		func(ctx context.Context, userID int64) error { return handler.RemoveFromClub(ctx, b, userID) },
+		botTexts, log.With("component", "club"))
+	go every(ctx, time.Hour, func() { sync.Tick(ctx) })
 	go report.NewGame(play, users, runs, sendRows, sendCard, botTexts, cfg.Location, log.With("component", "game")).Run(ctx)
 	daily := report.NewDaily(budgets, users, runs, rateStore,
 		func(ctx context.Context, chatID int64, text string) error {

@@ -31,6 +31,7 @@ tags:
   - name: accounts
   - name: tasks
   - name: game
+  - name: club
   - name: categories
 
 paths:
@@ -366,6 +367,75 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/CardLink' }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /club:
+    get:
+      operationId: getClub
+      tags: [club]
+      summary: Состояние клуба
+      responses:
+        '200':
+          description: Клуб пользователя
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClubState' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /club/promo:
+    post:
+      operationId: redeemPromo
+      tags: [club]
+      summary: Применить промокод
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PromoCode' }
+      responses:
+        '200':
+          description: Клуб после промокода
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClubState' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /library:
+    get:
+      operationId: listGuides
+      tags: [club]
+      summary: Гайды клуба
+      responses:
+        '200':
+          description: Список виден всем
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GuideList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /library/{slug}:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getGuide
+      tags: [club]
+      summary: Открыть гайд
+      description: В клубе — весь текст, без него — первый абзац и `locked`.
+      responses:
+        '200':
+          description: Гайд
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Guide' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -974,6 +1044,46 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    ClubState:
+      type: object
+      required: [active]
+      properties:
+        active: { type: boolean }
+        until: { type: string, format: date-time, description: Конец последнего периода }
+
+    PromoCode:
+      type: object
+      required: [code]
+      properties:
+        code: { type: string, maxLength: 64 }
+
+    GuideInfo:
+      type: object
+      required: [slug, title, topic, preview]
+      properties:
+        slug: { type: string }
+        title: { type: string }
+        topic: { type: string }
+        preview: { type: string, description: Первый абзац }
+
+    GuideList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/GuideInfo' }
+
+    Guide:
+      type: object
+      required: [slug, title, topic, body, locked]
+      properties:
+        slug: { type: string }
+        title: { type: string }
+        topic: { type: string }
+        body: { type: string, description: Markdown }
+        locked: { type: boolean, description: Показан только первый абзац }
+
     Currency:
       type: string
       enum: [RUB, USD, EUR]

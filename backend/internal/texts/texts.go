@@ -134,12 +134,34 @@ type Bot struct {
 	ChallengeJoined        string `yaml:"challenge_joined"`
 	ChallengeAlready       string `yaml:"challenge_already"`
 	ChallengeClosed        string `yaml:"challenge_closed"`
+	ChallengeClubOnly      string `yaml:"challenge_club_only"`
 	ChallengeLeft          string `yaml:"challenge_left"`
 	ChallengeFinished      string `yaml:"challenge_finished"`
 	ChallengeFinishedLimit string `yaml:"challenge_finished_limit"`
 
 	ReferralLine     string `yaml:"referral_line"`
 	ReferralRewarded string `yaml:"referral_rewarded"`
+	ReferralClub     string `yaml:"referral_club"`
+
+	ClubAbout      string `yaml:"club_about"`
+	ClubActive     string `yaml:"club_active"`
+	ClubChatButton string `yaml:"club_chat_button"`
+	ClubLinks      string `yaml:"club_links"`
+	ClubGranted    string `yaml:"club_granted"`
+	ClubEnding     string `yaml:"club_ending"`
+	PromoUsage     string `yaml:"promo_usage"`
+	PromoInvalid   string `yaml:"promo_invalid"`
+	PromoUsed      string `yaml:"promo_used"`
+	PromoDone      string `yaml:"promo_done"`
+
+	AdminGrantUsage  string `yaml:"admin_grant_usage"`
+	AdminGranted     string `yaml:"admin_granted"`
+	AdminRevokeUsage string `yaml:"admin_revoke_usage"`
+	AdminRevoked     string `yaml:"admin_revoked"`
+	AdminPromoUsage  string `yaml:"admin_promo_usage"`
+	AdminPromo       string `yaml:"admin_promo"`
+	AdminLimitsUsage string `yaml:"admin_limits_usage"`
+	AdminLimits      string `yaml:"admin_limits"`
 
 	CardGoal            string `yaml:"card_goal"`
 	CardAmounts         string `yaml:"card_amounts"`
@@ -285,6 +307,11 @@ type Bot struct {
 	CommandChallenge string `yaml:"command_challenge"`
 	CommandReview    string `yaml:"command_review"`
 	CommandReviews   string `yaml:"command_reviews"`
+	CommandClub      string `yaml:"command_club"`
+	CommandGrant     string `yaml:"command_grant"`
+	CommandRevoke    string `yaml:"command_revoke"`
+	CommandNewPromo  string `yaml:"command_new_promo"`
+	CommandLimits    string `yaml:"command_limits"`
 	CommandFamily    string `yaml:"command_family"`
 	CommandSettings  string `yaml:"command_settings"`
 	CommandPrivacy   string `yaml:"command_privacy"`

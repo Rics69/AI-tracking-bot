@@ -93,6 +93,9 @@ type Sender interface {
 	AnswerCallbackQuery(ctx context.Context, params *bot.AnswerCallbackQueryParams) (bool, error)
 	SendPhoto(ctx context.Context, params *bot.SendPhotoParams) (*models.Message, error)
 	SendDocument(ctx context.Context, params *bot.SendDocumentParams) (*models.Message, error)
+	CreateChatInviteLink(ctx context.Context, params *bot.CreateChatInviteLinkParams) (*models.ChatInviteLink, error)
+	BanChatMember(ctx context.Context, params *bot.BanChatMemberParams) (bool, error)
+	UnbanChatMember(ctx context.Context, params *bot.UnbanChatMemberParams) (bool, error)
 }
 
 // Config tunes the handler.
@@ -110,6 +113,8 @@ type Config struct {
 	Budget       Budget
 	Game         *game.Service // quests, levels, challenges; nil: off
 	Tasks        TaskDoer      // the button of a reminder
+	Access       Access        // the club; nil: off
+	ClubChats    []int64       // the closed channel and chat
 	BotUsername  string        // for referral links; set once the bot knows its name
 
 	PackageTokens int64     // the token package, for /stats; 0: none
@@ -222,6 +227,29 @@ func (h *Handler) handleMessage(ctx context.Context, s Sender, msg *models.Messa
 			return
 		}
 		h.showChallenges(ctx, s, chatID, u)
+		return
+	case isCommand(text, "/club"):
+		h.showClub(ctx, s, chatID, u)
+		return
+	case isCommand(text, "/promo"):
+		arg, _ := commandArg(text, "/promo")
+		h.redeemPromo(ctx, s, chatID, u, arg)
+		return
+	case h.isAdmin(u) && isCommand(text, "/grant"):
+		arg, _ := commandArg(text, "/grant")
+		h.grant(ctx, s, chatID, arg)
+		return
+	case h.isAdmin(u) && isCommand(text, "/revoke"):
+		arg, _ := commandArg(text, "/revoke")
+		h.revoke(ctx, s, chatID, arg)
+		return
+	case h.isAdmin(u) && isCommand(text, "/newpromo"):
+		arg, _ := commandArg(text, "/newpromo")
+		h.newPromo(ctx, s, chatID, arg)
+		return
+	case h.isAdmin(u) && isCommand(text, "/limits"):
+		arg, _ := commandArg(text, "/limits")
+		h.limits(ctx, s, chatID, arg)
 		return
 	case isCommand(text, "/help"):
 		h.agent.Reset(ctx, u.TelegramID)

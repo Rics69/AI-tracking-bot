@@ -7,11 +7,13 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"github.com/shopspring/decimal"
 
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/access"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/accounts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/events"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/family"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/game"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/library"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/rates"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/savik"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/tasks"
@@ -70,6 +72,8 @@ type Server struct {
 	accounts   *accounts.Service
 	tasks      *tasks.Service
 	game       *game.Service
+	access     *access.Service
+	library    library.Catalog
 	rates      RateSource
 	texts      texts.Bot
 	cardSecret string
@@ -86,7 +90,7 @@ var _ StrictServerInterface = (*Server)(nil)
 // NewServer builds the API from its dependencies.
 func NewServer(d Deps) *Server {
 	s := &Server{ledger: d.Ledger, family: d.Family, budget: d.Budget, events: d.Events, loc: d.Location,
-		accounts: d.Accounts, tasks: d.Tasks, game: d.Game, rates: d.Rates, texts: d.Texts, botName: d.BotName}
+		accounts: d.Accounts, tasks: d.Tasks, game: d.Game, access: d.Access, library: d.Library, rates: d.Rates, texts: d.Texts, botName: d.BotName}
 	if d.Auth != nil {
 		s.cardSecret = d.Auth.BotToken
 	}

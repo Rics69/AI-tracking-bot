@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/access"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/accounts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/flow"
@@ -500,6 +501,54 @@ func TestRateOfADate(t *testing.T) {
 	}
 	if dates, _ := r.Dates(ctx, "USD", day(11)); len(dates) != 1 {
 		t.Errorf("dates = %v", dates)
+	}
+}
+
+func TestAccessStore(t *testing.T) {
+	setup(t)
+	ctx := context.Background()
+	r := NewAccessRepository(testPool)
+	if until, err := r.Until(ctx, 1, access.ProductClub); err != nil || until != nil {
+		t.Fatalf("nothing yet: %v, %v", until, err)
+	}
+	now := time.Now()
+	soon, later := now.Add(time.Hour), now.Add(48*time.Hour)
+	for _, end := range []time.Time{soon, later} {
+		if err := r.Add(ctx, access.Entitlement{UserID: 1, Product: access.ProductClub, Source: access.SourceAdmin, StartsAt: now, ExpiresAt: end}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if until, _ := r.Until(ctx, 1, access.ProductClub); until == nil || !until.Round(time.Second).Equal(later.Round(time.Second)) {
+		t.Errorf("until = %v", until)
+	}
+	if n, err := r.Active(ctx, access.ProductClub, now); err != nil || n != 1 {
+		t.Errorf("members = %d, %v", n, err)
+	}
+	if list, err := r.Endings(ctx, access.ProductClub, now); err != nil || len(list) != 1 {
+		t.Errorf("endings = %+v, %v", list, err)
+	}
+	if err := r.Close(ctx, 1, access.ProductClub, now); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := r.Active(ctx, access.ProductClub, now); n != 0 {
+		t.Errorf("after closing = %d", n)
+	}
+
+	hash := []byte("hash")
+	if err := r.AddPromo(ctx, access.Promo{Hash: hash, Product: access.ProductClub, Days: 7, MaxUses: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.RedeemPromo(ctx, []byte("other"), 1, now); !errors.Is(err, access.ErrPromoInvalid) {
+		t.Errorf("unknown = %v", err)
+	}
+	if p, err := r.RedeemPromo(ctx, hash, 1, now); err != nil || p.Days != 7 {
+		t.Fatalf("redeem = %+v, %v", p, err)
+	}
+	if _, err := r.RedeemPromo(ctx, hash, 1, now); !errors.Is(err, access.ErrPromoUsed) {
+		t.Errorf("twice = %v", err)
+	}
+	if _, err := r.RedeemPromo(ctx, hash, 2, now); !errors.Is(err, access.ErrPromoInvalid) {
+		t.Errorf("over the limit = %v", err)
 	}
 }
 

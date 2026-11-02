@@ -46,6 +46,7 @@ help: |-
   /level — уровень
   /challenge — челленджи
   /review — заявка на разбор в ролике
+  /club — клуб
   /app — открыть приложение
   /family — семья: вести расходы вместе
   /settings — итоги недели и часовой пояс
@@ -58,7 +59,7 @@ too_long: "Слишком длинное сообщение. Напишите т
 private: Я работаю только в личных сообщениях — напишите мне напрямую.
 failure: Что-то пошло не так, попробуйте ещё раз через минуту.
 blocked: Доступ к боту ограничен.
-limit_reached: На сегодня лимит сообщений исчерпан — продолжим завтра.
+limit_reached: Лимит ответов на сегодня исчерпан. Короткие записи вроде «кофе 350» по-прежнему сохраняются. В клубе лимит больше.
 cancelled: Отменено.
 
 # Быстрая запись, без нейросети. {what} — слово из сообщения, {amount} — сумма,
@@ -215,6 +216,7 @@ challenge_leave_button: Выйти из челленджа
 challenge_joined: "Вы в челлендже «{title}». Первое задание придёт {date} в {hour}."
 challenge_already: Вы уже участвуете.
 challenge_closed: Запись на этот челлендж закрыта.
+challenge_club_only: Этот челлендж для участников клуба. Подробности — /club.
 challenge_left: Вы вышли из челленджа.
 # {done}, {total} — дни, {saved} — отложено за это время, {xp} — опыт.
 challenge_finished: "Челлендж «{title}» пройден: {done} из {total}. Отложено {saved}. +{xp} опыта."
@@ -224,6 +226,21 @@ challenge_finished_limit: "В лимите: {under} из {counted} дней."
 # Приглашения. {link} — ссылка пользователя.
 referral_line: "Пригласить друга: {link}"
 referral_rewarded: Ваш друг прошёл знакомство с ботом. +50 опыта.
+referral_club: Три друга с вами. Вам 7 дней клуба — /club.
+
+# Клуб. {date} — до какого дня, {links} — личные ссылки.
+club_about: "Клуб: закрытые канал и чат, библиотека гайдов, клубные челленджи, заморозка серии и больший лимит ответов. Есть промокод? Напишите /promo КОД."
+club_active: "Вы в клубе до {date}. Библиотека — в приложении."
+club_chat_button: Получить ссылки в чаты
+club_links: |-
+  Личные ссылки, на одного человека и на сутки:
+  {links}
+club_granted: Вам открыт клуб. Подробности — /club.
+club_ending: Клуб закончится через 3 дня. Потом доступ к чатам закроется.
+promo_usage: "Напишите код после команды: /promo КОД"
+promo_invalid: Такого кода нет, или он закончился.
+promo_used: Этот код вы уже использовали.
+promo_done: Клуб открыт до {date}. Подробности — /club.
 
 # Карточки для сторис. По умолчанию без сумм: они появляются только по кнопке.
 card_goal: Цель
@@ -447,6 +464,17 @@ admin_challenge_usage: "Укажите челлендж: /challenge {slugs}"
 admin_challenge_unknown: Такого челленджа нет.
 admin_reviews: "Заявки на разбор: новых {new}, всего {total}. В файле нет имён и Telegram ID."
 admin_no_reviews: Заявок на разбор пока нет.
+admin_grant_usage: "Укажите ID и дни: /grant 123456789 30"
+admin_granted: Клуб для {id} открыт до {date}.
+admin_revoke_usage: "Укажите ID: /revoke 123456789"
+admin_revoked: Клуб у {id} закрыт, из чатов удалён.
+admin_promo_usage: "Укажите дни и число использований: /newpromo 30 100 или /newpromo 30 100 КОД"
+admin_promo: "Код {code}: {days} дней клуба, использований {uses}. Он показан один раз: в базе только хэш."
+admin_limits_usage: "Посмотреть: /limits. Изменить: /limits free 30 100000 — тариф, ответов в день, токенов в день."
+admin_limits: |-
+  Лимиты в день
+  Free: {free_messages} ответов, {free_tokens} токенов
+  Клуб: {club_messages} ответов, {club_tokens} токенов
 admin_review_new: Новая заявка на разбор. Посмотреть — /reviews
 
 # Меню команд (кнопка «/» в Telegram).
@@ -457,6 +485,7 @@ command_quests: Квесты и серия
 command_level: Мой уровень
 command_challenge: Челленджи
 command_review: Заявка на разбор
+command_club: Клуб
 command_family: Семья
 command_settings: Настройки
 command_privacy: Как хранятся данные
@@ -468,3 +497,7 @@ command_stats: Статистика сервиса
 command_ban: Заблокировать пользователя
 command_unban: Разблокировать пользователя
 command_reviews: Заявки на разбор
+command_grant: Открыть клуб пользователю
+command_revoke: Закрыть клуб пользователю
+command_new_promo: Создать промокод
+command_limits: Лимиты тарифов

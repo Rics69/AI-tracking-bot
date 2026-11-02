@@ -36,9 +36,10 @@ const (
 	cbDelete   = "delete!"  // delete the account
 	cbCancel   = "cancel"
 
-	cbFlow   = "fl"     // :step:value of a dialog
-	cbNotify = "notify" // :morning|rates|goals:on|off
-	cbHour   = "hour"   // [:hour of the morning message]
+	cbFlow     = "fl"       // :step:value of a dialog
+	cbClubJoin = "clubjoin" // personal links to the club's chats
+	cbNotify   = "notify"   // :morning|rates|goals:on|off
+	cbHour     = "hour"     // [:hour of the morning message]
 
 	cbFix       = "fix"  // :operation ID, how to correct a quick record
 	cbFixDelete = "fix!" // :operation ID, delete it
@@ -171,6 +172,8 @@ func (h *Handler) handleCallback(ctx context.Context, s Sender, cq *models.Callb
 		h.leaveChallenge(ctx, s, chatID, messageID, u, arg)
 	case game.ActLevelUp:
 		h.confirmLevel(ctx, s, chatID, messageID, u, arg)
+	case cbClubJoin:
+		h.clubJoin(ctx, s, chatID, u)
 	case game.ActTaskDone:
 		h.taskDone(ctx, s, chatID, messageID, u, arg)
 	case game.ActGoalCard:
@@ -645,7 +648,8 @@ func Commands(t texts.Bot, withApp bool) []models.BotCommand {
 		models.BotCommand{Command: "quests", Description: t.CommandQuests},
 		models.BotCommand{Command: "level", Description: t.CommandLevel},
 		models.BotCommand{Command: "challenge", Description: t.CommandChallenge},
-		models.BotCommand{Command: "review", Description: t.CommandReview})
+		models.BotCommand{Command: "review", Description: t.CommandReview},
+		models.BotCommand{Command: "club", Description: t.CommandClub})
 	return append(commands, []models.BotCommand{
 		{Command: "family", Description: t.CommandFamily},
 		{Command: "settings", Description: t.CommandSettings},

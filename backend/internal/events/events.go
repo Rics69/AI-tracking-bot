@@ -34,6 +34,8 @@ const (
 	CardGenerated    = "card_generated"
 	ReferralJoined   = "referral_joined"
 	ReviewGiven      = "review_given"
+	PromoRedeemed    = "promo_redeemed"
+	LibraryOpen      = "library_open"
 	TaskCreated      = "task_created"
 	TaskDone         = "task_done"
 	TransferAdded    = "transfer_added"

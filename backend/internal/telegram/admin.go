@@ -35,6 +35,11 @@ func (h *Handler) showStats(ctx context.Context, s Sender, chatID int64, u user.
 		return
 	}
 	snap.Package.Tokens = h.cfg.PackageTokens
+	if h.cfg.Access != nil {
+		if snap.ClubMembers, err = h.cfg.Access.Members(ctx); err != nil {
+			h.log.WarnContext(ctx, "count club members", "err", err)
+		}
+	}
 	h.send(ctx, s, chatID, stats.Render(snap))
 }
 
@@ -78,5 +83,9 @@ func AdminCommands(t texts.Bot, withApp bool) []models.BotCommand {
 		models.BotCommand{Command: "ban", Description: t.CommandBan},
 		models.BotCommand{Command: "unban", Description: t.CommandUnban},
 		models.BotCommand{Command: "reviews", Description: t.CommandReviews},
+		models.BotCommand{Command: "grant", Description: t.CommandGrant},
+		models.BotCommand{Command: "revoke", Description: t.CommandRevoke},
+		models.BotCommand{Command: "newpromo", Description: t.CommandNewPromo},
+		models.BotCommand{Command: "limits", Description: t.CommandLimits},
 	)
 }

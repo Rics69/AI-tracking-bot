@@ -64,6 +64,7 @@ export function ProfileScreen() {
       <PlanLink />
       <ScreenLink href="/accounts" icon={LandmarkIcon} title="Счета" text="Остатки, переводы, валюта" />
       <ScreenLink href="/calendar" icon={CalendarCheckIcon} title="Календарь" text="Задачи, платежи и дни зарплаты" />
+      <ScreenLink href="/club" icon={CrownIcon} title="Клуб" text="Закрытый чат, библиотека, челленджи" />
       <QuestsCard />
       <FamilySection me={u} />
       <SettingsSection me={u} />

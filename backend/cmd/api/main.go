@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/access"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/accounts"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/config"
@@ -20,10 +21,12 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/game"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/httpapi"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/ledger"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/library"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/logger"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/postgres"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/tasks"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/usage"
 )
 
 func main() {
@@ -75,6 +78,15 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	guides, err := library.Load()
+	if err != nil {
+		return err
+	}
+	settings := postgres.NewSettingsRepository(pool)
+	// The API only checks access; the limits are the bot's business.
+	club := access.New(postgres.NewAccessRepository(pool), settings, usage.Limits{}, usage.Limits{})
+	play := game.NewService(catalog, postgres.NewGameRepository(pool), operations, budgets)
+	play.Access = club
 	tracker := events.NewTracker(postgres.NewEventRepository(pool), log.With("component", "events"))
 	defer tracker.Wait()
 	handler := httpapi.NewHandler(httpapi.Deps{
@@ -84,7 +96,9 @@ func run() error {
 
 		Accounts: money,
 		Tasks:    tasks.NewService(postgres.NewTaskRepository(pool)),
-		Game:     game.NewService(catalog, postgres.NewGameRepository(pool), operations, budgets),
+		Game:     play,
+		Access:   club,
+		Library:  guides,
 		Rates:    rateStore,
 		Texts:    botTexts,
 		BotName:  families.BotUsername,

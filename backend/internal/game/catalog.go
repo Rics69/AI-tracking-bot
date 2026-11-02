@@ -157,9 +157,9 @@ type Challenge struct {
 // closeAfterDays: a common stream takes new people for this long after the start.
 const closeAfterDays = 3
 
-// Open reports whether someone can join on day.
+// Open reports whether the challenge still takes people on day.
 func (c Challenge) Open(day time.Time) bool {
-	return c.Access == AccessFree && (c.start == nil || !day.After(c.start.AddDate(0, 0, closeAfterDays)))
+	return c.start == nil || !day.After(c.start.AddDate(0, 0, closeAfterDays))
 }
 
 // StartFor is the day the challenge starts for someone joining on day.

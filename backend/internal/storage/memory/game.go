@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -99,6 +100,19 @@ func (r *Game) ReferrerOf(_ context.Context, code string) (int64, error) {
 		}
 	}
 	return 0, nil
+}
+
+func (r *Game) Rewarded(_ context.Context, referrerID int64) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	prefix := fmt.Sprint(referrerID, "|referral|")
+	for key := range r.xp {
+		if strings.HasPrefix(key, prefix) {
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (r *Game) AddReferral(_ context.Context, referrerID, userID int64) error {

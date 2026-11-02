@@ -77,7 +77,7 @@ func truncate(t *testing.T) {
 	t.Helper()
 	if _, err := testPool.Exec(context.Background(), `
 		TRUNCATE operations, goal_deposits, goals, regular_payments, budget_plans, invites, settings, chat_turns,
-		    notification_runs, llm_usage, events, user_flows, rates, xp_log, user_quests, challenge_participants, challenge_progress, referrals, review_requests, tasks, transfers, accounts, users, families RESTART IDENTITY`); err != nil {
+		    notification_runs, llm_usage, events, user_flows, rates, xp_log, user_quests, challenge_participants, challenge_progress, referrals, review_requests, tasks, transfers, accounts, entitlements, promo_uses, promo_codes, users, families RESTART IDENTITY`); err != nil {
 		t.Fatal(err)
 	}
 }

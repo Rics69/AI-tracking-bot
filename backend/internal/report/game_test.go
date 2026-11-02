@@ -11,6 +11,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/access"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/budget"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/card"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/game"
@@ -18,6 +19,7 @@ import (
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/storage/memory"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/tasks"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/texts"
+	"github.com/rics69/ai-expense-tracking-bot/backend/internal/usage"
 	"github.com/rics69/ai-expense-tracking-bot/backend/internal/user"
 )
 
@@ -309,6 +311,55 @@ func TestMorningWithTasks(t *testing.T) {
 	d.Tick(ctx)
 	if len(*out) != 1 || !strings.Contains((*out)[0].text, "Задачи: оплатить интернет.") {
 		t.Errorf("morning = %+v", *out)
+	}
+}
+
+func TestClubSync(t *testing.T) {
+	ctx := context.Background()
+	store := memory.NewAccess()
+	end := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
+	_ = store.Add(ctx, access.Entitlement{UserID: 1, Product: access.ProductClub, Source: access.SourceAdmin, ExpiresAt: end})
+	club := access.New(store, memory.NewSettings(), usage.Limits{}, usage.Limits{})
+	var told, removed []int64
+	failing := false
+	sync := NewClubSync(club, &fakeRuns{claimed: map[string]bool{}},
+		func(_ context.Context, chat int64, _ string) error {
+			told = append(told, chat)
+			return nil
+		},
+		func(_ context.Context, id int64) error {
+			if failing {
+				return errors.New("telegram is down")
+			}
+			removed = append(removed, id)
+			return nil
+		}, reminderTexts2(t), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	at := func(t time.Time) { sync.now = func() time.Time { return t } }
+
+	at(end.Add(-4 * 24 * time.Hour))
+	sync.Tick(ctx)
+	if len(told) != 0 {
+		t.Fatalf("too early: %v", told)
+	}
+	at(end.Add(-3 * 24 * time.Hour))
+	sync.Tick(ctx)
+	sync.Tick(ctx)
+	if len(told) != 1 {
+		t.Fatalf("warned %d times", len(told))
+	}
+	at(end.Add(2 * 24 * time.Hour))
+	sync.Tick(ctx)
+	if len(removed) != 0 {
+		t.Fatalf("removed before the grace is over: %v", removed)
+	}
+	at(end.Add(3 * 24 * time.Hour))
+	failing = true
+	sync.Tick(ctx) // not removed: tried again
+	failing = false
+	sync.Tick(ctx)
+	sync.Tick(ctx)
+	if len(removed) != 1 {
+		t.Errorf("removed %v", removed)
 	}
 }
 

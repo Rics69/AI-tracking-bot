@@ -38,6 +38,26 @@ func (m memStore) Total(context.Context, time.Time) (int64, error) {
 	return total, nil
 }
 
+func TestTiersDecideTheLimits(t *testing.T) {
+	ctx := context.Background()
+	day := time.Date(2026, 10, 21, 0, 0, 0, 0, time.UTC)
+	m := NewMeter(memStore{}, Limits{Messages: 100}, 99, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	m.UseTiers(func(_ context.Context, id int64) (Limits, error) {
+		if id == 2 {
+			return Limits{Messages: 2}, nil
+		}
+		return Limits{Messages: 1}, nil
+	})
+	m.RecordUsage(ctx, 1, day, llm.Usage{}, false, 0)
+	m.RecordUsage(ctx, 2, day, llm.Usage{}, false, 0)
+	if ok, _ := m.Allow(ctx, 1, day); ok {
+		t.Error("the free tier is over")
+	}
+	if ok, _ := m.Allow(ctx, 2, day); !ok {
+		t.Error("the club goes on")
+	}
+}
+
 func TestExhausted(t *testing.T) {
 	ctx := context.Background()
 	day := time.Date(2026, 10, 21, 0, 0, 0, 0, time.UTC)

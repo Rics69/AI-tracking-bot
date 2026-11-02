@@ -2,8 +2,8 @@ package game_test
 
 import (
 	"context"
+	"errors"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -409,9 +409,45 @@ days: [{title: a, task: b, check: manual, xp: 1}]
 	if c.Open(time.Date(2026, 11, 24, 0, 0, 0, 0, time.UTC)) {
 		t.Error("open too late")
 	}
-	club, err := ParseChallenge([]byte(strings.Replace(data, "access: free", "access: club", 1)))
-	if err != nil || club.Open(today) {
-		t.Errorf("the club is closed for now: %v", err)
+}
+
+type clubMembers map[int64]bool
+
+func (c clubMembers) Has(_ context.Context, userID int64, _ string) bool { return c[userID] }
+
+func TestClubChallengeNeedsTheClub(t *testing.T) {
+	e := setup(t)
+	if _, _, err := e.s.Join(ctx, "club-debt-free", anna, today); !errors.Is(err, ErrClubOnly) {
+		t.Fatalf("without the club: %v", err)
+	}
+	e.s.Access = clubMembers{anna: true}
+	if _, joined, err := e.s.Join(ctx, "club-debt-free", anna, today); err != nil || !joined {
+		t.Errorf("in the club: %v, %v", joined, err)
+	}
+}
+
+func TestStreakFreezeCoversOneDayAWeek(t *testing.T) {
+	e := setup(t)
+	d := func(n int) time.Time { return today.AddDate(0, 0, n) }
+	touch := func(n int) int {
+		t.Helper()
+		if _, err := e.s.Touch(ctx, anna, d(n)); err != nil {
+			t.Fatal(err)
+		}
+		p, _ := e.s.Profile(ctx, anna)
+		return p.Streak
+	}
+	touch(0)
+	if got := touch(2); got != 1 {
+		t.Fatalf("without the club a missed day starts over: %d", got)
+	}
+	e.s.Access = clubMembers{anna: true}
+	touch(3)
+	if got := touch(5); got != 4 { // days 2, 3, the frozen 4 and 5
+		t.Fatalf("frozen = %d", got)
+	}
+	if got := touch(7); got != 1 { // the same week: no second freeze
+		t.Errorf("a second freeze in a week = %d", got)
 	}
 }
 
@@ -449,16 +485,16 @@ func TestReferrals(t *testing.T) {
 	if err := e.s.Refer(ctx, code, anna); err != nil {
 		t.Fatal(err)
 	}
-	if id, _ := e.s.RewardReferrer(ctx, anna); id != 0 {
+	if id, _, _ := e.s.RewardReferrer(ctx, anna); id != 0 {
 		t.Error("paid for one's own link")
 	}
 	if err := e.s.Refer(ctx, code, 2); err != nil {
 		t.Fatal(err)
 	}
-	if id, _ := e.s.RewardReferrer(ctx, 2); id != anna {
-		t.Errorf("referrer = %d", id)
+	if id, friends, _ := e.s.RewardReferrer(ctx, 2); id != anna || friends != 1 {
+		t.Errorf("referrer = %d, friends = %d", id, friends)
 	}
-	if id, _ := e.s.RewardReferrer(ctx, 2); id != 0 {
+	if id, _, _ := e.s.RewardReferrer(ctx, 2); id != 0 {
 		t.Error("paid twice")
 	}
 	if p, _ := e.s.Profile(ctx, anna); p.XP != ReferralXP {
